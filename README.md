@@ -2,6 +2,10 @@
 
 一个美漫汉堡店后厨公告板网站。
 
+## 在线访问
+
+<https://hamburger-protect.vercel.app>
+
 ## 功能
 
 - 发布、编辑和拖动留言
@@ -21,4 +25,3 @@ python3 -m http.server 4173
 ## 技术实现
 
 项目使用原生 HTML、CSS 和 JavaScript，无构建步骤。网站数据仅保存在当前浏览器中。
-
