@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#171717">
+    <meta name="color-scheme" content="light">
+    <title>老杰汉堡 · 后厨公告板</title>
+    <link rel="icon" href="assets/stickers/br.webp">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app" id="app">
+      <div class="backdrop" aria-hidden="true"></div>
+
+      <div class="viewport" id="viewport">
+        <div class="world" id="world">
+          <img
+            class="scene"
+            src="assets/scene.webp"
+            width="2496"
+            height="1664"
+            alt=""
+            aria-hidden="true"
+            draggable="false"
+          >
+
+          <main class="board" id="board" aria-label="老杰汉堡后厨公告板">
+            <section class="board-section inventory-section" data-section="inventory">
+              <div class="sign sign-red">明日要准备的食材</div>
+              <div class="inventory-stack" id="inventoryStack"></div>
+            </section>
+
+            <section class="board-section task-section" data-section="tasks">
+              <div class="sign sign-red task-sign">
+                <span>要做的食材</span>
+                <button class="sign-action" type="button" data-compose="task" aria-label="发布任务" title="发布任务">
+                  <i data-lucide="plus"></i>
+                </button>
+              </div>
+              <div class="task-papers">
+                <article class="paper task-paper todo-paper">
+                  <h2>待制作</h2>
+                  <div class="task-list" id="todoList"></div>
+                </article>
+                <article class="paper task-paper done-paper">
+                  <h2>已完成</h2>
+                  <div class="task-list" id="doneList"></div>
+                </article>
+              </div>
+            </section>
+
+            <section class="board-section shift-section" data-section="shifts">
+              <div class="sign sign-blue">人员排班</div>
+              <article class="shift-paper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>日期</th>
+                      <th>岗位</th>
+                      <th>姓名</th>
+                      <th>到岗</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>5.20</td><td>早班</td><td>张三</td><td>09:00</td></tr>
+                    <tr><td>5.20</td><td>早班</td><td>李四</td><td>09:00</td></tr>
+                    <tr><td>5.20</td><td>中班</td><td>赵六</td><td>11:00</td></tr>
+                    <tr><td>5.20</td><td>晚班</td><td>孙七</td><td>17:00</td></tr>
+                    <tr><td>5.20</td><td>晚班</td><td>周八</td><td>17:00</td></tr>
+                    <tr><td>5.20</td><td>打烊</td><td>吴九</td><td>22:00</td></tr>
+                  </tbody>
+                </table>
+              </article>
+            </section>
+
+            <section class="board-section memo-section" data-section="notes">
+              <div class="sign sign-yellow">今日特别备注</div>
+              <article class="paper memo-paper">
+                <ul>
+                  <li>今日新到安格斯牛肉饼</li>
+                  <li>新品皇堡套餐推荐</li>
+                  <li>记得盘点库存</li>
+                </ul>
+              </article>
+            </section>
+
+            <section class="board-section safety-section" data-section="safety">
+              <div class="sign sign-green">每日安全与卫生提示</div>
+              <article class="paper safety-paper">
+                <div class="safety-list" id="safetyList"></div>
+                <div class="inspection-stamp" aria-hidden="true">
+                  <small>后厨卫生检查</small>
+                  <strong>考核</strong>
+                  <small>每日一检</small>
+                </div>
+              </article>
+            </section>
+
+            <div class="user-notes" id="userNotes" aria-live="polite"></div>
+
+            <button class="pin-add" type="button" data-compose="note" aria-label="写留言" title="写留言">
+              <i data-lucide="plus"></i>
+            </button>
+          </main>
+
+          <img class="sticker sticker-tl" src="assets/stickers/tl.webp" alt="" aria-hidden="true">
+          <img class="sticker sticker-tr" src="assets/stickers/tr.webp" alt="" aria-hidden="true">
+          <img class="sticker sticker-bl" src="assets/stickers/bl.webp" alt="" aria-hidden="true">
+          <img class="sticker sticker-br" src="assets/stickers/br.webp" alt="" aria-hidden="true">
+          <img class="sticker sticker-mini1" src="assets/stickers/mini1.webp" alt="" aria-hidden="true">
+          <img class="sticker sticker-mini2" src="assets/stickers/mini2.webp" alt="" aria-hidden="true">
+        </div>
+      </div>
+
+      <div class="shop-status" aria-label="门店状态">
+        <span class="status-dot"></span>
+        <span>老杰汉堡 · 今日营业中</span>
+      </div>
+
+      <nav class="focus-dock" aria-label="公告板区域">
+        <button class="is-active" type="button" data-focus="overview" aria-label="公告板全览" title="全览">
+          <i data-lucide="layout-dashboard"></i>
+        </button>
+        <button type="button" data-focus="inventory" aria-label="备料清单" title="备料">
+          <i data-lucide="package-open"></i>
+        </button>
+        <button type="button" data-focus="tasks" aria-label="制作任务" title="任务">
+          <i data-lucide="clipboard-list"></i>
+        </button>
+        <button type="button" data-focus="shifts" aria-label="人员排班" title="排班">
+          <i data-lucide="users"></i>
+        </button>
+        <button type="button" data-focus="safety" aria-label="卫生检查" title="卫生">
+          <i data-lucide="shield-check"></i>
+        </button>
+        <button type="button" data-focus="notes" aria-label="留言区" title="留言">
+          <i data-lucide="message-square"></i>
+        </button>
+      </nav>
+
+      <div class="dialog-layer" id="dialogLayer" aria-hidden="true">
+        <button class="dialog-scrim" type="button" data-close-dialog aria-label="关闭"></button>
+        <section class="composer" id="composer" role="dialog" aria-modal="true" aria-labelledby="composerTitle">
+          <header class="composer-header">
+            <div>
+              <span class="composer-kicker">发布到公告板</span>
+              <h1 id="composerTitle">写一张留言</h1>
+            </div>
+            <button class="icon-button" type="button" data-close-dialog aria-label="关闭" title="关闭">
+              <i data-lucide="x"></i>
+            </button>
+          </header>
+
+          <div class="compose-type" role="tablist" aria-label="发布类型">
+            <button class="is-active" type="button" role="tab" data-compose-type="note" aria-selected="true">
+              <i data-lucide="message-square"></i>
+              留言
+            </button>
+            <button type="button" role="tab" data-compose-type="task" aria-selected="false">
+              <i data-lucide="clipboard-list"></i>
+              任务
+            </button>
+          </div>
+
+          <form id="composerForm">
+            <label class="field">
+              <span>标题</span>
+              <input id="entryTitle" name="title" maxlength="20" autocomplete="off" required>
+            </label>
+            <label class="field">
+              <span>内容</span>
+              <textarea id="entryBody" name="body" maxlength="100" rows="4" required></textarea>
+            </label>
+
+            <div class="task-fields" id="taskFields" hidden>
+              <label class="field">
+                <span>负责人</span>
+                <input id="taskAssignee" name="assignee" maxlength="10" autocomplete="off" placeholder="待认领">
+              </label>
+              <label class="field">
+                <span>完成时间</span>
+                <input id="taskDue" name="due" type="time">
+              </label>
+            </div>
+
+            <fieldset class="color-field" id="colorField">
+              <legend>便签颜色</legend>
+              <label title="黄色">
+                <input type="radio" name="color" value="yellow" checked>
+                <span class="swatch swatch-yellow"></span>
+              </label>
+              <label title="粉色">
+                <input type="radio" name="color" value="pink">
+                <span class="swatch swatch-pink"></span>
+              </label>
+              <label title="蓝色">
+                <input type="radio" name="color" value="blue">
+                <span class="swatch swatch-blue"></span>
+              </label>
+              <label title="绿色">
+                <input type="radio" name="color" value="green">
+                <span class="swatch swatch-green"></span>
+              </label>
+            </fieldset>
+
+            <footer class="composer-actions">
+              <button class="delete-button" id="deleteEntry" type="button" aria-label="删除" title="删除" hidden>
+                <i data-lucide="trash-2"></i>
+              </button>
+              <span class="action-spacer"></span>
+              <button class="text-button" type="button" data-close-dialog>取消</button>
+              <button class="publish-button" type="submit">
+                <i data-lucide="send"></i>
+                发布
+              </button>
+            </footer>
+          </form>
+        </section>
+      </div>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+
+    <script src="assets/lucide.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
