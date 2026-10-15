@@ -441,7 +441,17 @@ button {
         background 160ms ease;
 }
 
-.task-check:hover {
+.task-check:disabled,
+.inventory-row:disabled,
+.safety-item:disabled {
+    cursor: default;
+}
+
+.task-check:disabled {
+    opacity: 0.42;
+}
+
+.task-check:hover:not(:disabled) {
     color: var(--green);
     transform: scale(1.1);
 }
@@ -468,6 +478,10 @@ button {
     cursor: pointer;
 }
 
+.task-content:disabled {
+    cursor: default;
+}
+
 .task-title {
     display: block;
     overflow: hidden;
@@ -489,6 +503,21 @@ button {
     line-height: 1.2;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.task-meta i {
+    color: #6b6257;
+    font-style: normal;
+}
+
+.task-meta i[data-status="pending_review"] {
+    color: #b41b25;
+    font-weight: 700;
+}
+
+.task-meta i[data-status="in_progress"],
+.task-meta i[data-status="claimed"] {
+    color: #8a5b00;
 }
 
 .done-paper .task-title {
@@ -698,6 +727,10 @@ button {
 
 .user-note:active {
     cursor: grabbing;
+}
+
+.user-note:not([role="button"]) {
+    cursor: default;
 }
 
 .user-note::before {

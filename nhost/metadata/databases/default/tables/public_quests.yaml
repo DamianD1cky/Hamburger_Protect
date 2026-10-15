@@ -1,0 +1,21 @@
+table:
+  name: quests
+  schema: public
+object_relationships:
+  - name: campaign
+    using:
+      foreign_key_constraint_on: campaign_id
+array_relationships:
+  - name: submissions
+    using:
+      foreign_key_constraint_on:
+        column: quest_id
+        table: { name: quest_submissions, schema: public }
+select_permissions:
+  - role: user
+    permission:
+      columns: [id, campaign_id, title, body, status, created_by, claimed_by, assignee_label, due_at, sort_order, created_at, updated_at, completed_at]
+      filter:
+        campaign:
+          members:
+            user_id: { _eq: X-Hasura-User-Id }

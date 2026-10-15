@@ -1,0 +1,36 @@
+table:
+  name: campaigns
+  schema: public
+array_relationships:
+  - name: members
+    using:
+      foreign_key_constraint_on:
+        column: campaign_id
+        table: { name: campaign_members, schema: public }
+  - name: quests
+    using:
+      foreign_key_constraint_on:
+        column: campaign_id
+        table: { name: quests, schema: public }
+  - name: notes
+    using:
+      foreign_key_constraint_on:
+        column: campaign_id
+        table: { name: notes, schema: public }
+  - name: resources
+    using:
+      foreign_key_constraint_on:
+        column: campaign_id
+        table: { name: resources, schema: public }
+  - name: checklist_items
+    using:
+      foreign_key_constraint_on:
+        column: campaign_id
+        table: { name: checklist_items, schema: public }
+select_permissions:
+  - role: user
+    permission:
+      columns: [id, name, join_code, status, created_by, started_at, archived_at, created_at, updated_at]
+      filter:
+        members:
+          user_id: { _eq: X-Hasura-User-Id }
