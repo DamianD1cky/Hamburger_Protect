@@ -11,10 +11,10 @@ import type { FocusZone } from "../../hooks/useBoardViewport";
 const items = [
   { id: "overview", label: "公告板全览", title: "全览", icon: LayoutDashboard },
   { id: "inventory", label: "物资清单", title: "物资", icon: PackageOpen },
-  { id: "tasks", label: "战役任务", title: "任务", icon: ClipboardList },
+  { id: "tasks", label: "工作指示", title: "指示", icon: ClipboardList },
   { id: "shifts", label: "队员排班", title: "排班", icon: Users },
   { id: "safety", label: "防御检查", title: "防御", icon: ShieldCheck },
-  { id: "notes", label: "留言区", title: "留言", icon: MessageSquare },
+  { id: "notes", label: "工作记录", title: "记录", icon: MessageSquare },
 ] as const;
 
 interface FocusDockProps {

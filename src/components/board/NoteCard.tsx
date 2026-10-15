@@ -93,7 +93,7 @@ export function NoteCard({
       data-color={note.color}
       role={canEdit ? "button" : undefined}
       tabIndex={canEdit ? 0 : -1}
-      aria-label={canEdit ? "编辑留言：" + note.title : undefined}
+      aria-label={canEdit ? "编辑工作记录：" + note.title : undefined}
       style={{
         left: note.x,
         top: note.y,

@@ -85,7 +85,7 @@ export function BoardScene({
             onEdit={onEditQuest}
             onTransition={onTransitionQuest}
           />
-          <ShiftSection />
+          <ShiftSection members={board.members} />
           <MemoSection />
           <SafetySection
             checklist={board.checklist}
@@ -115,8 +115,8 @@ export function BoardScene({
               className="pin-add"
               type="button"
               onClick={onComposeNote}
-              aria-label="写留言"
-              title="写留言"
+              aria-label="填写工作记录"
+              title="填写工作记录"
             >
               <Plus aria-hidden="true" />
             </button>

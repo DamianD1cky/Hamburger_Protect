@@ -52,7 +52,7 @@ export function InventorySection({
       className="board-section inventory-section"
       data-section="inventory"
     >
-      <div className="sign sign-red">明日要准备的物资</div>
+      <div className="sign sign-red">可用物资与设施</div>
       <div className="inventory-stack">
         {groups.map((group, index) => (
           <article className="inventory-card" key={index}>
@@ -134,7 +134,7 @@ function TaskItem({
         className="task-content"
         type="button"
         disabled={!canEdit}
-        title={canEdit ? "编辑任务" : "仅 GM 可以编辑任务"}
+        title={canEdit ? "编辑工作指示" : "仅 GM 可以编辑工作指示"}
         onClick={(event) => onEdit(quest, event)}
       >
         <span className="task-title">{quest.title}</span>
@@ -162,14 +162,14 @@ export function TaskSection({
   return (
     <section className="board-section task-section" data-section="tasks">
       <div className="sign sign-red task-sign">
-        <span>要执行的任务</span>
+        <span>工作指示与报告</span>
         {role === "gm" && campaignActive && (
           <button
             className="sign-action"
             type="button"
             onClick={onCompose}
-            aria-label="发布任务"
-            title="发布任务"
+            aria-label="发布工作指示"
+            title="发布工作指示"
           >
             <Plus aria-hidden="true" />
           </button>
@@ -211,26 +211,30 @@ export function TaskSection({
   );
 }
 
-export function ShiftSection() {
-  const rows = [
-    ["5.20", "侦查", "张三", "09:00"],
-    ["5.20", "备料", "李四", "09:00"],
-    ["5.20", "前门", "赵六", "11:00"],
-    ["5.20", "后门", "孙七", "17:00"],
-    ["5.20", "支援", "周八", "17:00"],
-    ["5.20", "守夜", "吴九", "22:00"],
-  ];
+export function ShiftSection({
+  members,
+}: {
+  members: CampaignBoard["members"];
+}) {
+  const rows = members
+    .filter((member) => member.active)
+    .map((member) => [
+      member.jobTitle,
+      member.characterName,
+      member.role === "gm" ? "值班店长" : "临时员工",
+      "在岗",
+    ]);
   return (
     <section className="board-section shift-section" data-section="shifts">
-      <div className="sign sign-blue">队员排班</div>
+      <div className="sign sign-blue">危机排班</div>
       <article className="shift-paper">
         <table>
           <thead>
             <tr>
-              <th>日期</th>
               <th>岗位</th>
               <th>姓名</th>
-              <th>到岗</th>
+              <th>身份</th>
+              <th>状态</th>
             </tr>
           </thead>
           <tbody>
@@ -254,9 +258,9 @@ export function MemoSection() {
       <div className="sign sign-yellow">今日特别情报</div>
       <article className="paper memo-paper">
         <ul>
-          <li>西侧卷帘门有抓痕</li>
-          <li>冷库物资优先转移</li>
-          <li>午夜前完成布防</li>
+          <li>异常顾客不得办理会员注册</li>
+          <li>通信失联不等于公司放弃支持</li>
+          <li>无行动时默认继续制作汉堡</li>
         </ul>
       </article>
     </section>
@@ -276,7 +280,7 @@ export function SafetySection({
 }: SafetySectionProps) {
   return (
     <section className="board-section safety-section" data-section="safety">
-      <div className="sign sign-green">每日防御与卫生提示</div>
+      <div className="sign sign-green">每日防御与营业检查</div>
       <article className="paper safety-paper">
         <div className="safety-list">
           {checklist.map((item) => (

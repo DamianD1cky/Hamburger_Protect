@@ -1,5 +1,11 @@
 export type CampaignRole = "gm" | "player" | "observer";
 export type CampaignStatus = "active" | "archived";
+export type EmployeePosition =
+  | "店长"
+  | "厨师"
+  | "维修师"
+  | "服务员"
+  | "顾客";
 export type QuestStatus =
   | "open"
   | "claimed"
@@ -21,6 +27,16 @@ export interface Viewer {
   id: string;
   displayName: string;
   role: CampaignRole;
+  jobTitle: EmployeePosition;
+}
+
+export interface CampaignMember {
+  userId: string;
+  role: CampaignRole;
+  characterName: string;
+  jobTitle: EmployeePosition;
+  active: boolean;
+  joinedAt: string;
 }
 
 export interface ResourceItem {
@@ -63,6 +79,7 @@ export interface BoardNote {
 export interface CampaignBoard {
   campaign: CampaignSummary;
   viewer: Viewer;
+  members: CampaignMember[];
   resources: ResourceItem[];
   checklist: ChecklistItem[];
   quests: Quest[];

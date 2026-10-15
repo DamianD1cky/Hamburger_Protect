@@ -20,6 +20,21 @@ function uid(prefix: string) {
   return prefix + "-" + crypto.randomUUID();
 }
 
+function normalizeBoard(board: CampaignBoard): CampaignBoard {
+  board.viewer.jobTitle ??= board.viewer.role === "gm" ? "店长" : "服务员";
+  board.members ??= [
+    {
+      userId: board.viewer.id,
+      role: board.viewer.role,
+      characterName: board.viewer.displayName,
+      jobTitle: board.viewer.jobTitle,
+      active: board.campaign.status === "active",
+      joinedAt: new Date().toISOString(),
+    },
+  ];
+  return board;
+}
+
 function loadLegacyBoard(): CampaignBoard | null {
   const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
   if (!raw) return null;
@@ -84,7 +99,7 @@ class LocalCampaignRepository implements CampaignRepository {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        return JSON.parse(saved) as CampaignBoard;
+        return normalizeBoard(JSON.parse(saved) as CampaignBoard);
       } catch {
         localStorage.removeItem(STORAGE_KEY);
       }

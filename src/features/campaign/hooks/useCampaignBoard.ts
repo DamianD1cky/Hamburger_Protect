@@ -10,24 +10,29 @@ import type {
   QuestStatus,
 } from "../domain/types";
 
-export function useCampaignBoard() {
+export function useCampaignBoard(
+  requestedCampaignId = defaultBoard.campaign.id,
+) {
   const queryClient = useQueryClient();
-  const cloudEnabled =
-    isNhostConfigured && Boolean(nhost?.getUserSession()?.user);
+  const session = nhost?.getUserSession();
+  const cloudEnabled = isNhostConfigured && Boolean(session?.user);
   const repository = cloudEnabled
     ? nhostCampaignRepository
     : localCampaignRepository;
   const boardKey = [
     "campaign-board",
     cloudEnabled ? "nhost" : "local",
+    session?.user?.id ?? "demo",
+    requestedCampaignId,
   ] as const;
   const query = useQuery({
     queryKey: boardKey,
-    queryFn: () => repository.getBoard(defaultBoard.campaign.id),
-    placeholderData: cloneDefaultBoard,
+    queryFn: () => repository.getBoard(requestedCampaignId),
+    placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
+    staleTime: cloudEnabled ? 5_000 : Number.POSITIVE_INFINITY,
   });
-  const board = query.data ?? cloneDefaultBoard();
-  const campaignId = board.campaign.id;
+  const board = query.data;
+  const campaignId = board?.campaign.id ?? requestedCampaignId;
 
   const commit = async (operation: () => Promise<CampaignBoard>) => {
     const next = await operation();
@@ -37,6 +42,8 @@ export function useCampaignBoard() {
 
   return {
     board,
+    error: query.error,
+    refetch: query.refetch,
     dataSource: cloudEnabled ? ("nhost" as const) : ("local" as const),
     isLoading: query.isLoading,
     cycleResource: (resourceId: string) =>

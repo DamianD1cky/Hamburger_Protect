@@ -3,6 +3,7 @@ import type { CampaignRepository } from "../domain/repository";
 import type {
   CampaignBoard,
   NoteColor,
+  EmployeePosition,
   NoteDraft,
   QuestDraft,
   QuestStatus,
@@ -18,7 +19,9 @@ interface RemoteBoard {
     user_id: string;
     role: "gm" | "player" | "observer";
     character_name: string;
+    job_title: EmployeePosition;
     active: boolean;
+    joined_at: string;
   }>;
   resources: Array<{
     id: string;
@@ -63,7 +66,7 @@ const ACTIVE_BOARD_QUERY = `
         name
         join_code
         status
-        members(order_by: { joined_at: asc }) { user_id role character_name active }
+        members(order_by: { joined_at: asc }) { user_id role character_name job_title active joined_at }
         resources(order_by: [{ group_index: asc }, { sort_order: asc }]) { id group_index name quantity status }
         checklist_items(order_by: { sort_order: asc }) { id label completed }
         quests(order_by: [{ sort_order: asc }, { created_at: asc }]) {
@@ -140,7 +143,16 @@ function toBoard(remote: RemoteBoard): CampaignBoard {
       id: user.id,
       displayName: viewer.character_name || user.displayName,
       role: viewer.role,
+      jobTitle: viewer.job_title,
     },
+    members: remote.members.map((member) => ({
+      userId: member.user_id,
+      role: member.role,
+      characterName: member.character_name,
+      jobTitle: member.job_title,
+      active: member.active,
+      joinedAt: member.joined_at,
+    })),
     resources: remote.resources.map((item) => ({
       id: item.id,
       group: item.group_index,

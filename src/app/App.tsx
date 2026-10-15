@@ -1,3 +1,5 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { BookOpen, Copy, LogOut, RefreshCw } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -12,14 +14,29 @@ import {
   type ComposeKind,
   type ComposerState,
 } from "../components/composer/ComposerDialog";
-import { useCampaignBoard } from "../features/campaign/hooks/useCampaignBoard";
+import { HandbookDialog } from "../components/handbook/HandbookDialog";
+import { AccessPortal } from "../features/access/components/AccessPortal";
+import {
+  clearMagicLinkCallback,
+  completeGmMagicLink,
+  createCampaign,
+  getActiveCampaign,
+  hasMagicLinkCallback,
+  joinCampaign,
+  sendGmMagicLink,
+  signOut,
+} from "../features/access/data/nhostCampaignAccess";
+import { useNhostSession } from "../features/access/hooks/useNhostSession";
+import { defaultBoard } from "../features/campaign/domain/defaults";
 import type {
-  BoardNote,
   ComposerTarget,
+  EmployeePosition,
   Quest,
   QuestStatus,
 } from "../features/campaign/domain/types";
+import { useCampaignBoard } from "../features/campaign/hooks/useCampaignBoard";
 import { useBoardViewport } from "../hooks/useBoardViewport";
+import { isNhostConfigured } from "../lib/nhost/client";
 
 const closedComposer: ComposerState = {
   open: false,
@@ -28,11 +45,135 @@ const closedComposer: ComposerState = {
   sourceRect: null,
 };
 
+type VerificationState = "idle" | "verifying" | "failed";
+
 export function App() {
-  const campaign = useCampaignBoard();
+  if (!isNhostConfigured) {
+    return <CampaignBoardWorkspace campaignId={defaultBoard.campaign.id} demo />;
+  }
+  return <CloudCampaignApp />;
+}
+
+function CloudCampaignApp() {
+  const queryClient = useQueryClient();
+  const session = useNhostSession();
+  const [verificationState, setVerificationState] =
+    useState<VerificationState>(() =>
+      hasMagicLinkCallback() ? "verifying" : "idle",
+    );
+  const [verificationError, setVerificationError] = useState("");
+
+  useEffect(() => {
+    if (!hasMagicLinkCallback()) return;
+    let active = true;
+    void completeGmMagicLink()
+      .then(() => {
+        if (!active) return;
+        clearMagicLinkCallback();
+        setVerificationState("idle");
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        clearMagicLinkCallback();
+        setVerificationError(
+          error instanceof Error ? error.message : "值班身份核验失败。",
+        );
+        setVerificationState("failed");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const accessQuery = useQuery({
+    queryKey: ["active-campaign", session?.user?.id ?? "signed-out"],
+    queryFn: getActiveCampaign,
+    enabled: Boolean(session?.user) && verificationState === "idle",
+    staleTime: 5_000,
+    retry: 1,
+  });
+
+  const refreshAccess = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["active-campaign"] });
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    queryClient.removeQueries({ queryKey: ["active-campaign"] });
+    queryClient.removeQueries({ queryKey: ["campaign-board"] });
+  };
+
+  if (
+    session?.user &&
+    !session.user.isAnonymous &&
+    accessQuery.isLoading &&
+    verificationState === "idle"
+  ) {
+    return <CloudStatus message="正在核对本次排班" />;
+  }
+
+  if (accessQuery.data?.status === "active") {
+    return (
+      <CampaignBoardWorkspace
+        campaignId={accessQuery.data.campaignId}
+        onExit={handleSignOut}
+      />
+    );
+  }
+
+  return (
+    <AccessPortal
+      session={session}
+      verificationState={verificationState}
+      verificationError={
+        verificationError ||
+        (accessQuery.error instanceof Error ? accessQuery.error.message : "")
+      }
+      onSendMagicLink={sendGmMagicLink}
+      onSignOut={handleSignOut}
+      onCreateCampaign={async (name, characterName) => {
+        await createCampaign({ name, characterName });
+        await refreshAccess();
+      }}
+      onJoinCampaign={async (input: {
+        joinCode: string;
+        characterName: string;
+        jobTitle: Exclude<EmployeePosition, "店长">;
+      }) => {
+        await joinCampaign(input);
+        await refreshAccess();
+      }}
+    />
+  );
+}
+
+function CloudStatus({ message }: { message: string }) {
+  return (
+    <div className="cloud-status-screen">
+      <div className="backdrop" aria-hidden="true" />
+      <span className="verification-spinner" aria-hidden="true" />
+      <strong>{message}</strong>
+      <small>请勿擅自离岗</small>
+    </div>
+  );
+}
+
+interface CampaignBoardWorkspaceProps {
+  campaignId: string;
+  demo?: boolean;
+  onExit?: () => Promise<void>;
+}
+
+function CampaignBoardWorkspace({
+  campaignId,
+  demo = false,
+  onExit,
+}: CampaignBoardWorkspaceProps) {
+  const campaign = useCampaignBoard(campaignId);
   const { worldRef, viewScaleRef, focusZone, setFocusZone } =
     useBoardViewport();
   const [composer, setComposer] = useState<ComposerState>(closedComposer);
+  const [handbookOpen, setHandbookOpen] = useState(false);
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | undefined>(undefined);
 
@@ -142,21 +283,39 @@ export function App() {
 
       showToast(
         status === "completed"
-          ? "任务审核通过"
+          ? "工作报告已由店长确认"
           : status === "open"
-            ? "任务已重新开放"
-            : "任务状态已更新",
+            ? "任务已重新张贴"
+            : "工作记录已更新",
       );
     },
     [campaign, showToast],
   );
 
+  if (campaign.error) {
+    return (
+      <div className="cloud-status-screen is-error">
+        <div className="backdrop" aria-hidden="true" />
+        <strong>公告板读取失败</strong>
+        <small>{campaign.error.message}</small>
+        <button type="button" onClick={() => void campaign.refetch()}>
+          <RefreshCw aria-hidden="true" />
+          重新读取
+        </button>
+      </div>
+    );
+  }
+
+  if (campaign.isLoading || !campaign.board) {
+    return <CloudStatus message="正在展开危机营业公告板" />;
+  }
+
   const board = campaign.board;
   const roleLabel =
     board.viewer.role === "gm"
-      ? "GM"
+      ? "GM / 值班店长"
       : board.viewer.role === "player"
-        ? "玩家"
+        ? board.viewer.jobTitle
         : "观察者";
 
   return (
@@ -174,7 +333,7 @@ export function App() {
         onToggleChecklist={(id) =>
           void campaign
             .toggleChecklist(id)
-            .then(() => showToast("检查项已更新"))
+            .then(() => showToast("防御检查已更新"))
         }
         onComposeQuest={(event) =>
           openComposer("quest", null, event.currentTarget)
@@ -198,9 +357,44 @@ export function App() {
 
       <div className="shop-status" aria-label="战役状态">
         <span className="status-dot" />
-        <span>
-          {board.campaign.name} · {roleLabel}
+        <span className="shop-status-name">
+          {board.campaign.name} · {board.viewer.displayName} · {roleLabel}
         </span>
+        <span className="shop-room-code">
+          {demo ? "演示班次" : "班次码 " + board.campaign.joinCode}
+        </span>
+        {!demo && (
+          <button
+            type="button"
+            onClick={() =>
+              void navigator.clipboard
+                .writeText(board.campaign.joinCode)
+                .then(() => showToast("班次码已复制"))
+            }
+            aria-label="复制班次码"
+            title="复制班次码"
+          >
+            <Copy aria-hidden="true" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setHandbookOpen(true)}
+          aria-label="打开员工手册"
+          title="员工手册"
+        >
+          <BookOpen aria-hidden="true" />
+        </button>
+        {onExit && (
+          <button
+            type="button"
+            onClick={() => void onExit()}
+            aria-label="退出本次值班"
+            title="退出"
+          >
+            <LogOut aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       <FocusDock active={focusZone} onChange={setFocusZone} />
@@ -211,22 +405,27 @@ export function App() {
         onClose={closeComposer}
         onSaveQuest={async (draft, id) => {
           await campaign.saveQuest(draft, id);
-          showToast(id ? "任务已更新" : "任务已发布");
+          showToast(id ? "任务已更新" : "任务已张贴");
         }}
         onSaveNote={async (draft, id) => {
           await campaign.saveNote(draft, id);
-          showToast(id ? "留言已更新" : "留言已贴上公告板");
+          showToast(id ? "工作记录已更新" : "工作记录已贴上公告板");
         }}
         onDelete={async (target) => {
           if (target.kind === "quest") {
             await campaign.deleteQuest(target.id);
-            showToast("任务已删除");
+            showToast("任务已撤下");
           } else {
             await campaign.deleteNote(target.id);
-            showToast("留言已取下");
+            showToast("工作记录已取下");
           }
           closeComposer();
         }}
+      />
+
+      <HandbookDialog
+        open={handbookOpen}
+        onClose={() => setHandbookOpen(false)}
       />
 
       <div

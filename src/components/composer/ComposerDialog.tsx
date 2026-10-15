@@ -138,11 +138,11 @@ export function ComposerDialog({
 
   const heading = state.target
     ? kind === "quest"
-      ? "编辑任务"
-      : "编辑留言"
+      ? "编辑工作指示"
+      : "编辑工作记录"
     : kind === "quest"
-      ? "发布一项任务"
-      : "写一张留言";
+      ? "发布一项工作指示"
+      : "填写工作记录";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -191,7 +191,7 @@ export function ComposerDialog({
       >
         <header className="composer-header">
           <div>
-            <span className="composer-kicker">发布到战役公告板</span>
+            <span className="composer-kicker">张贴到危机营业公告板</span>
             <h1 id="composerTitle">{heading}</h1>
           </div>
           <button
@@ -215,7 +215,7 @@ export function ComposerDialog({
               onClick={() => setKind("note")}
             >
               <MessageSquare aria-hidden="true" />
-              留言
+              工作记录
             </button>
             <button
               className={kind === "quest" ? "is-active" : ""}
@@ -225,7 +225,7 @@ export function ComposerDialog({
               onClick={() => setKind("quest")}
             >
               <ClipboardList aria-hidden="true" />
-              任务
+              工作指示
             </button>
           </div>
         )}
