@@ -77,16 +77,17 @@ expiresIn = 2592000
 enabled = true
 
 [auth.method.emailPasswordless]
-enabled = true
+enabled = false
 
 [auth.method.otp]
 [auth.method.otp.email]
 enabled = false
 
 [auth.method.emailPassword]
-hibpEnabled = true
-emailVerificationRequired = true
-passwordMinLength = 12
+enabled = true
+hibpEnabled = false
+emailVerificationRequired = false
+passwordMinLength = 8
 
 [auth.method.smsPasswordless]
 enabled = false

@@ -17,13 +17,11 @@ import {
 import { HandbookDialog } from "../components/handbook/HandbookDialog";
 import { AccessPortal } from "../features/access/components/AccessPortal";
 import {
-  clearMagicLinkCallback,
-  completeGmMagicLink,
   createCampaign,
   getActiveCampaign,
-  hasMagicLinkCallback,
   joinCampaign,
-  sendGmMagicLink,
+  registerGm,
+  signInGm,
   signOut,
 } from "../features/access/data/nhostCampaignAccess";
 import { useNhostSession } from "../features/access/hooks/useNhostSession";
@@ -45,8 +43,6 @@ const closedComposer: ComposerState = {
   sourceRect: null,
 };
 
-type VerificationState = "idle" | "verifying" | "failed";
-
 export function App() {
   if (!isNhostConfigured) {
     return <CampaignBoardWorkspace campaignId={defaultBoard.campaign.id} demo />;
@@ -57,38 +53,11 @@ export function App() {
 function CloudCampaignApp() {
   const queryClient = useQueryClient();
   const session = useNhostSession();
-  const [verificationState, setVerificationState] =
-    useState<VerificationState>(() =>
-      hasMagicLinkCallback() ? "verifying" : "idle",
-    );
-  const [verificationError, setVerificationError] = useState("");
-
-  useEffect(() => {
-    if (!hasMagicLinkCallback()) return;
-    let active = true;
-    void completeGmMagicLink()
-      .then(() => {
-        if (!active) return;
-        clearMagicLinkCallback();
-        setVerificationState("idle");
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        clearMagicLinkCallback();
-        setVerificationError(
-          error instanceof Error ? error.message : "值班身份核验失败。",
-        );
-        setVerificationState("failed");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const accessQuery = useQuery({
     queryKey: ["active-campaign", session?.user?.id ?? "signed-out"],
     queryFn: getActiveCampaign,
-    enabled: Boolean(session?.user) && verificationState === "idle",
+    enabled: Boolean(session?.user),
     staleTime: 5_000,
     retry: 1,
   });
@@ -103,12 +72,7 @@ function CloudCampaignApp() {
     queryClient.removeQueries({ queryKey: ["campaign-board"] });
   };
 
-  if (
-    session?.user &&
-    !session.user.isAnonymous &&
-    accessQuery.isLoading &&
-    verificationState === "idle"
-  ) {
+  if (session?.user && !session.user.isAnonymous && accessQuery.isLoading) {
     return <CloudStatus message="正在核对本次排班" />;
   }
 
@@ -124,12 +88,15 @@ function CloudCampaignApp() {
   return (
     <AccessPortal
       session={session}
-      verificationState={verificationState}
-      verificationError={
-        verificationError ||
-        (accessQuery.error instanceof Error ? accessQuery.error.message : "")
+      accessError={
+        accessQuery.error instanceof Error ? accessQuery.error.message : ""
       }
-      onSendMagicLink={sendGmMagicLink}
+      onSignInGm={async (input) => {
+        await signInGm(input);
+      }}
+      onRegisterGm={async (input) => {
+        await registerGm(input);
+      }}
       onSignOut={handleSignOut}
       onCreateCampaign={async (name, characterName) => {
         await createCampaign({ name, characterName });

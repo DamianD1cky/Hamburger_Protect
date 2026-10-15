@@ -1,8 +1,14 @@
-import { generatePKCEPair } from "@nhost/nhost-js/auth";
 import { nhost } from "../../../lib/nhost/client";
 import type { CampaignRole, EmployeePosition } from "../../campaign/domain/types";
 
-const PKCE_VERIFIER_KEY = "hamburger-protect-gm-pkce-verifier";
+/**
+ * Nhost 的邮箱密码认证需要一个邮箱作为账号标识，但店长不需要看到这一层。
+ * 账号名统一映射到合成地址，密码哈希、会话签发与刷新仍由 Nhost 托管。
+ */
+const GM_ACCOUNT_DOMAIN = "gm.local";
+
+export const GM_USERNAME_PATTERN = /^[a-z0-9_-]{3,20}$/;
+export const GM_PASSWORD_MIN_LENGTH = 8;
 
 export interface ActiveCampaignAccess {
   campaignId: string;
@@ -45,16 +51,39 @@ async function request<T>(
   return response.body.data;
 }
 
+export function normalizeGmUsername(username: string) {
+  return username.trim().toLowerCase();
+}
+
+function usernameToEmail(username: string) {
+  return normalizeGmUsername(username) + "@" + GM_ACCOUNT_DOMAIN;
+}
+
 export function getAccessErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("PKCE")) return message;
-  if (message.includes("already exists") || message.includes("Uniqueness")) {
-    return "你已经参加了一个仍在营业的战役，不能重复入店。";
+  const normalized = message.toLowerCase();
+  if (normalized.includes("already exists") || normalized.includes("uniqueness")) {
+    return "该账号名已被占用，请换一个或直接登录。";
   }
-  if (message.includes("rate") || message.includes("429")) {
+  if (
+    normalized.includes("invalid email or password") ||
+    normalized.includes("incorrect password")
+  ) {
+    return "账号或密码不正确。";
+  }
+  if (normalized.includes("user not found")) {
+    return "没有找到这个店长账号，请先注册。";
+  }
+  if (normalized.includes("password") && normalized.includes("short")) {
+    return "密码至少需要 " + GM_PASSWORD_MIN_LENGTH + " 位。";
+  }
+  if (normalized.includes("rate") || normalized.includes("429")) {
     return "请求过于频繁，请稍后再试。";
   }
-  return "操作未完成。请检查房间码或网络后重试。";
+  if (normalized.includes("unverified") || normalized.includes("not verified")) {
+    return "账号尚未激活，请联系总部处理。";
+  }
+  return "操作未完成。请检查账号信息或网络后重试。";
 }
 
 export async function getActiveCampaign(): Promise<ActiveCampaignAccess | null> {
@@ -85,50 +114,35 @@ export async function getActiveCampaign(): Promise<ActiveCampaignAccess | null> 
   };
 }
 
-export async function sendGmMagicLink(email: string, displayName: string) {
+export async function registerGm(input: {
+  username: string;
+  password: string;
+  displayName: string;
+}) {
   const client = requireClient();
-  const { verifier, challenge } = await generatePKCEPair();
-  localStorage.setItem(PKCE_VERIFIER_KEY, verifier);
-  const redirectTo = new URL(window.location.pathname, window.location.origin);
-  redirectTo.searchParams.set("auth", "verify");
-  await client.auth.signInPasswordlessEmail({
-    email: email.trim(),
-    codeChallenge: challenge,
+  const response = await client.auth.signUpEmailPassword({
+    email: usernameToEmail(input.username),
+    password: input.password,
     options: {
-      displayName: displayName.trim() || "值班店长",
+      displayName: input.displayName.trim() || "值班店长",
+      locale: "zh",
       defaultRole: "user",
       allowedRoles: ["user"],
-      locale: "zh",
-      redirectTo: redirectTo.toString(),
+      metadata: { gmUsername: normalizeGmUsername(input.username) },
     },
   });
+  if (!response.body.session) throw new Error("注册未返回会话");
+  return response.body.session;
 }
 
-export function hasMagicLinkCallback() {
-  return new URLSearchParams(window.location.search).has("code");
-}
-
-export async function completeGmMagicLink() {
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get("code");
-  if (!code) return null;
-  const verifier = localStorage.getItem(PKCE_VERIFIER_KEY);
-  if (!verifier) {
-    throw new Error("PKCE 验证信息不存在，请在发起登录的同一浏览器重新获取链接。");
-  }
-  try {
-    const response = await requireClient().auth.tokenExchange({
-      code,
-      codeVerifier: verifier,
-    });
-    return response.body.session ?? null;
-  } finally {
-    localStorage.removeItem(PKCE_VERIFIER_KEY);
-  }
-}
-
-export function clearMagicLinkCallback() {
-  window.history.replaceState({}, "", window.location.pathname);
+export async function signInGm(input: { username: string; password: string }) {
+  const client = requireClient();
+  const response = await client.auth.signInEmailPassword({
+    email: usernameToEmail(input.username),
+    password: input.password,
+  });
+  if (!response.body.session) throw new Error("登录未返回会话");
+  return response.body.session;
 }
 
 export async function createCampaign(input: {

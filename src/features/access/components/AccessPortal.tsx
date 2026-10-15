@@ -4,15 +4,18 @@ import {
   BadgeCheck,
   ChefHat,
   KeyRound,
-  Mail,
   ShieldAlert,
   Store,
+  UserPlus,
   UserRound,
   Wrench,
 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { EmployeePosition } from "../../campaign/domain/types";
-import { getAccessErrorMessage } from "../data/nhostCampaignAccess";
+import {
+  getAccessErrorMessage,
+  GM_PASSWORD_MIN_LENGTH,
+} from "../data/nhostCampaignAccess";
 
 const employeePositions: Array<{
   value: Exclude<EmployeePosition, "店长">;
@@ -25,13 +28,17 @@ const employeePositions: Array<{
 ];
 
 type PortalMode = "employee" | "gm";
-type VerificationState = "idle" | "verifying" | "failed";
+type GmMode = "signin" | "signup";
 
 interface AccessPortalProps {
   session: StoredSession | null;
-  verificationState: VerificationState;
-  verificationError: string;
-  onSendMagicLink: (email: string, displayName: string) => Promise<void>;
+  accessError: string;
+  onSignInGm: (input: { username: string; password: string }) => Promise<void>;
+  onRegisterGm: (input: {
+    username: string;
+    password: string;
+    displayName: string;
+  }) => Promise<void>;
   onCreateCampaign: (name: string, characterName: string) => Promise<void>;
   onSignOut: () => Promise<void>;
   onJoinCampaign: (input: {
@@ -43,17 +50,19 @@ interface AccessPortalProps {
 
 export function AccessPortal({
   session,
-  verificationState,
-  verificationError,
-  onSendMagicLink,
+  accessError,
+  onSignInGm,
+  onRegisterGm,
   onCreateCampaign,
   onSignOut,
   onJoinCampaign,
 }: AccessPortalProps) {
   const regularUser = Boolean(session?.user && !session.user.isAnonymous);
   const [mode, setMode] = useState<PortalMode>(regularUser ? "gm" : "employee");
-  const [email, setEmail] = useState(session?.user?.email ?? "");
-  const [gmName, setGmName] = useState(session?.user?.displayName ?? "");
+  const [gmMode, setGmMode] = useState<GmMode>("signin");
+  const [gmUsername, setGmUsername] = useState("");
+  const [gmPassword, setGmPassword] = useState("");
+  const [gmName, setGmName] = useState("");
   const [campaignName, setCampaignName] = useState("汉○王夜班危机营业");
   const [characterName, setCharacterName] = useState(
     session?.user?.displayName ?? "",
@@ -72,13 +81,18 @@ export function AccessPortal({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [mailSent, setMailSent] = useState(false);
+
+  useEffect(() => {
+    if (!regularUser) return;
+    setGmName(
+      (current) => current || session?.user?.displayName || "",
+    );
+  }, [regularUser, session?.user?.displayName]);
 
   const view = useMemo(() => {
-    if (verificationState !== "idle") return "verification";
     if (regularUser) return "create";
     return mode;
-  }, [mode, regularUser, verificationState]);
+  }, [mode, regularUser]);
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
@@ -92,11 +106,18 @@ export function AccessPortal({
     }
   };
 
-  const submitMagicLink = (event: FormEvent) => {
+  const submitGm = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      await onSendMagicLink(email, gmName);
-      setMailSent(true);
+      if (gmMode === "signup") {
+        await onRegisterGm({
+          username: gmUsername,
+          password: gmPassword,
+          displayName: gmName,
+        });
+      } else {
+        await onSignInGm({ username: gmUsername, password: gmPassword });
+      }
     });
   };
 
@@ -141,17 +162,17 @@ export function AccessPortal({
               <h2>
                 {view === "create"
                   ? "建立本次夜班"
-                  : view === "verification"
-                    ? "核验值班身份"
-                    : view === "gm"
-                      ? "值班身份认证"
-                      : "员工报到单"}
+                  : view === "gm"
+                    ? gmMode === "signup"
+                      ? "登记店长账号"
+                      : "店长账号登录"
+                    : "员工报到单"}
               </h2>
             </div>
             <span className="manual-file-number">BK-ZM-09</span>
           </div>
 
-          {!regularUser && verificationState === "idle" && (
+          {!regularUser && (
             <div className="access-tabs" role="tablist" aria-label="报到身份">
               <button
                 type="button"
@@ -174,27 +195,6 @@ export function AccessPortal({
                 GM / 店长
               </button>
             </div>
-          )}
-
-          {view === "verification" && (
-            <section className="verification-state" aria-live="polite">
-              {verificationState === "verifying" ? (
-                <>
-                  <span className="verification-spinner" aria-hidden="true" />
-                  <h3>正在核对总部值班记录</h3>
-                  <p>通信线路仍然正常。至少目前如此。</p>
-                </>
-              ) : (
-                <>
-                  <ShieldAlert aria-hidden="true" />
-                  <h3>值班身份核验失败</h3>
-                  <p>{verificationError}</p>
-                  <button type="button" onClick={() => window.location.assign(window.location.pathname)}>
-                    重新签到
-                  </button>
-                </>
-              )}
-            </section>
           )}
 
           {view === "employee" && (
@@ -254,41 +254,91 @@ export function AccessPortal({
           )}
 
           {view === "gm" && (
-            <form className="access-form" onSubmit={submitMagicLink}>
+            <form className="access-form" onSubmit={submitGm}>
               <label>
-                <span>值班店长姓名</span>
+                <span>店长账号名</span>
                 <input
                   required
-                  maxLength={32}
-                  value={gmName}
-                  onChange={(event) => setGmName(event.target.value)}
-                  placeholder="例：周店长"
-                  autoComplete="name"
+                  minLength={3}
+                  maxLength={20}
+                  pattern="[a-z0-9_-]{3,20}"
+                  value={gmUsername}
+                  onChange={(event) =>
+                    setGmUsername(
+                      event.target.value.toLowerCase().replace(/\s+/g, ""),
+                    )
+                  }
+                  placeholder="manager_zhou"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
                 />
+                <small className="access-field-hint">
+                  3–20 位小写字母、数字、下划线或短横线
+                </small>
               </label>
-              <label>
-                <span>公司邮箱</span>
-                <div className="access-input-icon">
-                  <Mail aria-hidden="true" />
+
+              {gmMode === "signup" && (
+                <label>
+                  <span>店长称呼</span>
                   <input
                     required
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="manager@example.com"
-                    autoComplete="email"
+                    maxLength={32}
+                    value={gmName}
+                    onChange={(event) => setGmName(event.target.value)}
+                    placeholder="例：临时代理店长老周"
+                    autoComplete="name"
+                  />
+                </label>
+              )}
+
+              <label>
+                <span>密码</span>
+                <div className="access-input-icon">
+                  <KeyRound aria-hidden="true" />
+                  <input
+                    required
+                    type="password"
+                    minLength={GM_PASSWORD_MIN_LENGTH}
+                    maxLength={50}
+                    value={gmPassword}
+                    onChange={(event) => setGmPassword(event.target.value)}
+                    placeholder={"至少 " + GM_PASSWORD_MIN_LENGTH + " 位"}
+                    autoComplete={
+                      gmMode === "signup" ? "new-password" : "current-password"
+                    }
                   />
                 </div>
               </label>
-              <button className="access-submit" type="submit" disabled={busy || mailSent}>
-                {mailSent ? "值班链接已发送" : busy ? "正在联系总部" : "发送值班登录链接"}
-                {mailSent ? <BadgeCheck aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
+
+              <button className="access-submit" type="submit" disabled={busy}>
+                {busy
+                  ? gmMode === "signup"
+                    ? "正在登记总部档案"
+                    : "正在核对店长身份"
+                  : gmMode === "signup"
+                    ? "注册并开始值班"
+                    : "进入店长后台"}
+                {!busy &&
+                  (gmMode === "signup" ? (
+                    <UserPlus aria-hidden="true" />
+                  ) : (
+                    <ArrowRight aria-hidden="true" />
+                  ))}
               </button>
-              {mailSent && (
-                <p className="form-notice">
-                  请在当前浏览器打开邮件中的链接。授权码将在 5 分钟后失效。
-                </p>
-              )}
+
+              <button
+                className="access-switch"
+                type="button"
+                onClick={() => {
+                  setGmMode(gmMode === "signup" ? "signin" : "signup");
+                  setError("");
+                }}
+              >
+                {gmMode === "signup"
+                  ? "已有店长账号？改为登录"
+                  : "还没有店长账号？立即注册"}
+              </button>
             </form>
           )}
 
@@ -296,7 +346,7 @@ export function AccessPortal({
             <form className="access-form" onSubmit={submitCampaign}>
               <div className="manager-confirmed">
                 <BadgeCheck aria-hidden="true" />
-                <span>总部已确认：{session?.user?.email}</span>
+                <span>总部已确认店长身份：{session?.user?.displayName}</span>
               </div>
               <label>
                 <span>本次战役 / 夜班名称</span>
@@ -327,20 +377,17 @@ export function AccessPortal({
             </form>
           )}
 
-          {(error || (verificationState === "failed" && verificationError)) &&
-            view !== "verification" && (
-              <p className="access-error" role="alert">
-                {error || verificationError}
-              </p>
-            )}
-
-          {view !== "verification" && (
-            <footer className="manual-rules">
-              <span><ChefHat aria-hidden="true" />没有任务时，制作汉堡</span>
-              <span><Wrench aria-hidden="true" />设施用途不限于标签</span>
-              <span><ShieldAlert aria-hidden="true" />异常顾客不办会员</span>
-            </footer>
+          {(error || accessError) && (
+            <p className="access-error" role="alert">
+              {error || accessError}
+            </p>
           )}
+
+          <footer className="manual-rules">
+            <span><ChefHat aria-hidden="true" />没有任务时，制作汉堡</span>
+            <span><Wrench aria-hidden="true" />设施用途不限于标签</span>
+            <span><ShieldAlert aria-hidden="true" />异常顾客不办会员</span>
+          </footer>
         </div>
       </main>
     </div>

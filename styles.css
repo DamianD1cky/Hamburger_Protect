@@ -1685,7 +1685,15 @@ button {
     opacity: 0.72;
 }
 
-.access-signout {
+.access-form label > small {
+    color: #7e756a;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.access-signout,
+.access-switch {
     justify-self: center;
     padding: 4px 8px;
     border: 0;
@@ -1696,7 +1704,10 @@ button {
     cursor: pointer;
 }
 
-.form-notice,
+.access-switch:hover {
+    color: #a8141c;
+}
+
 .access-error {
     margin: 0;
     padding: 9px 11px;
