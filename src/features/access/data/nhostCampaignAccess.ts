@@ -39,6 +39,22 @@ function requireClient() {
   return nhost;
 }
 
+/**
+ * Hasura 会把函数里 raise exception 的文案藏在 extensions 中，只把
+ * 「database query error」当作 errors[].message 返回，这里把两层都取出，
+ * 交给 getAccessErrorMessage 做中文映射。
+ */
+function graphqlErrorText(error: unknown) {
+  if (!error || typeof error !== "object") return String(error);
+  const { message, extensions } = error as {
+    message?: string;
+    extensions?: unknown;
+  };
+  return [message ?? "", extensions ? JSON.stringify(extensions) : ""]
+    .filter(Boolean)
+    .join(" ");
+}
+
 async function request<T>(
   query: string,
   variables?: Record<string, unknown>,
@@ -47,6 +63,9 @@ async function request<T>(
     query,
     variables,
   });
+  if (response.body.errors?.length) {
+    throw new Error(response.body.errors.map(graphqlErrorText).join("; "));
+  }
   if (!response.body.data) throw new Error("云端没有返回数据");
   return response.body.data;
 }
@@ -59,31 +78,45 @@ function usernameToEmail(username: string) {
   return normalizeGmUsername(username) + "@" + GM_ACCOUNT_DOMAIN;
 }
 
+/**
+ * Nhost 同时给出人类可读消息和连字符错误码，两者都参与匹配，
+ * 避免只依赖某一种文案格式而失效。
+ */
+function describeError(error: unknown) {
+  const parts: string[] = [];
+  if (error instanceof Error) parts.push(error.message);
+  else parts.push(String(error));
+  const body = (error as { body?: unknown } | null)?.body;
+  if (body && typeof body === "object") {
+    parts.push(JSON.stringify(body));
+  } else if (typeof body === "string") {
+    parts.push(body);
+  }
+  return parts.join(" ").toLowerCase();
+}
+
+const accessErrorMessages: Array<[string[], string]> = [
+  [["one_active_campaign_per_player"], "你已经参加了一个仍在营业的战役，不能重复入店。"],
+  [["campaign_not_found"], "班次码无效，或该战役已经打烊。"],
+  [["invalid_character_name"], "角色名需要 1–40 个字符。"],
+  [["user-already-exists", "already exists", "uniqueness"], "该账号名已被占用，请换一个或直接登录。"],
+  [["invalid-email-password", "invalid email or password", "incorrect password"], "账号或密码不正确。"],
+  [["password-too-short"], "密码至少需要 " + GM_PASSWORD_MIN_LENGTH + " 位。"],
+  [["disabled-endpoint", "signup-disabled"], "该入口已被总部关闭。"],
+  [["unverified-user", "unverified"], "账号尚未激活，请联系总部处理。"],
+  [["role-not-allowed", "disabled-user"], "该账号没有值班权限。"],
+  [["gm_account_required"], "只有店长账号可以创建战役。"],
+  [["gm_job_title_required", "invalid_job_title"], "岗位不符合员工手册规定。"],
+  [["auth_required"], "会话已失效，请重新签到。"],
+  [["rate", "429"], "请求过于频繁，请稍后再试。"],
+];
+
 export function getAccessErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  const normalized = message.toLowerCase();
-  if (normalized.includes("already exists") || normalized.includes("uniqueness")) {
-    return "该账号名已被占用，请换一个或直接登录。";
-  }
-  if (
-    normalized.includes("invalid email or password") ||
-    normalized.includes("incorrect password")
-  ) {
-    return "账号或密码不正确。";
-  }
-  if (normalized.includes("user not found")) {
-    return "没有找到这个店长账号，请先注册。";
-  }
-  if (normalized.includes("password") && normalized.includes("short")) {
-    return "密码至少需要 " + GM_PASSWORD_MIN_LENGTH + " 位。";
-  }
-  if (normalized.includes("rate") || normalized.includes("429")) {
-    return "请求过于频繁，请稍后再试。";
-  }
-  if (normalized.includes("unverified") || normalized.includes("not verified")) {
-    return "账号尚未激活，请联系总部处理。";
-  }
-  return "操作未完成。请检查账号信息或网络后重试。";
+  const normalized = describeError(error);
+  const matched = accessErrorMessages.find(([needles]) =>
+    needles.some((needle) => normalized.includes(needle)),
+  );
+  return matched ? matched[1] : "操作未完成。请检查账号信息或网络后重试。";
 }
 
 export async function getActiveCampaign(): Promise<ActiveCampaignAccess | null> {
@@ -145,11 +178,16 @@ export async function signInGm(input: { username: string; password: string }) {
   return response.body.session;
 }
 
+/**
+ * 与仓储层的 callFunction 保持一致：只确认函数成功执行，不读取返回行。
+ * 本实例下返回复合类型的函数调用固定回传 null，真正的结果状态由调用方的
+ * 战役查询负责确认。
+ */
 export async function createCampaign(input: {
   name: string;
   characterName: string;
 }) {
-  const data = await request<{ create_campaign: { id: string } }>(
+  await request(
     `mutation CreateCampaign($args: create_campaign_args!) {
       create_campaign(args: $args) { id }
     }`,
@@ -161,7 +199,6 @@ export async function createCampaign(input: {
       },
     },
   );
-  return data.create_campaign.id;
 }
 
 export async function joinCampaign(input: {
@@ -183,9 +220,9 @@ export async function joinCampaign(input: {
   if (!session?.user?.isAnonymous) {
     throw new Error("玩家入口需要匿名员工会话，请先退出店长账号。");
   }
-  const data = await request<{ join_campaign: { campaign_id: string } }>(
+  const { join_campaign: status } = await request<{ join_campaign: string }>(
     `mutation JoinCampaign($args: join_campaign_args!) {
-      join_campaign(args: $args) { campaign_id }
+      join_campaign(args: $args)
     }`,
     {
       args: {
@@ -195,7 +232,7 @@ export async function joinCampaign(input: {
       },
     },
   );
-  return data.join_campaign.campaign_id;
+  if (status !== "OK") throw new Error(status);
 }
 
 export async function signOut() {

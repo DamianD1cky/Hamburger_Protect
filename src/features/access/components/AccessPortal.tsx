@@ -100,6 +100,7 @@ export function AccessPortal({
     try {
       await operation();
     } catch (operationError) {
+      console.error("[access]", operationError);
       setError(getAccessErrorMessage(operationError));
     } finally {
       setBusy(false);

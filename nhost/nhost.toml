@@ -84,7 +84,6 @@ enabled = false
 enabled = false
 
 [auth.method.emailPassword]
-enabled = true
 hibpEnabled = false
 emailVerificationRequired = false
 passwordMinLength = 8
