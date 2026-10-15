@@ -2,14 +2,37 @@ table:
   name: campaign_members
   schema: public
 object_relationships:
-  - name: campaign
-    using:
-      foreign_key_constraint_on: campaign_id
+- name: campaign
+  using:
+    foreign_key_constraint_on: campaign_id
 select_permissions:
-  - role: user
-    permission:
-      columns: [campaign_id, user_id, role, character_name, active, joined_at, left_at]
-      filter:
-        campaign:
-          members:
-            user_id: { _eq: X-Hasura-User-Id }
+- role: user
+  permission:
+    columns:
+    - campaign_id
+    - user_id
+    - role
+    - character_name
+    - active
+    - joined_at
+    - left_at
+    filter:
+      campaign:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
+- role: anonymous
+  permission:
+    columns:
+    - campaign_id
+    - user_id
+    - role
+    - character_name
+    - active
+    - joined_at
+    - left_at
+    filter:
+      campaign:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id

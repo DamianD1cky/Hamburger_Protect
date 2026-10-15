@@ -2,54 +2,172 @@ table:
   name: notes
   schema: public
 object_relationships:
-  - name: campaign
-    using:
-      foreign_key_constraint_on: campaign_id
+- name: campaign
+  using:
+    foreign_key_constraint_on: campaign_id
 insert_permissions:
-  - role: user
-    permission:
-      check:
-        campaign:
-          _and:
-            - status: { _eq: active }
-            - members:
-                user_id: { _eq: X-Hasura-User-Id }
-      set:
-        author_id: X-Hasura-User-Id
-      columns: [campaign_id, title, body, color, x, y, rotation]
+- role: user
+  permission:
+    check:
+      campaign:
+        _and:
+        - status:
+            _eq: active
+        - members:
+            user_id:
+              _eq: X-Hasura-User-Id
+    set:
+      author_id: X-Hasura-User-Id
+    columns:
+    - campaign_id
+    - title
+    - body
+    - color
+    - x
+    - y
+    - rotation
+- role: anonymous
+  permission:
+    check:
+      campaign:
+        _and:
+        - status:
+            _eq: active
+        - members:
+            user_id:
+              _eq: X-Hasura-User-Id
+    set:
+      author_id: X-Hasura-User-Id
+    columns:
+    - campaign_id
+    - title
+    - body
+    - color
+    - x
+    - y
+    - rotation
 select_permissions:
-  - role: user
-    permission:
-      columns: [id, campaign_id, author_id, title, body, color, x, y, rotation, created_at, updated_at]
-      filter:
-        campaign:
-          members:
-            user_id: { _eq: X-Hasura-User-Id }
+- role: user
+  permission:
+    columns:
+    - id
+    - campaign_id
+    - author_id
+    - title
+    - body
+    - color
+    - x
+    - y
+    - rotation
+    - created_at
+    - updated_at
+    filter:
+      campaign:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
+- role: anonymous
+  permission:
+    columns:
+    - id
+    - campaign_id
+    - author_id
+    - title
+    - body
+    - color
+    - x
+    - y
+    - rotation
+    - created_at
+    - updated_at
+    filter:
+      campaign:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
 update_permissions:
-  - role: user
-    permission:
-      columns: [title, body, color, x, y, rotation]
-      filter:
-        _and:
-          - campaign: { status: { _eq: active } }
-          - _or:
-              - author_id: { _eq: X-Hasura-User-Id }
-              - campaign:
-                  members:
-                    _and:
-                      - user_id: { _eq: X-Hasura-User-Id }
-                      - role: { _eq: gm }
-      check: null
+- role: user
+  permission:
+    columns:
+    - title
+    - body
+    - color
+    - x
+    - y
+    - rotation
+    filter:
+      _and:
+      - campaign:
+          status:
+            _eq: active
+      - _or:
+        - author_id:
+            _eq: X-Hasura-User-Id
+        - campaign:
+            members:
+              _and:
+              - user_id:
+                  _eq: X-Hasura-User-Id
+              - role:
+                  _eq: gm
+    check:
+- role: anonymous
+  permission:
+    columns:
+    - title
+    - body
+    - color
+    - x
+    - y
+    - rotation
+    filter:
+      _and:
+      - campaign:
+          status:
+            _eq: active
+      - _or:
+        - author_id:
+            _eq: X-Hasura-User-Id
+        - campaign:
+            members:
+              _and:
+              - user_id:
+                  _eq: X-Hasura-User-Id
+              - role:
+                  _eq: gm
+    check:
 delete_permissions:
-  - role: user
-    permission:
-      filter:
-        _and:
-          - campaign: { status: { _eq: active } }
-          - _or:
-              - author_id: { _eq: X-Hasura-User-Id }
-              - campaign:
-                  members:
-                    _and:
-                      - user_id: { _eq: X-Hasura-User-Id }
-                      - role: { _eq: gm }
+- role: user
+  permission:
+    filter:
+      _and:
+      - campaign:
+          status:
+            _eq: active
+      - _or:
+        - author_id:
+            _eq: X-Hasura-User-Id
+        - campaign:
+            members:
+              _and:
+              - user_id:
+                  _eq: X-Hasura-User-Id
+              - role:
+                  _eq: gm
+- role: anonymous
+  permission:
+    filter:
+      _and:
+      - campaign:
+          status:
+            _eq: active
+      - _or:
+        - author_id:
+            _eq: X-Hasura-User-Id
+        - campaign:
+            members:
+              _and:
+              - user_id:
+                  _eq: X-Hasura-User-Id
+              - role:
+                  _eq: gm

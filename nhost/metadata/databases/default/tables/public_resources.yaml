@@ -2,50 +2,148 @@ table:
   name: resources
   schema: public
 object_relationships:
-  - name: campaign
-    using:
-      foreign_key_constraint_on: campaign_id
+- name: campaign
+  using:
+    foreign_key_constraint_on: campaign_id
 insert_permissions:
-  - role: user
-    permission:
-      check:
-        campaign:
-          _and:
-            - status: { _eq: active }
-            - members:
-                _and:
-                  - user_id: { _eq: X-Hasura-User-Id }
-                  - role: { _eq: gm }
-      columns: [campaign_id, name, quantity, status, group_index, sort_order]
+- role: user
+  permission:
+    check:
+      campaign:
+        _and:
+        - status:
+            _eq: active
+        - members:
+            _and:
+            - user_id:
+                _eq: X-Hasura-User-Id
+            - role:
+                _eq: gm
+    columns:
+    - campaign_id
+    - name
+    - quantity
+    - status
+    - group_index
+    - sort_order
+- role: anonymous
+  permission:
+    check:
+      campaign:
+        _and:
+        - status:
+            _eq: active
+        - members:
+            _and:
+            - user_id:
+                _eq: X-Hasura-User-Id
+            - role:
+                _eq: gm
+    columns:
+    - campaign_id
+    - name
+    - quantity
+    - status
+    - group_index
+    - sort_order
 select_permissions:
-  - role: user
-    permission:
-      columns: [id, campaign_id, name, quantity, status, group_index, sort_order, updated_at]
-      filter:
-        campaign:
-          members:
-            user_id: { _eq: X-Hasura-User-Id }
+- role: user
+  permission:
+    columns:
+    - id
+    - campaign_id
+    - name
+    - quantity
+    - status
+    - group_index
+    - sort_order
+    - updated_at
+    filter:
+      campaign:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
+- role: anonymous
+  permission:
+    columns:
+    - id
+    - campaign_id
+    - name
+    - quantity
+    - status
+    - group_index
+    - sort_order
+    - updated_at
+    filter:
+      campaign:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
 update_permissions:
-  - role: user
-    permission:
-      columns: [name, quantity, status, group_index, sort_order]
-      filter:
-        campaign:
-          _and:
-            - status: { _eq: active }
-            - members:
-                _and:
-                  - user_id: { _eq: X-Hasura-User-Id }
-                  - role: { _eq: gm }
-      check: null
+- role: user
+  permission:
+    columns:
+    - name
+    - quantity
+    - status
+    - group_index
+    - sort_order
+    filter:
+      campaign:
+        _and:
+        - status:
+            _eq: active
+        - members:
+            _and:
+            - user_id:
+                _eq: X-Hasura-User-Id
+            - role:
+                _eq: gm
+    check:
+- role: anonymous
+  permission:
+    columns:
+    - name
+    - quantity
+    - status
+    - group_index
+    - sort_order
+    filter:
+      campaign:
+        _and:
+        - status:
+            _eq: active
+        - members:
+            _and:
+            - user_id:
+                _eq: X-Hasura-User-Id
+            - role:
+                _eq: gm
+    check:
 delete_permissions:
-  - role: user
-    permission:
-      filter:
-        campaign:
-          _and:
-            - status: { _eq: active }
-            - members:
-                _and:
-                  - user_id: { _eq: X-Hasura-User-Id }
-                  - role: { _eq: gm }
+- role: user
+  permission:
+    filter:
+      campaign:
+        _and:
+        - status:
+            _eq: active
+        - members:
+            _and:
+            - user_id:
+                _eq: X-Hasura-User-Id
+            - role:
+                _eq: gm
+- role: anonymous
+  permission:
+    filter:
+      campaign:
+        _and:
+        - status:
+            _eq: active
+        - members:
+            _and:
+            - user_id:
+                _eq: X-Hasura-User-Id
+            - role:
+                _eq: gm

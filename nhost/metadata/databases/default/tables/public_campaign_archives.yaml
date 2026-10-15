@@ -2,14 +2,31 @@ table:
   name: campaign_archives
   schema: public
 object_relationships:
-  - name: campaign
-    using:
-      foreign_key_constraint_on: campaign_id
+- name: campaign
+  using:
+    foreign_key_constraint_on: campaign_id
 select_permissions:
-  - role: user
-    permission:
-      columns: [campaign_id, snapshot, archived_by, archived_at]
-      filter:
-        campaign:
-          members:
-            user_id: { _eq: X-Hasura-User-Id }
+- role: user
+  permission:
+    columns:
+    - campaign_id
+    - snapshot
+    - archived_by
+    - archived_at
+    filter:
+      campaign:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
+- role: anonymous
+  permission:
+    columns:
+    - campaign_id
+    - snapshot
+    - archived_by
+    - archived_at
+    filter:
+      campaign:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
