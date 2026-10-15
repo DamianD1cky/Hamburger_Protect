@@ -98,7 +98,6 @@ function describeError(error: unknown) {
 const accessErrorMessages: Array<[string[], string]> = [
   [["one_active_campaign_per_player"], "你已经参加了一个仍在营业的战役，不能重复入店。"],
   [["campaign_not_found"], "班次码无效，或该战役已经打烊。"],
-  [["invalid_character_name"], "角色名需要 1–40 个字符。"],
   [["user-already-exists", "already exists", "uniqueness"], "该账号名已被占用，请换一个或直接登录。"],
   [["invalid-email-password", "invalid email or password", "incorrect password"], "账号或密码不正确。"],
   [["password-too-short"], "密码至少需要 " + GM_PASSWORD_MIN_LENGTH + " 位。"],
@@ -220,19 +219,33 @@ export async function joinCampaign(input: {
   if (!session?.user?.isAnonymous) {
     throw new Error("玩家入口需要匿名员工会话，请先退出店长账号。");
   }
-  const { join_campaign: status } = await request<{ join_campaign: string }>(
-    `mutation JoinCampaign($args: join_campaign_args!) {
-      join_campaign(args: $args)
-    }`,
-    {
-      args: {
-        p_join_code: input.joinCode.trim().toUpperCase(),
-        p_character_name: input.characterName.trim(),
-        p_job_title: input.jobTitle,
+  // 玩家一次只能参加一个仍在营业的战役。先自查一次，避免把 Hasura 折叠后的
+  // 错误笼统显示成班次码问题。
+  if (await getActiveCampaign()) {
+    throw new Error("ONE_ACTIVE_CAMPAIGN_PER_PLAYER");
+  }
+  try {
+    await request(
+      `mutation JoinCampaign($args: join_campaign_args!) {
+        join_campaign(args: $args) { campaign_id }
+      }`,
+      {
+        args: {
+          p_join_code: input.joinCode.trim().toUpperCase(),
+          p_character_name: input.characterName.trim(),
+          p_job_title: input.jobTitle,
+        },
       },
-    },
-  );
-  if (status !== "OK") throw new Error(status);
+    );
+  } catch (error) {
+    // 本实例下函数返回行固定回传 null，函数只能靠异常报错，而 Hasura 会把
+    // 函数内的 raise 折叠成 database query error。重复入店已在上面排除，
+    // 因此这里剩下的可能只有班次码查无此局。
+    if (describeError(error).includes("database query error")) {
+      throw new Error("CAMPAIGN_NOT_FOUND");
+    }
+    throw error;
+  }
 }
 
 export async function signOut() {
