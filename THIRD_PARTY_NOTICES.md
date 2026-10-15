@@ -19,3 +19,14 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 Source: <https://github.com/lucide-icons/lucide>
+
+## LXGW WenKai
+
+This project uses LXGW WenKai (霞鹜文楷), served as a split webfont by ZSFT.
+
+Copyright 2021-2026 LXGW and the Klee Project Authors.
+Licensed under the SIL Open Font License, Version 1.1.
+
+Source: <https://github.com/lxgw/LxgwWenkai>
+Webfont: <https://fonts.zeoseven.com/items/292/>
+License: <https://openfontlicense.org/open-font-license-official-text/>

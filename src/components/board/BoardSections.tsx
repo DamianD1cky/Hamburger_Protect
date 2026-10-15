@@ -216,14 +216,7 @@ export function ShiftSection({
 }: {
   members: CampaignBoard["members"];
 }) {
-  const rows = members
-    .filter((member) => member.active)
-    .map((member) => [
-      member.jobTitle,
-      member.characterName,
-      member.role === "gm" ? "值班店长" : "临时员工",
-      "在岗",
-    ]);
+  const activeMembers = members.filter((member) => member.active);
   return (
     <section className="board-section shift-section" data-section="shifts">
       <div className="sign sign-blue">危机排班</div>
@@ -238,13 +231,21 @@ export function ShiftSection({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
-              <tr key={index}>
-                {row.map((cell) => (
-                  <td key={cell}>{cell}</td>
-                ))}
-              </tr>
-            ))}
+            {activeMembers.map((member) => {
+              const cells = [
+                member.jobTitle,
+                member.characterName,
+                member.role === "gm" ? "值班店长" : "临时员工",
+                "在岗",
+              ];
+              return (
+                <tr key={member.userId}>
+                  {cells.map((cell, columnIndex) => (
+                    <td key={columnIndex}>{cell}</td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </article>

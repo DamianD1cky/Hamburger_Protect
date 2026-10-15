@@ -1,20 +1,19 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, Copy, LogOut, RefreshCw } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
   useState,
   type MouseEvent,
 } from "react";
-import { BoardScene } from "../components/board/BoardScene";
 import { FocusDock } from "../components/board/FocusDock";
-import {
-  ComposerDialog,
-  type ComposeKind,
-  type ComposerState,
+import type {
+  ComposeKind,
+  ComposerState,
 } from "../components/composer/ComposerDialog";
-import { HandbookDialog } from "../components/handbook/HandbookDialog";
 import { AccessPortal } from "../features/access/components/AccessPortal";
 import {
   createCampaign,
@@ -35,6 +34,22 @@ import type {
 import { useCampaignBoard } from "../features/campaign/hooks/useCampaignBoard";
 import { useBoardViewport } from "../hooks/useBoardViewport";
 import { isNhostConfigured } from "../lib/nhost/client";
+
+const BoardScene = lazy(() =>
+  import("../components/board/BoardScene").then((module) => ({
+    default: module.BoardScene,
+  })),
+);
+const ComposerDialog = lazy(() =>
+  import("../components/composer/ComposerDialog").then((module) => ({
+    default: module.ComposerDialog,
+  })),
+);
+const HandbookDialog = lazy(() =>
+  import("../components/handbook/HandbookDialog").then((module) => ({
+    default: module.HandbookDialog,
+  })),
+);
 
 const closedComposer: ComposerState = {
   open: false,
@@ -288,39 +303,41 @@ function CampaignBoardWorkspace({
   return (
     <>
       <div className="backdrop" aria-hidden="true" />
-      <BoardScene
-        board={board}
-        worldRef={worldRef}
-        viewScaleRef={viewScaleRef}
-        onCycleResource={(id) =>
-          void campaign
-            .cycleResource(id)
-            .then(() => showToast("物资状态已更新"))
-        }
-        onToggleChecklist={(id) =>
-          void campaign
-            .toggleChecklist(id)
-            .then(() => showToast("防御检查已更新"))
-        }
-        onComposeQuest={(event) =>
-          openComposer("quest", null, event.currentTarget)
-        }
-        onComposeNote={(event) =>
-          openComposer("note", null, event.currentTarget)
-        }
-        onEditQuest={(quest, event) =>
-          openComposer(
-            "quest",
-            { kind: "quest", id: quest.id },
-            event.currentTarget,
-          )
-        }
-        onEditNote={(note, element) =>
-          openComposer("note", { kind: "note", id: note.id }, element)
-        }
-        onTransitionQuest={transitionQuest}
-        onMoveNote={campaign.moveNote}
-      />
+      <Suspense fallback={<CloudStatus message="正在展开危机营业公告板" />}>
+        <BoardScene
+          board={board}
+          worldRef={worldRef}
+          viewScaleRef={viewScaleRef}
+          onCycleResource={(id) =>
+            void campaign
+              .cycleResource(id)
+              .then(() => showToast("物资状态已更新"))
+          }
+          onToggleChecklist={(id) =>
+            void campaign
+              .toggleChecklist(id)
+              .then(() => showToast("防御检查已更新"))
+          }
+          onComposeQuest={(event) =>
+            openComposer("quest", null, event.currentTarget)
+          }
+          onComposeNote={(event) =>
+            openComposer("note", null, event.currentTarget)
+          }
+          onEditQuest={(quest, event) =>
+            openComposer(
+              "quest",
+              { kind: "quest", id: quest.id },
+              event.currentTarget,
+            )
+          }
+          onEditNote={(note, element) =>
+            openComposer("note", { kind: "note", id: note.id }, element)
+          }
+          onTransitionQuest={transitionQuest}
+          onMoveNote={campaign.moveNote}
+        />
+      </Suspense>
 
       <div className="shop-status" aria-label="战役状态">
         <span className="status-dot" />
@@ -366,34 +383,36 @@ function CampaignBoardWorkspace({
 
       <FocusDock active={focusZone} onChange={setFocusZone} />
 
-      <ComposerDialog
-        state={composer}
-        board={board}
-        onClose={closeComposer}
-        onSaveQuest={async (draft, id) => {
-          await campaign.saveQuest(draft, id);
-          showToast(id ? "任务已更新" : "任务已张贴");
-        }}
-        onSaveNote={async (draft, id) => {
-          await campaign.saveNote(draft, id);
-          showToast(id ? "工作记录已更新" : "工作记录已贴上公告板");
-        }}
-        onDelete={async (target) => {
-          if (target.kind === "quest") {
-            await campaign.deleteQuest(target.id);
-            showToast("任务已撤下");
-          } else {
-            await campaign.deleteNote(target.id);
-            showToast("工作记录已取下");
-          }
-          closeComposer();
-        }}
-      />
+      <Suspense fallback={null}>
+        <ComposerDialog
+          state={composer}
+          board={board}
+          onClose={closeComposer}
+          onSaveQuest={async (draft, id) => {
+            await campaign.saveQuest(draft, id);
+            showToast(id ? "任务已更新" : "任务已张贴");
+          }}
+          onSaveNote={async (draft, id) => {
+            await campaign.saveNote(draft, id);
+            showToast(id ? "工作记录已更新" : "工作记录已贴上公告板");
+          }}
+          onDelete={async (target) => {
+            if (target.kind === "quest") {
+              await campaign.deleteQuest(target.id);
+              showToast("任务已撤下");
+            } else {
+              await campaign.deleteNote(target.id);
+              showToast("工作记录已取下");
+            }
+            closeComposer();
+          }}
+        />
 
-      <HandbookDialog
-        open={handbookOpen}
-        onClose={() => setHandbookOpen(false)}
-      />
+        <HandbookDialog
+          open={handbookOpen}
+          onClose={() => setHandbookOpen(false)}
+        />
+      </Suspense>
 
       <div
         className={"toast " + (toast ? "is-visible" : "")}

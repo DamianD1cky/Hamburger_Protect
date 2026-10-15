@@ -6,8 +6,9 @@
     --green: #12963e;
     --blue: #0860b2;
     --paper: #f4f3e7;
-    --ui-font: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    --hand-font: "Kaiti SC", "STKaiti", "KaiTi", "Xingkai SC", serif;
+    --app-font: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", serif;
+    --ui-font: var(--app-font);
+    --hand-font: var(--app-font);
 }
 
 * {
@@ -33,6 +34,7 @@ body {
 
 button,
 input,
+select,
 textarea {
     font: inherit;
 }
@@ -67,7 +69,12 @@ button {
 }
 
 .viewport {
+    width: 100vw;
+    height: 100vh;
+    width: 100dvw;
+    height: 100dvh;
     overflow: hidden;
+    overscroll-behavior: none;
     touch-action: none;
 }
 
@@ -1392,7 +1399,7 @@ button {
 
 .access-scene {
     z-index: -3;
-    background: #171717 url("assets/scene.webp") center / cover no-repeat;
+    background: #171717 url("assets/scene-blur.jpg") center / cover no-repeat;
     transform: scale(1.02);
     animation: access-scene-in 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -1551,7 +1558,7 @@ button {
     padding: 5px 7px;
     border: 2px solid #9c312d;
     color: #9c312d;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--app-font);
     font-size: 11px;
     font-weight: 800;
     transform: rotate(2deg);
@@ -1645,7 +1652,7 @@ button {
 }
 
 .join-code-input {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--app-font);
     font-size: 24px;
     font-weight: 800;
     text-transform: uppercase;
@@ -1865,7 +1872,7 @@ button {
     padding-left: 9px;
     border-left: 1px solid rgba(255, 255, 255, 0.25);
     color: #f4d92c;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--app-font);
     font-size: 12px;
     white-space: nowrap;
 }
@@ -1992,7 +1999,7 @@ button {
 
 .rule-number {
     color: #a4312d;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--app-font);
     font-size: 12px;
     font-weight: 800;
 }

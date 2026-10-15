@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
-import type { MouseEvent, RefObject } from "react";
+import type { MouseEvent, Ref, RefObject } from "react";
+import sceneCompactUrl from "../../../assets/scene-blur.jpg";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
 import stickerTopRight from "../../../assets/stickers/tr.webp";
@@ -24,7 +25,7 @@ import { NoteCard } from "./NoteCard";
 
 interface BoardSceneProps {
   board: CampaignBoard;
-  worldRef: RefObject<HTMLDivElement | null>;
+  worldRef: Ref<HTMLDivElement>;
   viewScaleRef: RefObject<number>;
   onCycleResource: (id: string) => void;
   onToggleChecklist: (id: string) => void;
@@ -61,15 +62,20 @@ export function BoardScene({
   return (
     <div className="viewport">
       <div className="world" ref={worldRef}>
-        <img
-          className="scene"
-          src={sceneUrl}
-          width="2496"
-          height="1664"
-          alt=""
-          aria-hidden="true"
-          draggable={false}
-        />
+        <picture>
+          <source media="(max-width: 760px)" srcSet={sceneCompactUrl} />
+          <img
+            className="scene"
+            src={sceneUrl}
+            width="2496"
+            height="1664"
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            decoding="async"
+            fetchPriority="high"
+          />
+        </picture>
 
         <main className="board" aria-label={board.campaign.name + "战役公告板"}>
           <InventorySection
