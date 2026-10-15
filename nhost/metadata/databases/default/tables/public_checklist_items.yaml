@@ -24,24 +24,6 @@ insert_permissions:
     - label
     - completed
     - sort_order
-- role: anonymous
-  permission:
-    check:
-      campaign:
-        _and:
-        - status:
-            _eq: active
-        - members:
-            _and:
-            - user_id:
-                _eq: X-Hasura-User-Id
-            - role:
-                _eq: gm
-    columns:
-    - campaign_id
-    - label
-    - completed
-    - sort_order
 select_permissions:
 - role: user
   permission:
@@ -90,39 +72,8 @@ update_permissions:
             - role:
                 _eq: gm
     check:
-- role: anonymous
-  permission:
-    columns:
-    - label
-    - completed
-    - sort_order
-    filter:
-      campaign:
-        _and:
-        - status:
-            _eq: active
-        - members:
-            _and:
-            - user_id:
-                _eq: X-Hasura-User-Id
-            - role:
-                _eq: gm
-    check:
 delete_permissions:
 - role: user
-  permission:
-    filter:
-      campaign:
-        _and:
-        - status:
-            _eq: active
-        - members:
-            _and:
-            - user_id:
-                _eq: X-Hasura-User-Id
-            - role:
-                _eq: gm
-- role: anonymous
   permission:
     filter:
       campaign:
