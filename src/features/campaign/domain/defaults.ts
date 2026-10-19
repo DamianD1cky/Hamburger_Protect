@@ -28,6 +28,8 @@ export const defaultBoard: CampaignBoard = {
   checklist: [],
   quests: [],
   notes: [],
+  activities: [],
+  hasMoreActivity: false,
 };
 
 export function cloneDefaultBoard(): CampaignBoard {

@@ -67,6 +67,12 @@ const ResourceSheetDialog = lazy(() =>
     default: module.ResourceSheetDialog,
   })),
 );
+const ActivityDialog = lazy(() =>
+  import("../components/board/ActivityDialog").then((module) => ({
+    default: module.ActivityDialog,
+  })),
+);
+
 const NotesDialog = lazy(() =>
   import("../components/board/NotesDialog").then((module) => ({
     default: module.NotesDialog,
@@ -182,6 +188,7 @@ function CampaignBoardWorkspace({
   const [boardEditor, setBoardEditor] = useState<BoardEditorKind | null>(null);
   const [resourceSheet, setResourceSheet] = useState<number | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [handbookOpen, setHandbookOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -347,6 +354,7 @@ function CampaignBoardWorkspace({
           onManageIndex={() => setBoardEditor("index")}
           onExpandRoster={() => setRosterOpen(true)}
           onOpenNotes={() => setNotesOpen(true)}
+          onOpenActivity={() => setActivityOpen(true)}
           onToggleChecklist={(id) =>
             void campaign
               .toggleChecklist(id)
@@ -461,6 +469,13 @@ function CampaignBoardWorkspace({
             onClose={() => setResourceSheet(null)}
             onSave={campaign.saveResource}
             onDelete={campaign.deleteResource}
+          />
+        )}
+        {activityOpen && (
+          <ActivityDialog
+            board={board}
+            onClose={() => setActivityOpen(false)}
+            loadPage={campaign.getActivities}
           />
         )}
         {notesOpen && (

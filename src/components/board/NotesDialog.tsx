@@ -24,12 +24,12 @@ export function NotesDialog({
       new Date(right.createdAt).valueOf() - new Date(left.createdAt).valueOf(),
   );
   return (
-    <PaperDialog title={`全部工作记录 · ${notes.length} 条`} onClose={onClose}>
+    <PaperDialog title={`全部便签 · ${notes.length} 条`} onClose={onClose}>
       <p className="editor-help">
         按发布时间从新到旧排列。公告板上的便签可以重叠，这里始终保留完整目录。
       </p>
       <div className="note-directory">
-        {!notes.length && <p className="editor-help">暂无工作记录。</p>}
+        {!notes.length && <p className="editor-help">暂无便签。</p>}
         {notes.map((note) => (
           <article
             className="note-detail"
@@ -53,7 +53,7 @@ export function NotesDialog({
                     className="text-button"
                     onClick={(event) => onEdit(note, event.currentTarget)}
                   >
-                    编辑记录
+                    编辑便签
                   </button>
                 )}
             </footer>
@@ -66,7 +66,7 @@ export function NotesDialog({
           type="button"
           onClick={onAdd}
         >
-          填写工作记录
+          填写便签
         </button>
       )}
     </PaperDialog>

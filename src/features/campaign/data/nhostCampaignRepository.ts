@@ -2,6 +2,7 @@ import { nhost } from "../../../lib/nhost/client";
 import type { CampaignRepository } from "../domain/repository";
 import type {
   CampaignBoard,
+  BoardActivity,
   ResourceDraft,
   ChecklistDraft,
   NoteColor,
@@ -57,12 +58,44 @@ interface RemoteBoard {
   }>;
 }
 
+interface RemoteActivity {
+  id: string;
+  actor_id: string | null;
+  event_type: string;
+  entity_type: string;
+  entity_id: string | null;
+  payload: BoardActivity["payload"];
+  created_at: string;
+}
+
+const ACTIVITY_FIELDS =
+  "id actor_id event_type entity_type entity_id payload created_at";
+const ACTIVITY_PAGE_SIZE = 30;
+
+function activityPage(rows: RemoteActivity[]) {
+  return {
+    items: rows.slice(0, ACTIVITY_PAGE_SIZE).map((row): BoardActivity => ({
+      id: String(row.id),
+      actorId: row.actor_id,
+      actorName: row.payload.actor_name ?? null,
+      eventType: row.event_type,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      payload: row.payload,
+      createdAt: row.created_at,
+    })),
+    hasMore: rows.length > ACTIVITY_PAGE_SIZE,
+  };
+}
+
 interface ActiveCampaignResponse {
   campaign_members: Array<{ campaign: RemoteBoard }>;
+  event_log: RemoteActivity[];
 }
 
 const ACTIVE_BOARD_QUERY = `
   query ActiveCampaignBoard($userId: uuid!, $campaignId: uuid!) {
+    event_log(where: {campaign_id: {_eq: $campaignId}}, order_by: {id: desc}, limit: 31) { ${ACTIVITY_FIELDS} }
     campaign_members(where: { campaign_id: { _eq: $campaignId }, user_id: { _eq: $userId }, active: { _eq: true } }, limit: 1) {
       campaign {
         id
@@ -131,7 +164,7 @@ function dueTimestamp(value: string) {
   return date.toISOString();
 }
 
-function toBoard(remote: RemoteBoard): CampaignBoard {
+function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
   const session = requireSession();
   const user = session.user!;
   const viewer = remote.members.find((member) => member.user_id === user.id);
@@ -180,6 +213,8 @@ function toBoard(remote: RemoteBoard): CampaignBoard {
       createdBy: quest.created_by,
       pendingSubmissionId: quest.submissions[0]?.id,
     })),
+    activities: activityPage(events).items,
+    hasMoreActivity: activityPage(events).hasMore,
     notes: remote.notes.map((note) => ({
       id: note.id,
       title: note.title,
@@ -217,7 +252,17 @@ class NhostCampaignRepository implements CampaignRepository {
     const remote = data.campaign_members[0]?.campaign;
     if (!remote)
       throw new Error("No active campaign found for the current user");
-    return toBoard(remote);
+    return toBoard(remote, data.event_log);
+  }
+
+  async getActivities(campaignId: string, beforeId?: string) {
+    const data = await request<{ event_log: RemoteActivity[] }>(
+      `query Activity($campaignId: uuid!, $before: bigint_comparison_exp!) {
+        event_log(where: {campaign_id: {_eq: $campaignId}, id: $before}, order_by: {id: desc}, limit: 31) { ${ACTIVITY_FIELDS} }
+      }`,
+      { campaignId, before: beforeId ? { _lt: beforeId } : {} },
+    );
+    return activityPage(data.event_log);
   }
 
   async saveResource(campaignId: string, draft: ResourceDraft, id?: string) {

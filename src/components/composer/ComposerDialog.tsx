@@ -68,14 +68,14 @@ export function ComposerDialog({
   const heading = !canEdit
     ? kind === "quest"
       ? "工作指示详情"
-      : "工作记录详情"
+      : "便签详情"
     : state.target
       ? kind === "quest"
         ? "编辑工作指示"
-        : "编辑工作记录"
+        : "编辑便签"
       : kind === "quest"
         ? "发布工作指示"
-        : "填写工作记录";
+        : "填写便签";
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting || !canEdit || !title.trim() || !body.trim()) return;
@@ -158,7 +158,7 @@ export function ComposerDialog({
                 onClick={() => setKind("note")}
               >
                 <MessageSquare />
-                工作记录
+                便签
               </button>
               <button
                 type="button"

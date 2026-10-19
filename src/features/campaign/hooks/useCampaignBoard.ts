@@ -50,6 +50,7 @@ export function useCampaignBoard(
     refetch: query.refetch,
     dataSource: cloudEnabled ? ("nhost" as const) : ("local" as const),
     isLoading: query.isLoading,
+    getActivities: (beforeId?: string) => repository.getActivities(campaignId, beforeId),
     saveResource: (draft: ResourceDraft, id?: string) =>
       commit(() => repository.saveResource(campaignId, draft, id)),
     deleteResource: (id: string) =>

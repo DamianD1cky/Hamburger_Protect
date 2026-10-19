@@ -1,5 +1,6 @@
 import type {
   CampaignBoard,
+  ActivityPage,
   ResourceDraft,
   ChecklistDraft,
   NoteDraft,
@@ -9,6 +10,7 @@ import type {
 
 export interface CampaignRepository {
   getBoard(campaignId: string): Promise<CampaignBoard>;
+  getActivities(campaignId: string, beforeId?: string): Promise<ActivityPage>;
   saveResource(
     campaignId: string,
     draft: ResourceDraft,

@@ -455,12 +455,14 @@ button {
 .task-papers {
     display: grid;
     height: 440px;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 34px;
     margin-top: 18px;
 }
 
 .task-paper {
+    height: 440px;
+    min-height: 0;
     min-width: 0;
     overflow: hidden;
     transform: rotate(-0.5deg);
@@ -2301,7 +2303,7 @@ button {
 .inventory-status { font-size: 18px; }
 .task-title { white-space: normal; overflow-wrap: anywhere; font-size: 26px; }
 .task-excerpt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; font-size: 20px; line-height: 1.4; color: #635e52; margin-top: 7px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.task-meta { white-space: normal; line-height: 1.4; margin-top: 8px; }
+.task-meta { overflow-wrap: anywhere; white-space: normal; line-height: 1.4; margin-top: 8px; }
 .task-content { padding: 10px 2px; }
 .task-item { align-items: start; }
 .task-check { margin-top: 14px; }
@@ -2401,7 +2403,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     border: 0;
     border-radius: 28px;
   }
-  .board .board-section { position: absolute; width: auto; min-width: initial; animation: none; }
+  .board .board-section { position: absolute; min-width: 0; animation: none; }
   .inventory-section { left: 42px; top: 48px; width: 410px; height: 750px; }
   .task-section { left: 490px; top: 48px; width: 565px; height: 525px; }
   .shift-section { left: 1080px; top: 50px; width: 340px; height: 290px; }
@@ -2411,7 +2413,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .board .sign { width: max-content; min-width: 285px; min-height: 60px; margin-bottom: 0; padding: 7px 24px; font-size: 38px; white-space: nowrap; box-shadow: 7px 8px 0 rgba(0,0,0,.38); }
   .inventory-section .sign { width: max-content; font-size: 31px; }
   .safety-section .sign { width: max-content; font-size: 32px; }
-  .task-papers { display: grid; height: 440px; grid-template-columns: 1fr 1fr; gap: 34px; margin-top: 18px; }
+  .task-papers { display: grid; height: 440px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 34px; margin-top: 18px; }
   .task-paper { transform: rotate(-.5deg); overflow: hidden; }
   .task-paper h2 { height: 72px; padding: 0; font-size: 37px; }
   .task-list { height: calc(100% - 72px); max-height: none; overflow: auto; padding: 12px 10px 18px; }
@@ -2598,3 +2600,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     .note-detail footer { align-items: flex-start; flex-direction: column; }
     .note-detail footer .text-button { width: 100%; }
 }
+
+
+.activity-directory { display: grid; gap: 0; }
+.activity-entry { min-width: 0; padding: 20px 0; border-bottom: 1px dashed #b9b09b; }
+.activity-entry header { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; align-items: baseline; }
+.activity-entry header strong { color: #875319; font-size: 20px; }
+.activity-entry time { font-size: 13px; color: #706858; }
+.activity-entry p { margin: 10px 0; overflow-wrap: anywhere; }
+.activity-entry summary { cursor: pointer; font-size: 14px; color: #645a47; }
+.activity-changes { margin: 14px 0 0; padding: 14px; background: #eee4ce; }
+.activity-changes dt { font-weight: 700; }
+.activity-changes dd { margin: 0 0 16px; }
+.activity-changes p { white-space: pre-wrap; font-size: 15px; line-height: 1.6; }
+.activity-changes b { font-weight: 400; color: #786b54; }

@@ -2,6 +2,7 @@ import { cloneDefaultBoard } from "../domain/defaults";
 import type { CampaignRepository } from "../domain/repository";
 import type {
   CampaignBoard,
+  BoardActivity,
   ResourceDraft,
   ChecklistDraft,
   NoteDraft,
@@ -35,6 +36,8 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
     },
   ];
   board.notes ??= [];
+  board.activities ??= [];
+  board.hasMoreActivity = board.activities.length > 30;
   board.notes.forEach((note) => {
     note.authorName ??=
       board.members.find((member) => member.userId === note.authorId)
@@ -103,6 +106,87 @@ function loadLegacyBoard(): CampaignBoard | null {
   }
 }
 
+// Match the server snapshots; no fabricated history is added to existing demo data.
+function snapshots(board: CampaignBoard) {
+  return [
+    ...board.notes.map(({ id, title, body, color, x, y, rotation }) => ({
+      id,
+      entity: "note",
+      value: { title, body, color, x, y, rotation },
+    })),
+    ...board.quests.map(({ id, title, body, status, assigneeName, due }) => ({
+      id,
+      entity: "quest",
+      value: { title, body, status, assignee_label: assigneeName, due_at: due },
+    })),
+    ...board.resources.map(({ id, name, quantity, status, group }) => ({
+      id,
+      entity: "resource",
+      value: { name, quantity, status, group_index: group },
+    })),
+    ...board.checklist.map(({ id, label, completed }) => ({
+      id,
+      entity: "checklist",
+      value: { label, completed },
+    })),
+    {
+      id: board.campaign.id,
+      entity: "campaign",
+      value: {
+        name: board.campaign.name,
+        burger_index: board.campaign.burgerIndex,
+        status: board.campaign.status,
+      },
+    },
+  ];
+}
+
+function recordChanges(before: CampaignBoard, board: CampaignBoard) {
+  const oldRows = snapshots(before);
+  const newRows = snapshots(board);
+  const keys = new Set(
+    [...oldRows, ...newRows].map((row) => row.entity + ":" + row.id),
+  );
+  for (const key of keys) {
+    const oldRow = oldRows.find((row) => row.entity + ":" + row.id === key);
+    const newRow = newRows.find((row) => row.entity + ":" + row.id === key);
+    if (JSON.stringify(oldRow?.value) === JSON.stringify(newRow?.value))
+      continue;
+    const target = (newRow ?? oldRow)!;
+    const prev: Record<string, unknown> | null = oldRow?.value ?? null;
+    const next: Record<string, unknown> | null = newRow?.value ?? null;
+    let eventType =
+      target.entity + (!prev ? "_created" : !next ? "_deleted" : "_updated");
+    if (prev && next) {
+      if (
+        target.entity === "note" &&
+        ["title", "body", "color"].every((f) => prev[f] === next[f])
+      )
+        eventType = "note_moved";
+      if (target.entity === "quest" && prev.status !== next.status)
+        eventType = "quest_status_changed";
+      if (target.entity === "checklist" && prev.completed !== next.completed)
+        eventType = "checklist_status_changed";
+      if (
+        target.entity === "campaign" &&
+        prev.burger_index !== next.burger_index
+      )
+        eventType = "burger_index_changed";
+    }
+    const event: BoardActivity = {
+      id: String(BigInt(board.activities[0]?.id ?? "0") + 1n),
+      actorId: board.viewer.id,
+      actorName: board.viewer.displayName,
+      entityId: target.id,
+      entityType: target.entity,
+      eventType,
+      payload: { before: prev, after: next },
+      createdAt: new Date().toISOString(),
+    };
+    board.activities.unshift(event);
+  }
+}
+
 class LocalCampaignRepository implements CampaignRepository {
   private read(): CampaignBoard {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -125,13 +209,27 @@ class LocalCampaignRepository implements CampaignRepository {
 
   private mutate(update: (board: CampaignBoard) => void): CampaignBoard {
     const board = this.read();
+    const before = clone(board);
     update(board);
+    recordChanges(before, board);
     this.write(board);
-    return clone(board);
+    board.hasMoreActivity = board.activities.length > 30;
+    const result = clone(board);
+    result.activities = result.activities.slice(0, 30);
+    return result;
   }
 
   async getBoard(_campaignId: string) {
-    return clone(this.read());
+    const board = clone(this.read());
+    board.activities = board.activities.slice(0, 30);
+    return board;
+  }
+
+  async getActivities(_campaignId: string, beforeId?: string) {
+    const rows = this.read().activities.filter(
+      (event) => !beforeId || BigInt(event.id) < BigInt(beforeId),
+    );
+    return { items: clone(rows.slice(0, 30)), hasMore: rows.length > 30 };
   }
 
   private manage(update: (board: CampaignBoard) => void) {

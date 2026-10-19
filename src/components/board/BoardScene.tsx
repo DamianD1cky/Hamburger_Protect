@@ -32,6 +32,7 @@ interface BoardSceneProps {
   onManageChecklist: () => void;
   onManageIndex: () => void;
   onOpenNotes: () => void;
+  onOpenActivity: () => void;
   onExpandRoster: () => void;
   onToggleChecklist: (id: string) => void;
   onComposeQuest: (event: MouseEvent<HTMLElement>) => void;
@@ -54,6 +55,7 @@ export function BoardScene({
   onManageChecklist,
   onManageIndex,
   onOpenNotes,
+  onOpenActivity,
   onExpandRoster,
   onToggleChecklist,
   onComposeQuest,
@@ -109,7 +111,7 @@ export function BoardScene({
             canManage={canManage}
             onManage={onManageIndex}
           />
-          <MemoSection notes={board.notes} onOpen={onOpenNotes} />
+          <MemoSection board={board} onOpen={onOpenActivity} />
           <SafetySection
             checklist={board.checklist}
             canManage={canManage}
@@ -119,7 +121,7 @@ export function BoardScene({
           />
 
           <div className="user-notes" data-section="notes" aria-live="polite">
-            <h2 className="mobile-notes-heading">工作记录</h2>
+            <h2 className="mobile-notes-heading">便签</h2>
             {board.notes.map((note) => (
               <NoteCard
                 key={note.id}
@@ -152,8 +154,8 @@ export function BoardScene({
                 className="pin-add"
                 type="button"
                 onClick={onComposeNote}
-                aria-label="填写工作记录"
-                title="填写工作记录"
+                aria-label="填写便签"
+                title="填写便签"
               >
                 <Plus aria-hidden="true" />
               </button>

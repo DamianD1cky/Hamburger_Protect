@@ -73,6 +73,27 @@ export interface BoardNote {
   authorName: string;
 }
 
+export interface BoardActivity {
+  id: string;
+  actorId: string | null;
+  actorName: string | null;
+  eventType: string;
+  entityType: string;
+  entityId: string | null;
+  payload: {
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+    job_title?: string;
+    actor_name?: string;
+  };
+  createdAt: string;
+}
+
+export interface ActivityPage {
+  items: BoardActivity[];
+  hasMore: boolean;
+}
+
 export interface CampaignBoard {
   campaign: CampaignSummary;
   viewer: Viewer;
@@ -81,6 +102,8 @@ export interface CampaignBoard {
   checklist: ChecklistItem[];
   quests: Quest[];
   notes: BoardNote[];
+  activities: BoardActivity[];
+  hasMoreActivity: boolean;
 }
 
 export type ResourceDraft = Pick<

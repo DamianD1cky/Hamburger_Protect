@@ -1,3 +1,7 @@
+import {
+  activityActor,
+  activitySummary,
+} from "../../features/campaign/domain/activity";
 import { Circle, Plus, RotateCcw, ShieldCheck, Pencil } from "lucide-react";
 import type { MouseEvent } from "react";
 import type {
@@ -312,10 +316,10 @@ export function BurgerIndexSection({
 }
 
 export function MemoSection({
-  notes,
+  board,
   onOpen,
 }: {
-  notes: CampaignBoard["notes"];
+  board: CampaignBoard;
   onOpen: () => void;
 }) {
   return (
@@ -328,12 +332,17 @@ export function MemoSection({
         aria-label="查看全部工作记录"
         aria-haspopup="dialog"
       >
-        <strong>{notes.length} 条记录</strong>
-        {notes.slice(0, 2).map((note) => (
-          <span key={note.id}>{note.title}</span>
+        <strong>
+          {board.activities.length}
+          {board.hasMoreActivity ? "+" : ""} 条操作记录
+        </strong>
+        {board.activities.slice(0, 2).map((event) => (
+          <span key={event.id}>
+            {activityActor(event, board.members)} · {activitySummary(event)}
+          </span>
         ))}
-        {!notes.length && <span>空白记录 · 等待张贴</span>}
-        <small>点开查看与填写 →</small>
+        {!board.activities.length && <span>等待员工更新公告板</span>}
+        <small>点开查看操作流水 →</small>
       </button>
     </section>
   );
