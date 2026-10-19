@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { List, Plus } from "lucide-react";
 import type { MouseEvent, Ref, RefObject } from "react";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
@@ -66,6 +66,8 @@ export function BoardScene({
     board.viewer.role !== "observer" && board.campaign.status === "active";
   const canManage =
     board.viewer.role === "gm" && board.campaign.status === "active";
+  const canUpdateSharedBoard =
+    board.viewer.role !== "observer" && board.campaign.status === "active";
 
   return (
     <div className="viewport">
@@ -87,7 +89,7 @@ export function BoardScene({
         <main className="board" aria-label={board.campaign.name + "战役公告板"}>
           <InventorySection
             resources={board.resources}
-            canManage={canManage}
+            canManage={canUpdateSharedBoard}
             onOpenSheet={onOpenResourceSheet}
           />
           <TaskSection
@@ -108,6 +110,7 @@ export function BoardScene({
           <SafetySection
             checklist={board.checklist}
             canManage={canManage}
+            canToggle={canUpdateSharedBoard}
             onToggle={onToggleChecklist}
             onManage={onManageChecklist}
           />
@@ -130,17 +133,29 @@ export function BoardScene({
             ))}
           </div>
 
-          {canEditNotes && (
+          <div className="pin-actions">
             <button
-              className="pin-add"
+              className="pin-view"
               type="button"
-              onClick={onComposeNote}
-              aria-label="填写工作记录"
-              title="填写工作记录"
+              onClick={onOpenNotes}
+              aria-label={`查看全部便签，共 ${board.notes.length} 条`}
+              title="查看全部便签"
             >
-              <Plus aria-hidden="true" />
+              <List aria-hidden="true" />
+              <span>{board.notes.length}</span>
             </button>
-          )}
+            {canEditNotes && (
+              <button
+                className="pin-add"
+                type="button"
+                onClick={onComposeNote}
+                aria-label="填写工作记录"
+                title="填写工作记录"
+              >
+                <Plus aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </main>
 
         <img

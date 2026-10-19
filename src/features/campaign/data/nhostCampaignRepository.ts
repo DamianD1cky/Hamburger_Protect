@@ -188,8 +188,11 @@ function toBoard(remote: RemoteBoard): CampaignBoard {
       x: note.x,
       y: note.y,
       rotation: note.rotation,
-      createdAt: new Date(note.created_at).toLocaleDateString("zh-CN"),
+      createdAt: note.created_at,
       authorId: note.author_id,
+      authorName:
+        remote.members.find((member) => member.user_id === note.author_id)
+          ?.character_name ?? "未知员工",
     })),
   };
 }

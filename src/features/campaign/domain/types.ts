@@ -70,6 +70,7 @@ export interface BoardNote {
   rotation: number;
   createdAt: string;
   authorId: string;
+  authorName: string;
 }
 
 export interface CampaignBoard {

@@ -125,7 +125,7 @@ button {
 
 .board-section,
 .user-notes,
-.pin-add {
+.pin-actions {
     position: absolute;
     z-index: 2;
 }
@@ -2433,4 +2433,90 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .resource-edit-fields { grid-template-columns: minmax(0,1fr); }
   .resource-read-list li { grid-template-columns: minmax(0,1fr) auto; }
   .resource-read-list li span:first-of-type { grid-column: 1; }
+}
+
+
+/* Shared updates and the non-overlapping work-record directory. */
+.note-meta {
+    display: grid;
+    gap: 2px;
+    margin-top: auto;
+    padding-top: 12px;
+    color: rgba(43, 40, 32, 0.68);
+    font-family: var(--ui-font);
+    font-size: 12px;
+    line-height: 1.35;
+}
+.note-meta span { font-weight: 700; }
+.note-meta time { margin: 0; padding: 0; font-size: inherit; }
+.pin-actions {
+    right: 42px;
+    bottom: 42px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    z-index: 25;
+}
+.pin-actions button {
+    position: relative;
+    display: grid;
+    width: 76px;
+    height: 76px;
+    place-items: center;
+    padding: 0;
+    border: 5px solid #fff7e7;
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(22, 15, 10, 0.82), 8px 10px 0 rgba(0, 0, 0, 0.32);
+    color: #fff;
+    cursor: pointer;
+    transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.pin-actions button:hover { transform: scale(1.08); }
+.pin-actions button:active { transform: scale(.92); }
+.pin-actions svg { width: 34px; height: 34px; stroke-width: 3; }
+.pin-view { background: #0860b2; }
+.pin-add { background: var(--red); }
+.pin-actions .pin-add { right: auto; bottom: auto; }
+.pin-view span {
+    position: absolute;
+    right: -10px;
+    top: -10px;
+    display: grid;
+    min-width: 30px;
+    height: 30px;
+    place-items: center;
+    padding: 0 6px;
+    border: 3px solid #fff7e7;
+    border-radius: 15px;
+    background: #272421;
+    font-family: var(--ui-font);
+    font-size: 14px;
+    font-weight: 700;
+}
+.note-directory { display: grid; gap: 18px; }
+.note-directory .note-detail { margin: 0; }
+.note-detail header,
+.note-detail footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+.note-detail header { padding-bottom: 12px; border-bottom: 1px solid #413a2d33; }
+.note-detail header h2 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.note-detail header span { flex: 0 0 auto; color: #5f574b; font-weight: 700; }
+.note-detail footer { padding-top: 12px; border-top: 1px solid #413a2d33; }
+.note-detail footer time { color: #655d50; font-size: 13px; }
+.note-detail footer .text-button { min-height: 38px; padding: 6px 12px; }
+.notes-add-button { width: 100%; margin-top: 20px; }
+@media (max-width: 1024px) {
+    .pin-actions { right: 42px; bottom: 42px; }
+    .pin-actions .pin-add,
+    .pin-actions .pin-view { position: relative; right: auto; bottom: auto; width: 76px; height: 76px; border-width: 5px; }
+    .pin-actions svg { width: 34px; height: 34px; }
+}
+@media (max-width: 560px) {
+    .note-detail header,
+    .note-detail footer { align-items: flex-start; flex-direction: column; }
+    .note-detail footer .text-button { width: 100%; }
 }

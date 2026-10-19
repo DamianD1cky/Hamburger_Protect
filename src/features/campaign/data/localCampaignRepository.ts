@@ -34,6 +34,12 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
       joinedAt: new Date().toISOString(),
     },
   ];
+  board.notes ??= [];
+  board.notes.forEach((note) => {
+    note.authorName ??=
+      board.members.find((member) => member.userId === note.authorId)
+        ?.characterName ?? "未知员工";
+  });
   return board;
 }
 
@@ -85,8 +91,9 @@ function loadLegacyBoard(): CampaignBoard | null {
         x: Number(note.x ?? 1098),
         y: Number(note.y ?? 605),
         rotation: Number(note.rotation ?? 0),
-        createdAt: String(note.createdAt ?? "今日"),
+        createdAt: String(note.createdAt ?? new Date().toISOString()),
         authorId: board.viewer.id,
+        authorName: board.viewer.displayName,
       }));
     }
 
@@ -136,8 +143,20 @@ class LocalCampaignRepository implements CampaignRepository {
     });
   }
 
+  private updateAsMember(update: (board: CampaignBoard) => void) {
+    return this.mutate((board) => {
+      if (
+        board.viewer.role === "observer" ||
+        board.campaign.status !== "active"
+      ) {
+        throw new Error("仅在岗员工可以修改");
+      }
+      update(board);
+    });
+  }
+
   async saveResource(_campaignId: string, draft: ResourceDraft, id?: string) {
-    return this.manage((board) => {
+    return this.updateAsMember((board) => {
       const item = board.resources.find((entry) => entry.id === id);
       if (id && !item) throw new Error("物资已被移除，请刷新后重试");
       if (item) Object.assign(item, draft);
@@ -146,7 +165,7 @@ class LocalCampaignRepository implements CampaignRepository {
   }
 
   async deleteResource(_campaignId: string, id: string) {
-    return this.manage((board) => {
+    return this.updateAsMember((board) => {
       board.resources = board.resources.filter((item) => item.id !== id);
     });
   }
@@ -184,7 +203,7 @@ class LocalCampaignRepository implements CampaignRepository {
   }
 
   async toggleChecklist(_campaignId: string, itemId: string) {
-    return this.mutate((board) => {
+    return this.updateAsMember((board) => {
       const item = board.checklist.find((candidate) => candidate.id === itemId);
       if (item) item.completed = !item.completed;
     });
@@ -237,8 +256,9 @@ class LocalCampaignRepository implements CampaignRepository {
         x: 1098 + (count % 2) * 36,
         y: 605 + (count % 3) * 168,
         rotation: [-2.4, 1.8, -0.8][count % 3],
-        createdAt: "刚刚",
+        createdAt: new Date().toISOString(),
         authorId: board.viewer.id,
+        authorName: board.viewer.displayName,
       });
     });
   }

@@ -163,7 +163,7 @@ export function ResourceSheetDialog({
   const items = board.resources.filter((item) => item.group === group);
   const sheet = resourceGroups.find((sheet) => sheet.id === group)!;
   const canEdit =
-    board.viewer.role === "gm" && board.campaign.status === "active";
+    board.viewer.role !== "observer" && board.campaign.status === "active";
   const [adding, setAdding] = useState(false);
   const [busyCount, setBusyCount] = useState(0);
   const onBusy = (busy: boolean) =>
@@ -179,8 +179,8 @@ export function ResourceSheetDialog({
       <div className={`resource-sheet-body sheet-${sheet.color}`}>
         <p className="editor-help">
           {canEdit
-            ? "在这张便签上登记名称、数量和状态，修改后保存条目。"
-            : "当前物资清单，由 GM 维护。"}
+            ? "所有在岗员工都可以登记名称、数量和状态，修改后保存条目。"
+            : "当前物资清单为只读。"}
         </p>
         {!items.length && !adding && (
           <p className="sheet-empty">

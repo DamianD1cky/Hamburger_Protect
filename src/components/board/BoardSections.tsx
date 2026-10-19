@@ -342,6 +342,7 @@ export function MemoSection({
 interface SafetySectionProps {
   checklist: CampaignBoard["checklist"];
   canManage: boolean;
+  canToggle: boolean;
   onToggle: (id: string) => void;
   onManage: () => void;
 }
@@ -349,6 +350,7 @@ interface SafetySectionProps {
 export function SafetySection({
   checklist,
   canManage,
+  canToggle,
   onToggle,
   onManage,
 }: SafetySectionProps) {
@@ -379,8 +381,8 @@ export function SafetySection({
               className={"safety-item " + (item.completed ? "is-done" : "")}
               type="button"
               key={item.id}
-              disabled={!canManage}
-              title={canManage ? "切换检查状态" : "仅 GM 可以更新检查项"}
+              disabled={!canToggle}
+              title={canToggle ? "更新检查状态" : "仅在岗员工可以更新检查状态"}
               onClick={() => onToggle(item.id)}
             >
               <span className="safety-box" aria-hidden="true" />

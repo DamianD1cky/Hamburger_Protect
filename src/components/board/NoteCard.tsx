@@ -4,6 +4,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from "react";
+import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
 import type { BoardNote } from "../../features/campaign/domain/types";
 
 const clamp = (value: number, min: number, max: number) =>
@@ -121,7 +122,12 @@ export function NoteCard({
     >
       <h3>{note.title}</h3>
       <p>{note.body}</p>
-      <time>{note.createdAt}</time>
+      <footer className="note-meta">
+        <span>{note.authorName}</span>
+        <time dateTime={note.createdAt}>
+          {formatNoteTimestamp(note.createdAt)}
+        </time>
+      </footer>
     </article>
   );
 }

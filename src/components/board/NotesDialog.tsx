@@ -1,4 +1,5 @@
 import type { MouseEvent } from "react";
+import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
 import type {
   BoardNote,
   CampaignBoard,
@@ -18,28 +19,53 @@ export function NotesDialog({
 }) {
   const canAdd =
     board.viewer.role !== "observer" && board.campaign.status === "active";
+  const notes = [...board.notes].sort(
+    (left, right) =>
+      new Date(right.createdAt).valueOf() - new Date(left.createdAt).valueOf(),
+  );
   return (
-    <PaperDialog title="工作记录" onClose={onClose}>
-      {!board.notes.length && <p className="editor-help">暂无工作记录。</p>}
-      {board.notes.map((note) => (
-        <article className="note-detail" key={note.id} data-color={note.color}>
-          <h2>{note.title}</h2>
-          <p className="detail-body">{note.body}</p>
-          {canAdd &&
-            (board.viewer.role === "gm" ||
-              note.authorId === board.viewer.id) && (
-              <button
-                type="button"
-                className="text-button"
-                onClick={(e) => onEdit(note, e.currentTarget)}
-              >
-                编辑记录
-              </button>
-            )}
-        </article>
-      ))}
+    <PaperDialog title={`全部工作记录 · ${notes.length} 条`} onClose={onClose}>
+      <p className="editor-help">
+        按发布时间从新到旧排列。公告板上的便签可以重叠，这里始终保留完整目录。
+      </p>
+      <div className="note-directory">
+        {!notes.length && <p className="editor-help">暂无工作记录。</p>}
+        {notes.map((note) => (
+          <article
+            className="note-detail"
+            key={note.id}
+            data-color={note.color}
+          >
+            <header>
+              <h2>{note.title}</h2>
+              <span>{note.authorName}</span>
+            </header>
+            <p className="detail-body">{note.body}</p>
+            <footer>
+              <time dateTime={note.createdAt}>
+                {formatNoteTimestamp(note.createdAt)}
+              </time>
+              {canAdd &&
+                (board.viewer.role === "gm" ||
+                  note.authorId === board.viewer.id) && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={(event) => onEdit(note, event.currentTarget)}
+                  >
+                    编辑记录
+                  </button>
+                )}
+            </footer>
+          </article>
+        ))}
+      </div>
       {canAdd && (
-        <button className="publish-button" type="button" onClick={onAdd}>
+        <button
+          className="publish-button notes-add-button"
+          type="button"
+          onClick={onAdd}
+        >
           填写工作记录
         </button>
       )}
