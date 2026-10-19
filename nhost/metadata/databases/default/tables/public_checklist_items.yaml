@@ -19,6 +19,8 @@ insert_permissions:
                 _eq: X-Hasura-User-Id
             - role:
                 _eq: gm
+            - active:
+                _eq: true
     columns:
     - campaign_id
     - label
@@ -71,7 +73,27 @@ update_permissions:
                 _eq: X-Hasura-User-Id
             - role:
                 _eq: gm
-    check:
+            - active:
+                _eq: true
+    check: null
+- role: anonymous
+  permission:
+    columns:
+    - completed
+    filter:
+      campaign:
+        _and:
+        - status:
+            _eq: active
+        - members:
+            _and:
+            - user_id:
+                _eq: X-Hasura-User-Id
+            - role:
+                _eq: player
+            - active:
+                _eq: true
+    check: null
 delete_permissions:
 - role: user
   permission:
@@ -86,3 +108,5 @@ delete_permissions:
                 _eq: X-Hasura-User-Id
             - role:
                 _eq: gm
+            - active:
+                _eq: true
