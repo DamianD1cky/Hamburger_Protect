@@ -5,6 +5,8 @@ import { nhostCampaignRepository } from "../data/nhostCampaignRepository";
 import { cloneDefaultBoard, defaultBoard } from "../domain/defaults";
 import type {
   CampaignBoard,
+  ResourceDraft,
+  ChecklistDraft,
   NoteDraft,
   QuestDraft,
   QuestStatus,
@@ -29,6 +31,8 @@ export function useCampaignBoard(
     queryKey: boardKey,
     queryFn: () => repository.getBoard(requestedCampaignId),
     placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
+    refetchInterval: cloudEnabled ? 5_000 : false,
+    refetchIntervalInBackground: false,
     staleTime: cloudEnabled ? 5_000 : Number.POSITIVE_INFINITY,
   });
   const board = query.data;
@@ -46,6 +50,16 @@ export function useCampaignBoard(
     refetch: query.refetch,
     dataSource: cloudEnabled ? ("nhost" as const) : ("local" as const),
     isLoading: query.isLoading,
+    saveResource: (draft: ResourceDraft, id?: string) =>
+      commit(() => repository.saveResource(campaignId, draft, id)),
+    deleteResource: (id: string) =>
+      commit(() => repository.deleteResource(campaignId, id)),
+    saveChecklistItem: (draft: ChecklistDraft, id?: string) =>
+      commit(() => repository.saveChecklistItem(campaignId, draft, id)),
+    deleteChecklistItem: (id: string) =>
+      commit(() => repository.deleteChecklistItem(campaignId, id)),
+    setBurgerIndex: (value: number) =>
+      commit(() => repository.setBurgerIndex(campaignId, value)),
     cycleResource: (resourceId: string) =>
       commit(() => repository.cycleResource(campaignId, resourceId)),
     toggleChecklist: (itemId: string) =>

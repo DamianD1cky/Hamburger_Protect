@@ -35,7 +35,12 @@ export function NoteCard({
   });
 
   const handlePointerDown = (event: PointerEvent<HTMLElement>) => {
-    if (!canEdit || event.button !== 0) return;
+    if (
+      !canEdit ||
+      event.button !== 0 ||
+      window.matchMedia("(max-width: 1024px)").matches
+    )
+      return;
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -98,6 +103,10 @@ export function NoteCard({
         left: note.x,
         top: note.y,
         transform: "rotate(" + note.rotation + "deg)",
+      }}
+      onClick={(event) => {
+        if (canEdit && window.matchMedia("(max-width: 1024px)").matches)
+          onEdit(note, event.currentTarget);
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

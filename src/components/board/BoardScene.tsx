@@ -1,6 +1,5 @@
 import { Plus } from "lucide-react";
 import type { MouseEvent, Ref, RefObject } from "react";
-import sceneCompactUrl from "../../../assets/scene-blur.jpg";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
 import stickerTopRight from "../../../assets/stickers/tr.webp";
@@ -15,6 +14,7 @@ import type {
   QuestStatus,
 } from "../../features/campaign/domain/types";
 import {
+  BurgerIndexSection,
   InventorySection,
   MemoSection,
   SafetySection,
@@ -28,6 +28,10 @@ interface BoardSceneProps {
   worldRef: Ref<HTMLDivElement>;
   viewScaleRef: RefObject<number>;
   onCycleResource: (id: string) => void;
+  onManageResources: () => void;
+  onManageChecklist: () => void;
+  onManageIndex: () => void;
+  onExpandRoster: () => void;
   onToggleChecklist: (id: string) => void;
   onComposeQuest: (event: MouseEvent<HTMLElement>) => void;
   onComposeNote: (event: MouseEvent<HTMLElement>) => void;
@@ -46,6 +50,10 @@ export function BoardScene({
   worldRef,
   viewScaleRef,
   onCycleResource,
+  onManageResources,
+  onManageChecklist,
+  onManageIndex,
+  onExpandRoster,
   onToggleChecklist,
   onComposeQuest,
   onComposeNote,
@@ -62,8 +70,7 @@ export function BoardScene({
   return (
     <div className="viewport">
       <div className="world" ref={worldRef}>
-        <picture>
-          <source media="(max-width: 760px)" srcSet={sceneCompactUrl} />
+        <picture className="scene-picture">
           <img
             className="scene"
             src={sceneUrl}
@@ -82,6 +89,7 @@ export function BoardScene({
             resources={board.resources}
             canManage={canManage}
             onCycle={onCycleResource}
+            onManage={onManageResources}
           />
           <TaskSection
             quests={board.quests}
@@ -91,15 +99,22 @@ export function BoardScene({
             onEdit={onEditQuest}
             onTransition={onTransitionQuest}
           />
-          <ShiftSection members={board.members} />
+          <ShiftSection members={board.members} onExpand={onExpandRoster} />
+          <BurgerIndexSection
+            value={board.campaign.burgerIndex}
+            canManage={canManage}
+            onManage={onManageIndex}
+          />
           <MemoSection />
           <SafetySection
             checklist={board.checklist}
             canManage={canManage}
             onToggle={onToggleChecklist}
+            onManage={onManageChecklist}
           />
 
-          <div className="user-notes" aria-live="polite">
+          <div className="user-notes" data-section="notes" aria-live="polite">
+            <h2 className="mobile-notes-heading">工作记录</h2>
             {board.notes.map((note) => (
               <NoteCard
                 key={note.id}

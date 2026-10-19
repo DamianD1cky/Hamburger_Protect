@@ -2,6 +2,8 @@ import { cloneDefaultBoard } from "../domain/defaults";
 import type { CampaignRepository } from "../domain/repository";
 import type {
   CampaignBoard,
+  ResourceDraft,
+  ChecklistDraft,
   NoteDraft,
   QuestDraft,
   QuestStatus,
@@ -21,6 +23,7 @@ function uid(prefix: string) {
 }
 
 function normalizeBoard(board: CampaignBoard): CampaignBoard {
+  board.campaign.burgerIndex ??= 5;
   board.viewer.jobTitle ??= board.viewer.role === "gm" ? "店长" : "服务员";
   board.members ??= [
     {
@@ -123,6 +126,62 @@ class LocalCampaignRepository implements CampaignRepository {
 
   async getBoard(_campaignId: string) {
     return clone(this.read());
+  }
+
+  private manage(update: (board: CampaignBoard) => void) {
+    return this.mutate((board) => {
+      if (board.viewer.role !== "gm" || board.campaign.status !== "active") {
+        throw new Error("仅值班 GM 可以修改");
+      }
+      update(board);
+    });
+  }
+
+  async saveResource(_campaignId: string, draft: ResourceDraft, id?: string) {
+    return this.manage((board) => {
+      const item = board.resources.find((entry) => entry.id === id);
+      if (id && !item) throw new Error("物资已被移除，请刷新后重试");
+      if (item) Object.assign(item, draft);
+      else board.resources.push({ id: uid("resource"), ...draft });
+    });
+  }
+
+  async deleteResource(_campaignId: string, id: string) {
+    return this.manage((board) => {
+      board.resources = board.resources.filter((item) => item.id !== id);
+    });
+  }
+
+  async saveChecklistItem(
+    _campaignId: string,
+    draft: ChecklistDraft,
+    id?: string,
+  ) {
+    return this.manage((board) => {
+      const item = board.checklist.find((entry) => entry.id === id);
+      if (id && !item) throw new Error("检查项已被移除，请刷新后重试");
+      if (item) item.label = draft.label;
+      else
+        board.checklist.push({
+          id: uid("check"),
+          label: draft.label,
+          completed: false,
+        });
+    });
+  }
+
+  async deleteChecklistItem(_campaignId: string, id: string) {
+    return this.manage((board) => {
+      board.checklist = board.checklist.filter((item) => item.id !== id);
+    });
+  }
+
+  async setBurgerIndex(_campaignId: string, value: number) {
+    if (!Number.isInteger(value) || value < 1 || value > 9)
+      throw new Error("指数必须在红1到绿3之间");
+    return this.manage((board) => {
+      board.campaign.burgerIndex = value;
+    });
   }
 
   async cycleResource(_campaignId: string, resourceId: string) {

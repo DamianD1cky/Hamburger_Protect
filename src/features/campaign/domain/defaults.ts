@@ -43,6 +43,7 @@ export const defaultBoard: CampaignBoard = {
     id: "demo-campaign",
     name: "汉○王夜班危机营业",
     joinCode: "BURGER",
+    burgerIndex: 5,
     status: "active",
   },
   viewer: {

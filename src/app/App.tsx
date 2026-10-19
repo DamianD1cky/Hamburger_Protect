@@ -9,6 +9,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
+import type { BoardEditorKind } from "../components/board/BoardEditorDialog";
 import { FocusDock } from "../components/board/FocusDock";
 import type {
   ComposeKind,
@@ -51,6 +52,17 @@ const HandbookDialog = lazy(() =>
   })),
 );
 
+const BoardEditorDialog = lazy(() =>
+  import("../components/board/BoardEditorDialog").then((module) => ({
+    default: module.BoardEditorDialog,
+  })),
+);
+const RosterDialog = lazy(() =>
+  import("../components/board/RosterDialog").then((module) => ({
+    default: module.RosterDialog,
+  })),
+);
+
 const closedComposer: ComposerState = {
   open: false,
   kind: "note",
@@ -60,7 +72,9 @@ const closedComposer: ComposerState = {
 
 export function App() {
   if (!isNhostConfigured) {
-    return <CampaignBoardWorkspace campaignId={defaultBoard.campaign.id} demo />;
+    return (
+      <CampaignBoardWorkspace campaignId={defaultBoard.campaign.id} demo />
+    );
   }
   return <CloudCampaignApp />;
 }
@@ -155,6 +169,8 @@ function CampaignBoardWorkspace({
   const { worldRef, viewScaleRef, focusZone, setFocusZone } =
     useBoardViewport();
   const [composer, setComposer] = useState<ComposerState>(closedComposer);
+  const [boardEditor, setBoardEditor] = useState<BoardEditorKind | null>(null);
+  const [rosterOpen, setRosterOpen] = useState(false);
   const [handbookOpen, setHandbookOpen] = useState(false);
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | undefined>(undefined);
@@ -190,9 +206,9 @@ function CampaignBoardWorkspace({
   const transitionQuest = useCallback(
     async (quest: Quest, status: QuestStatus, source: HTMLElement) => {
       const sourceRect = source.getBoundingClientRect();
-      const reduceMotion = window.matchMedia(
-        "(prefers-reduced-motion: reduce)",
-      ).matches;
+      const reduceMotion =
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        window.matchMedia("(max-width: 1024px)").matches;
       const flyer = reduceMotion
         ? null
         : (source.cloneNode(true) as HTMLElement);
@@ -207,7 +223,13 @@ function CampaignBoardWorkspace({
         document.body.appendChild(flyer);
       }
 
-      await campaign.transitionQuest(quest.id, status);
+      try {
+        await campaign.transitionQuest(quest.id, status);
+      } catch {
+        flyer?.remove();
+        showToast("更新失败，请检查任务状态或权限后重试");
+        return;
+      }
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => resolve()),
       );
@@ -274,7 +296,7 @@ function CampaignBoardWorkspace({
     [campaign, showToast],
   );
 
-  if (campaign.error) {
+  if (campaign.error && !campaign.board) {
     return (
       <div className="cloud-status-screen is-error">
         <div className="backdrop" aria-hidden="true" />
@@ -308,15 +330,21 @@ function CampaignBoardWorkspace({
           board={board}
           worldRef={worldRef}
           viewScaleRef={viewScaleRef}
+          onManageResources={() => setBoardEditor("resources")}
+          onManageChecklist={() => setBoardEditor("checklist")}
+          onManageIndex={() => setBoardEditor("index")}
+          onExpandRoster={() => setRosterOpen(true)}
           onCycleResource={(id) =>
             void campaign
               .cycleResource(id)
               .then(() => showToast("物资状态已更新"))
+              .catch(() => showToast("物资更新失败，请重试"))
           }
           onToggleChecklist={(id) =>
             void campaign
               .toggleChecklist(id)
               .then(() => showToast("防御检查已更新"))
+              .catch(() => showToast("检查更新失败，请重试"))
           }
           onComposeQuest={(event) =>
             openComposer("quest", null, event.currentTarget)
@@ -383,35 +411,57 @@ function CampaignBoardWorkspace({
 
       <FocusDock active={focusZone} onChange={setFocusZone} />
 
-      <Suspense fallback={null}>
-        <ComposerDialog
-          state={composer}
-          board={board}
-          onClose={closeComposer}
-          onSaveQuest={async (draft, id) => {
-            await campaign.saveQuest(draft, id);
-            showToast(id ? "任务已更新" : "任务已张贴");
-          }}
-          onSaveNote={async (draft, id) => {
-            await campaign.saveNote(draft, id);
-            showToast(id ? "工作记录已更新" : "工作记录已贴上公告板");
-          }}
-          onDelete={async (target) => {
-            if (target.kind === "quest") {
-              await campaign.deleteQuest(target.id);
-              showToast("任务已撤下");
-            } else {
-              await campaign.deleteNote(target.id);
-              showToast("工作记录已取下");
-            }
-            closeComposer();
-          }}
-        />
+      <Suspense fallback={<CloudStatus message="正在打开详情" />}>
+        {composer.open && (
+          <ComposerDialog
+            state={composer}
+            board={board}
+            onClose={closeComposer}
+            onSaveQuest={async (draft, id) => {
+              await campaign.saveQuest(draft, id);
+              showToast(id ? "任务已更新" : "任务已张贴");
+            }}
+            onSaveNote={async (draft, id) => {
+              await campaign.saveNote(draft, id);
+              showToast(id ? "工作记录已更新" : "工作记录已贴上公告板");
+            }}
+            onDelete={async (target) => {
+              if (target.kind === "quest") {
+                await campaign.deleteQuest(target.id);
+                showToast("任务已撤下");
+              } else {
+                await campaign.deleteNote(target.id);
+                showToast("工作记录已取下");
+              }
+              closeComposer();
+            }}
+          />
+        )}
+        {boardEditor && (
+          <BoardEditorDialog
+            kind={boardEditor}
+            board={board}
+            onClose={() => setBoardEditor(null)}
+            onSaveResource={campaign.saveResource}
+            onDeleteResource={campaign.deleteResource}
+            onSaveChecklist={campaign.saveChecklistItem}
+            onDeleteChecklist={campaign.deleteChecklistItem}
+            onSetIndex={campaign.setBurgerIndex}
+          />
+        )}
+        {rosterOpen && (
+          <RosterDialog
+            members={board.members}
+            onClose={() => setRosterOpen(false)}
+          />
+        )}
 
-        <HandbookDialog
-          open={handbookOpen}
-          onClose={() => setHandbookOpen(false)}
-        />
+        {handbookOpen && (
+          <HandbookDialog
+            open={handbookOpen}
+            onClose={() => setHandbookOpen(false)}
+          />
+        )}
       </Suspense>
 
       <div

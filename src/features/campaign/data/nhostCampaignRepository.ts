@@ -2,6 +2,8 @@ import { nhost } from "../../../lib/nhost/client";
 import type { CampaignRepository } from "../domain/repository";
 import type {
   CampaignBoard,
+  ResourceDraft,
+  ChecklistDraft,
   NoteColor,
   EmployeePosition,
   NoteDraft,
@@ -14,6 +16,7 @@ interface RemoteBoard {
   id: string;
   name: string;
   join_code: string;
+  burger_index: number;
   status: "active" | "archived";
   members: Array<{
     user_id: string;
@@ -59,12 +62,13 @@ interface ActiveCampaignResponse {
 }
 
 const ACTIVE_BOARD_QUERY = `
-  query ActiveCampaignBoard($userId: uuid!) {
-    campaign_members(where: { user_id: { _eq: $userId }, active: { _eq: true } }, limit: 1) {
+  query ActiveCampaignBoard($userId: uuid!, $campaignId: uuid!) {
+    campaign_members(where: { campaign_id: { _eq: $campaignId }, user_id: { _eq: $userId }, active: { _eq: true } }, limit: 1) {
       campaign {
         id
         name
         join_code
+        burger_index
         status
         members(order_by: { joined_at: asc }) { user_id role character_name job_title active joined_at }
         resources(order_by: [{ group_index: asc }, { sort_order: asc }]) { id group_index name quantity status }
@@ -137,6 +141,7 @@ function toBoard(remote: RemoteBoard): CampaignBoard {
       id: remote.id,
       name: remote.name,
       joinCode: remote.join_code,
+      burgerIndex: remote.burger_index,
       status: remote.status,
     },
     viewer: {
@@ -200,15 +205,97 @@ async function callFunction(name: string, args: Record<string, unknown>) {
 }
 
 class NhostCampaignRepository implements CampaignRepository {
-  async getBoard(_campaignId: string) {
+  async getBoard(campaignId: string) {
     const session = requireSession();
     const data = await request<ActiveCampaignResponse>(ACTIVE_BOARD_QUERY, {
       userId: session.user!.id,
+      campaignId,
     });
     const remote = data.campaign_members[0]?.campaign;
     if (!remote)
       throw new Error("No active campaign found for the current user");
     return toBoard(remote);
+  }
+
+  async saveResource(campaignId: string, draft: ResourceDraft, id?: string) {
+    const changes = {
+      name: draft.name,
+      quantity: draft.quantity,
+      status: draft.status,
+      group_index: draft.group,
+    };
+    const data = id
+      ? await request<{ result: { id: string } | null }>(
+          `mutation EditResource($id: uuid!, $changes: resources_set_input!) {
+          result: update_resources_by_pk(pk_columns: {id: $id}, _set: $changes) { id }
+        }`,
+          { id, changes },
+        )
+      : await request<{ result: { id: string } | null }>(
+          `mutation AddResource($item: resources_insert_input!) {
+          result: insert_resources_one(object: $item) { id }
+        }`,
+          { item: { ...changes, campaign_id: campaignId } },
+        );
+    if (!data.result) throw new Error("物资不存在或没有修改权限");
+    return this.getBoard(campaignId);
+  }
+
+  async deleteResource(campaignId: string, id: string) {
+    const data = await request<{ result: { id: string } | null }>(
+      `mutation DeleteResource($id: uuid!) {
+      result: delete_resources_by_pk(id: $id) { id }
+    }`,
+      { id },
+    );
+    if (!data.result) throw new Error("物资不存在或没有删除权限");
+    return this.getBoard(campaignId);
+  }
+
+  async saveChecklistItem(
+    campaignId: string,
+    draft: ChecklistDraft,
+    id?: string,
+  ) {
+    const data = id
+      ? await request<{ result: { id: string } | null }>(
+          `mutation EditCheck($id: uuid!, $label: String!) {
+          result: update_checklist_items_by_pk(pk_columns: {id: $id}, _set: { label: $label }) { id }
+        }`,
+          { id, label: draft.label },
+        )
+      : await request<{ result: { id: string } | null }>(
+          `mutation AddCheck($item: checklist_items_insert_input!) {
+          result: insert_checklist_items_one(object: $item) { id }
+        }`,
+          { item: { label: draft.label, campaign_id: campaignId } },
+        );
+    if (!data.result) throw new Error("检查项不存在或没有修改权限");
+    return this.getBoard(campaignId);
+  }
+
+  async deleteChecklistItem(campaignId: string, id: string) {
+    const data = await request<{ result: { id: string } | null }>(
+      `mutation DeleteCheck($id: uuid!) {
+      result: delete_checklist_items_by_pk(id: $id) { id }
+    }`,
+      { id },
+    );
+    if (!data.result) throw new Error("检查项不存在或没有删除权限");
+    return this.getBoard(campaignId);
+  }
+
+  async setBurgerIndex(campaignId: string, value: number) {
+    if (!Number.isInteger(value) || value < 1 || value > 9)
+      throw new Error("指数必须在红1到绿3之间");
+    const data = await request<{ result: { id: string } | null }>(
+      `mutation SetBurgerIndex($id: uuid!, $value: Int!) {
+      result: update_campaigns_by_pk(pk_columns: { id: $id }, _set: { burger_index: $value }) { id }
+    }`,
+      { id: campaignId, value },
+    );
+    if (!data.result) throw new Error("没有修改汉堡屋指数的权限");
+    return this.getBoard(campaignId);
   }
 
   async cycleResource(campaignId: string, resourceId: string) {

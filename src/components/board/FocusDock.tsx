@@ -33,10 +33,12 @@ export function FocusDock({ active, onChange }: FocusDockProps) {
             type="button"
             key={item.id}
             aria-label={item.label}
+            aria-current={active === item.id ? "location" : undefined}
             title={item.title}
             onClick={() => onChange(item.id)}
           >
             <Icon aria-hidden="true" />
+            <span>{item.title}</span>
           </button>
         );
       })}

@@ -1,11 +1,6 @@
 export type CampaignRole = "gm" | "player" | "observer";
 export type CampaignStatus = "active" | "archived";
-export type EmployeePosition =
-  | "店长"
-  | "厨师"
-  | "维修师"
-  | "服务员"
-  | "顾客";
+export type EmployeePosition = "店长" | "厨师" | "维修师" | "服务员" | "顾客";
 export type QuestStatus =
   | "open"
   | "claimed"
@@ -21,6 +16,7 @@ export interface CampaignSummary {
   name: string;
   joinCode: string;
   status: CampaignStatus;
+  burgerIndex: number;
 }
 
 export interface Viewer {
@@ -86,6 +82,14 @@ export interface CampaignBoard {
   notes: BoardNote[];
 }
 
+export type ResourceDraft = Pick<
+  ResourceItem,
+  "name" | "quantity" | "status" | "group"
+>;
+export interface ChecklistDraft {
+  label: string;
+}
+
 export interface QuestDraft {
   title: string;
   body: string;
@@ -100,8 +104,7 @@ export interface NoteDraft {
 }
 
 export type ComposerTarget =
-  | { kind: "quest"; id: string }
-  | { kind: "note"; id: string };
+  { kind: "quest"; id: string } | { kind: "note"; id: string };
 
 export function nextQuestStatus(
   role: CampaignRole,
