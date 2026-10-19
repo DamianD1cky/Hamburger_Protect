@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type {
   CampaignBoard,
-  ResourceDraft,
   ChecklistDraft,
 } from "../../features/campaign/domain/types";
 import {
@@ -10,13 +9,11 @@ import {
 } from "../../features/campaign/domain/burgerIndex";
 import { PaperDialog } from "../composer/PaperDialog";
 
-export type BoardEditorKind = "resources" | "checklist" | "index";
+export type BoardEditorKind = "checklist" | "index";
 export function BoardEditorDialog({
   kind,
   board,
   onClose,
-  onSaveResource,
-  onDeleteResource,
   onSaveChecklist,
   onDeleteChecklist,
   onSetIndex,
@@ -24,24 +21,13 @@ export function BoardEditorDialog({
   kind: BoardEditorKind;
   board: CampaignBoard;
   onClose: () => void;
-  onSaveResource: (draft: ResourceDraft, id?: string) => Promise<unknown>;
-  onDeleteResource: (id: string) => Promise<unknown>;
   onSaveChecklist: (draft: ChecklistDraft, id?: string) => Promise<unknown>;
   onDeleteChecklist: (id: string) => Promise<unknown>;
   onSetIndex: (value: number) => Promise<unknown>;
 }) {
-  const resources = kind === "resources";
-  const items = resources
-    ? board.resources.map((item) => ({ id: item.id, label: item.name }))
-    : board.checklist;
-  const initialId = items[0]?.id ?? "";
-  const [id, setId] = useState(initialId);
+  const items = board.checklist;
+  const [id, setId] = useState(items[0]?.id ?? "");
   const [name, setName] = useState(items[0]?.label ?? "");
-  const [quantity, setQuantity] = useState(board.resources[0]?.quantity ?? "");
-  const [status, setStatus] = useState<ResourceDraft["status"]>(
-    board.resources[0]?.status ?? "ok",
-  );
-  const [group, setGroup] = useState(board.resources[0]?.group ?? 0);
   const [index, setIndex] = useState(board.campaign.burgerIndex);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -51,13 +37,9 @@ export function BoardEditorDialog({
   const info = burgerIndexInfo(index);
   const select = (value: string) => {
     setId(value);
-    setError("");
-    setConfirmDelete(false);
     setName(items.find((item) => item.id === value)?.label ?? "");
-    const resource = board.resources.find((item) => item.id === value);
-    setQuantity(resource?.quantity ?? "");
-    setStatus(resource?.status ?? "ok");
-    setGroup(resource?.group ?? 0);
+    setConfirmDelete(false);
+    setError("");
   };
   const run = async (operation: () => Promise<unknown>) => {
     if (!editable || busy) return;
@@ -76,24 +58,11 @@ export function BoardEditorDialog({
     event.preventDefault();
     if (kind === "index") void run(() => onSetIndex(index));
     else if (name.trim())
-      void run(() =>
-        resources
-          ? onSaveResource(
-              { name: name.trim(), quantity: quantity.trim(), status, group },
-              id || undefined,
-            )
-          : onSaveChecklist({ label: name.trim() }, id || undefined),
-      );
+      void run(() => onSaveChecklist({ label: name.trim() }, id || undefined));
   };
   return (
     <PaperDialog
-      title={
-        kind === "index"
-          ? "调整汉堡屋指数"
-          : resources
-            ? "物资登记簿"
-            : "编辑每日检查清单"
-      }
+      title={kind === "index" ? "调整汉堡屋指数" : "编辑每日检查清单"}
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -152,61 +121,20 @@ export function BoardEditorDialog({
                       {item.label}
                     </option>
                   ))}
-                  <option value="">
-                    ＋ 新增{resources ? "物资" : "检查项"}
-                  </option>
+                  <option value="">＋ 新增检查项</option>
                 </select>
               </label>
               <label className="field">
-                <span>{resources ? "物资 / 设施名称" : "检查内容"}</span>
+                <span>检查内容</span>
                 <textarea
-                  aria-label={resources ? "物资 / 设施名称" : "检查内容"}
-                  rows={resources ? 2 : 4}
+                  aria-label="检查内容"
+                  rows={4}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  maxLength={resources ? 80 : 160}
+                  maxLength={160}
                   required
                 />
               </label>
-              {resources && (
-                <>
-                  <label className="field">
-                    <span>数量与单位</span>
-                    <input
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      maxLength={80}
-                      placeholder="例如：12 瓶 / 2 套 / 按需制作"
-                    />
-                  </label>
-                  <div className="task-fields">
-                    <label className="field">
-                      <span>物资状态</span>
-                      <select
-                        value={status}
-                        onChange={(e) =>
-                          setStatus(e.target.value as ResourceDraft["status"])
-                        }
-                      >
-                        <option value="ok">已备</option>
-                        <option value="low">待补</option>
-                        <option value="out">耗尽</option>
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>所属清单</span>
-                      <select
-                        value={group}
-                        onChange={(e) => setGroup(Number(e.target.value))}
-                      >
-                        <option value={0}>食材与补给</option>
-                        <option value={1}>设施与防御</option>
-                        <option value={2}>工具与用品</option>
-                      </select>
-                    </label>
-                  </div>
-                </>
-              )}
             </>
           )}
         </fieldset>
@@ -216,17 +144,14 @@ export function BoardEditorDialog({
           </p>
         )}
         <footer className="composer-actions">
-          {kind !== "index" && id && editable && (
+          {kind === "checklist" && id && editable && (
             <button
               className="text-button danger-button"
               type="button"
               disabled={busy}
               onClick={() => {
                 if (!confirmDelete) setConfirmDelete(true);
-                else
-                  void run(() =>
-                    resources ? onDeleteResource(id) : onDeleteChecklist(id),
-                  );
+                else void run(() => onDeleteChecklist(id));
               }}
             >
               {confirmDelete ? "确认移除" : "移除"}

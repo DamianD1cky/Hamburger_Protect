@@ -298,21 +298,6 @@ class NhostCampaignRepository implements CampaignRepository {
     return this.getBoard(campaignId);
   }
 
-  async cycleResource(campaignId: string, resourceId: string) {
-    const board = await this.getBoard(campaignId);
-    const resource = board.resources.find((item) => item.id === resourceId);
-    if (!resource) throw new Error("Resource not found");
-    const order: ResourceStatus[] = ["ok", "low", "out"];
-    const status = order[(order.indexOf(resource.status) + 1) % order.length];
-    await request(
-      `mutation UpdateResource($id: uuid!, $status: resource_status!) {
-      update_resources_by_pk(pk_columns: { id: $id }, _set: { status: $status }) { id }
-    }`,
-      { id: resourceId, status },
-    );
-    return this.getBoard(campaignId);
-  }
-
   async toggleChecklist(campaignId: string, itemId: string) {
     const board = await this.getBoard(campaignId);
     const item = board.checklist.find((candidate) => candidate.id === itemId);

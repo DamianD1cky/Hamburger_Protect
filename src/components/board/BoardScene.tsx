@@ -27,10 +27,10 @@ interface BoardSceneProps {
   board: CampaignBoard;
   worldRef: Ref<HTMLDivElement>;
   viewScaleRef: RefObject<number>;
-  onCycleResource: (id: string) => void;
-  onManageResources: () => void;
+  onOpenResourceSheet: (group: number) => void;
   onManageChecklist: () => void;
   onManageIndex: () => void;
+  onOpenNotes: () => void;
   onExpandRoster: () => void;
   onToggleChecklist: (id: string) => void;
   onComposeQuest: (event: MouseEvent<HTMLElement>) => void;
@@ -49,10 +49,10 @@ export function BoardScene({
   board,
   worldRef,
   viewScaleRef,
-  onCycleResource,
-  onManageResources,
+  onOpenResourceSheet,
   onManageChecklist,
   onManageIndex,
+  onOpenNotes,
   onExpandRoster,
   onToggleChecklist,
   onComposeQuest,
@@ -88,8 +88,7 @@ export function BoardScene({
           <InventorySection
             resources={board.resources}
             canManage={canManage}
-            onCycle={onCycleResource}
-            onManage={onManageResources}
+            onOpenSheet={onOpenResourceSheet}
           />
           <TaskSection
             quests={board.quests}
@@ -105,7 +104,7 @@ export function BoardScene({
             canManage={canManage}
             onManage={onManageIndex}
           />
-          <MemoSection />
+          <MemoSection notes={board.notes} onOpen={onOpenNotes} />
           <SafetySection
             checklist={board.checklist}
             canManage={canManage}

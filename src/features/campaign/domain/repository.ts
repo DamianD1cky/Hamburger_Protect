@@ -22,7 +22,6 @@ export interface CampaignRepository {
   ): Promise<CampaignBoard>;
   deleteChecklistItem(campaignId: string, id: string): Promise<CampaignBoard>;
   setBurgerIndex(campaignId: string, value: number): Promise<CampaignBoard>;
-  cycleResource(campaignId: string, resourceId: string): Promise<CampaignBoard>;
   toggleChecklist(campaignId: string, itemId: string): Promise<CampaignBoard>;
   saveQuest(
     campaignId: string,

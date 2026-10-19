@@ -12,7 +12,6 @@ import type {
 
 const STORAGE_KEY = "hamburger-protect-board-v2";
 const LEGACY_STORAGE_KEY = "laojie-burger-board-v1";
-const resourceStatusOrder: ResourceStatus[] = ["ok", "low", "out"];
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -181,16 +180,6 @@ class LocalCampaignRepository implements CampaignRepository {
       throw new Error("指数必须在红1到绿3之间");
     return this.manage((board) => {
       board.campaign.burgerIndex = value;
-    });
-  }
-
-  async cycleResource(_campaignId: string, resourceId: string) {
-    return this.mutate((board) => {
-      const resource = board.resources.find((item) => item.id === resourceId);
-      if (!resource) return;
-      const current = resourceStatusOrder.indexOf(resource.status);
-      resource.status =
-        resourceStatusOrder[(current + 1) % resourceStatusOrder.length];
     });
   }
 

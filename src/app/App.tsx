@@ -62,6 +62,16 @@ const RosterDialog = lazy(() =>
     default: module.RosterDialog,
   })),
 );
+const ResourceSheetDialog = lazy(() =>
+  import("../components/board/ResourceSheetDialog").then((module) => ({
+    default: module.ResourceSheetDialog,
+  })),
+);
+const NotesDialog = lazy(() =>
+  import("../components/board/NotesDialog").then((module) => ({
+    default: module.NotesDialog,
+  })),
+);
 
 const closedComposer: ComposerState = {
   open: false,
@@ -170,6 +180,8 @@ function CampaignBoardWorkspace({
     useBoardViewport();
   const [composer, setComposer] = useState<ComposerState>(closedComposer);
   const [boardEditor, setBoardEditor] = useState<BoardEditorKind | null>(null);
+  const [resourceSheet, setResourceSheet] = useState<number | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [handbookOpen, setHandbookOpen] = useState(false);
   const [toast, setToast] = useState("");
@@ -330,16 +342,11 @@ function CampaignBoardWorkspace({
           board={board}
           worldRef={worldRef}
           viewScaleRef={viewScaleRef}
-          onManageResources={() => setBoardEditor("resources")}
+          onOpenResourceSheet={setResourceSheet}
           onManageChecklist={() => setBoardEditor("checklist")}
           onManageIndex={() => setBoardEditor("index")}
           onExpandRoster={() => setRosterOpen(true)}
-          onCycleResource={(id) =>
-            void campaign
-              .cycleResource(id)
-              .then(() => showToast("物资状态已更新"))
-              .catch(() => showToast("物资更新失败，请重试"))
-          }
+          onOpenNotes={() => setNotesOpen(true)}
           onToggleChecklist={(id) =>
             void campaign
               .toggleChecklist(id)
@@ -442,11 +449,32 @@ function CampaignBoardWorkspace({
             kind={boardEditor}
             board={board}
             onClose={() => setBoardEditor(null)}
-            onSaveResource={campaign.saveResource}
-            onDeleteResource={campaign.deleteResource}
             onSaveChecklist={campaign.saveChecklistItem}
             onDeleteChecklist={campaign.deleteChecklistItem}
             onSetIndex={campaign.setBurgerIndex}
+          />
+        )}
+        {resourceSheet !== null && (
+          <ResourceSheetDialog
+            group={resourceSheet}
+            board={board}
+            onClose={() => setResourceSheet(null)}
+            onSave={campaign.saveResource}
+            onDelete={campaign.deleteResource}
+          />
+        )}
+        {notesOpen && (
+          <NotesDialog
+            board={board}
+            onClose={() => setNotesOpen(false)}
+            onEdit={(note, element) => {
+              setNotesOpen(false);
+              openComposer("note", { kind: "note", id: note.id }, element);
+            }}
+            onAdd={(event) => {
+              setNotesOpen(false);
+              openComposer("note", null, event.currentTarget);
+            }}
           />
         )}
         {rosterOpen && (

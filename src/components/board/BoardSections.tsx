@@ -4,16 +4,13 @@ import type {
   CampaignBoard,
   Quest,
   QuestStatus,
-  ResourceStatus,
 } from "../../features/campaign/domain/types";
 import { burgerIndexInfo } from "../../features/campaign/domain/burgerIndex";
+import {
+  resourceGroups,
+  resourceLabels,
+} from "../../features/campaign/domain/resources";
 import { nextQuestStatus } from "../../features/campaign/domain/types";
-
-const resourceLabels: Record<ResourceStatus, string> = {
-  ok: "已备",
-  low: "待补",
-  out: "耗尽",
-};
 
 const questLabels: Record<QuestStatus, string> = {
   open: "可领取",
@@ -33,23 +30,15 @@ const transitionLabels: Partial<Record<QuestStatus, string>> = {
   failed: "重新执行",
 };
 
-interface InventorySectionProps {
-  resources: CampaignBoard["resources"];
-  canManage: boolean;
-  onCycle: (id: string) => void;
-  onManage: () => void;
-}
-
 export function InventorySection({
   resources,
   canManage,
-  onCycle,
-  onManage,
-}: InventorySectionProps) {
-  const groups = [0, 1, 2].map((group) =>
-    resources.filter((resource) => resource.group === group),
-  );
-
+  onOpenSheet,
+}: {
+  resources: CampaignBoard["resources"];
+  canManage: boolean;
+  onOpenSheet: (group: number) => void;
+}) {
   return (
     <section
       className="board-section inventory-section"
@@ -57,39 +46,47 @@ export function InventorySection({
     >
       <div className="sign sign-red section-heading">
         <span>可用物资与设施</span>
-        {canManage && (
-          <button
-            className="sign-action"
-            type="button"
-            onClick={onManage}
-            aria-label="编辑物资与数量"
-          >
-            <Pencil />
-          </button>
-        )}
       </div>
       <div className="inventory-stack">
-        {groups.map((group, index) => (
-          <article className="inventory-card" key={index}>
-            {group.map((item) => (
-              <button
-                className="inventory-row"
-                type="button"
-                key={item.id}
-                disabled={!canManage}
-                title={canManage ? "切换物资状态" : "仅 GM 可以管理物资"}
-                onClick={() => onCycle(item.id)}
-              >
-                <span className="quantity">
-                  {item.name}　{item.quantity}
+        {resourceGroups.map((sheet) => {
+          const items = resources.filter((item) => item.group === sheet.id);
+          return (
+            <button
+              className="inventory-card"
+              type="button"
+              key={sheet.id}
+              onClick={() => onOpenSheet(sheet.id)}
+              aria-label={`${canManage ? "编辑" : "查看"}便签：${sheet.title}`}
+              aria-haspopup="dialog"
+            >
+              <span className="inventory-sheet-title">
+                {sheet.title}
+                <small>{items.length} 项</small>
+              </span>
+              <span className="inventory-preview">
+                {items.slice(0, 3).map((item) => (
+                  <span className="inventory-row" key={item.id}>
+                    <span className="quantity">
+                      {item.name}　{item.quantity}
+                    </span>
+                    <span className="inventory-status" data-state={item.status}>
+                      {resourceLabels[item.status]}
+                    </span>
+                  </span>
+                ))}
+              </span>
+              {!items.length && (
+                <span className="sheet-empty">
+                  {canManage ? "空白便签 · 点开登记" : "等待 GM 登记"}
                 </span>
-                <span className="inventory-status" data-state={item.status}>
-                  （{resourceLabels[item.status]}）
-                </span>
-              </button>
-            ))}
-          </article>
-        ))}
+              )}
+              <span className="inventory-sheet-hint">
+                {items.length > 3 ? `共 ${items.length} 项 · ` : ""}点开
+                {canManage ? "修改" : "查看"} →
+              </span>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -194,6 +191,7 @@ export function TaskSection({
         <article className="paper task-paper todo-paper">
           <h2>进行中</h2>
           <div className="task-list">
+            {!active.length && <p className="board-empty">暂无工作指示</p>}
             {active.map((quest) => (
               <TaskItem
                 key={quest.id}
@@ -209,6 +207,7 @@ export function TaskSection({
         <article className="paper task-paper done-paper">
           <h2>已完成</h2>
           <div className="task-list">
+            {!completed.length && <p className="board-empty">暂无完成记录</p>}
             {completed.map((quest) => (
               <TaskItem
                 key={quest.id}
@@ -312,17 +311,30 @@ export function BurgerIndexSection({
   );
 }
 
-export function MemoSection() {
+export function MemoSection({
+  notes,
+  onOpen,
+}: {
+  notes: CampaignBoard["notes"];
+  onOpen: () => void;
+}) {
   return (
-    <section className="board-section memo-section" data-section="memo">
-      <div className="sign sign-yellow">今日特别情报</div>
-      <article className="paper memo-paper">
-        <ul>
-          <li>异常顾客不得办理会员注册</li>
-          <li>通信失联不等于公司放弃支持</li>
-          <li>无行动时默认继续制作汉堡</li>
-        </ul>
-      </article>
+    <section className="board-section memo-section" data-section="notes">
+      <div className="sign sign-yellow">工作记录</div>
+      <button
+        className="paper memo-paper notes-preview"
+        type="button"
+        onClick={onOpen}
+        aria-label="查看全部工作记录"
+        aria-haspopup="dialog"
+      >
+        <strong>{notes.length} 条记录</strong>
+        {notes.slice(0, 2).map((note) => (
+          <span key={note.id}>{note.title}</span>
+        ))}
+        {!notes.length && <span>空白记录 · 等待张贴</span>}
+        <small>点开查看与填写 →</small>
+      </button>
     </section>
   );
 }
@@ -357,6 +369,11 @@ export function SafetySection({
       </div>
       <article className="paper safety-paper">
         <div className="safety-list">
+          {!checklist.length && (
+            <p className="board-empty">
+              暂无检查项{canManage ? "，点击铅笔添加。" : "，等待 GM 登记。"}
+            </p>
+          )}
           {checklist.map((item) => (
             <button
               className={"safety-item " + (item.completed ? "is-done" : "")}

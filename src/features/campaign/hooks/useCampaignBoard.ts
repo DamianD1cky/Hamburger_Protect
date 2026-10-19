@@ -60,8 +60,6 @@ export function useCampaignBoard(
       commit(() => repository.deleteChecklistItem(campaignId, id)),
     setBurgerIndex: (value: number) =>
       commit(() => repository.setBurgerIndex(campaignId, value)),
-    cycleResource: (resourceId: string) =>
-      commit(() => repository.cycleResource(campaignId, resourceId)),
     toggleChecklist: (itemId: string) =>
       commit(() => repository.toggleChecklist(campaignId, itemId)),
     saveQuest: (draft: QuestDraft, questId?: string) =>
