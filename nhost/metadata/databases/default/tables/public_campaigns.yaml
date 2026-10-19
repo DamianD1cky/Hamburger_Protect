@@ -43,6 +43,7 @@ select_permissions:
     columns:
     - id
     - name
+    - burger_index
     - join_code
     - status
     - created_by
@@ -59,6 +60,7 @@ select_permissions:
     columns:
     - id
     - name
+    - burger_index
     - join_code
     - status
     - created_by
@@ -70,3 +72,21 @@ select_permissions:
       members:
         user_id:
           _eq: X-Hasura-User-Id
+update_permissions:
+- role: user
+  permission:
+    columns:
+    - burger_index
+    filter:
+      _and:
+      - status:
+          _eq: active
+      - members:
+          _and:
+          - user_id:
+              _eq: X-Hasura-User-Id
+          - role:
+              _eq: gm
+          - active:
+              _eq: true
+    check: null
