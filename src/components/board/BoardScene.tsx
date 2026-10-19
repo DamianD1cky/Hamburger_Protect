@@ -21,6 +21,7 @@ import {
   ShiftSection,
   TaskSection,
 } from "./BoardSections";
+import { BoardClock } from "./BoardClock";
 import { NoteCard } from "./NoteCard";
 
 interface BoardSceneProps {
@@ -85,6 +86,8 @@ export function BoardScene({
             fetchPriority="high"
           />
         </picture>
+
+        <BoardClock />
 
         <main className="board" aria-label={board.campaign.name + "战役公告板"}>
           <InventorySection
