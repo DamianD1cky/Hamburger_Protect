@@ -1,0 +1,62 @@
+table:
+  name: campaign_join_requests
+  schema: public
+object_relationships:
+- name: campaign
+  using:
+    foreign_key_constraint_on: campaign_id
+select_permissions:
+- role: anonymous
+  permission:
+    columns:
+    - id
+    - campaign_id
+    - user_id
+    - campaign_name
+    - character_name
+    - job_title
+    - status
+    - requested_at
+    - reviewed_at
+    - review_note
+    filter:
+      user_id:
+        _eq: X-Hasura-User-Id
+- role: user
+  permission:
+    columns:
+    - id
+    - campaign_id
+    - user_id
+    - campaign_name
+    - character_name
+    - job_title
+    - status
+    - requested_at
+    - reviewed_at
+    - reviewed_by
+    - review_note
+    allow_aggregations: true
+    filter:
+      _and:
+      - _exists:
+          _table:
+            schema: public
+            name: gm_access
+          _where:
+            user_id:
+              _eq: X-Hasura-User-Id
+            status:
+              _eq: approved
+      - campaign:
+          _and:
+          - status:
+              _eq: active
+          - members:
+              _and:
+              - user_id:
+                  _eq: X-Hasura-User-Id
+              - role:
+                  _eq: gm
+              - active:
+                  _eq: true

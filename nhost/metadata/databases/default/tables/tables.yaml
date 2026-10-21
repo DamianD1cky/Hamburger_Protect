@@ -17,3 +17,4 @@
 - "!include public_event_log.yaml"
 - "!include public_campaign_archives.yaml"
 - "!include public_gm_access.yaml"
+- "!include public_campaign_join_requests.yaml"

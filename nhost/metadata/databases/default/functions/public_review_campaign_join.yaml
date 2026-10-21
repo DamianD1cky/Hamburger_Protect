@@ -1,0 +1,7 @@
+function:
+  name: review_campaign_join
+  schema: public
+configuration:
+  session_argument: hasura_session
+permissions:
+- role: user

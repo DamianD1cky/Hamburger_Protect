@@ -9,3 +9,6 @@
 - "!include public_review_quest_submission.yaml"
 - "!include public_archive_campaign.yaml"
 - "!include public_request_gm_access.yaml"
+- "!include public_request_campaign_join.yaml"
+- "!include public_review_campaign_join.yaml"
+- "!include public_cancel_campaign_join.yaml"
