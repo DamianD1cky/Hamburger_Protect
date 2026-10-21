@@ -405,6 +405,18 @@ export async function reviewCampaignJoin(
   }`,
     { args: { p_request_id: id, p_approved: approved, p_note: note.trim() } },
   );
+  const data = await request<{
+    campaign_join_requests_by_pk: { status: string } | null;
+  }>(
+    `query ReviewedJoinRequest($id: uuid!) { campaign_join_requests_by_pk(id: $id) { status } }`,
+    { id },
+  );
+  if (
+    data.campaign_join_requests_by_pk?.status !==
+    (approved ? "approved" : "rejected")
+  ) {
+    throw new Error("审批未完成，请检查权限并刷新申请。");
+  }
 }
 
 export async function cancelCampaignJoin(id: string) {
