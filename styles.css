@@ -2614,3 +2614,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .activity-changes dd { margin: 0 0 16px; }
 .activity-changes p { white-space: pre-wrap; font-size: 15px; line-height: 1.6; }
 .activity-changes b { font-weight: 400; color: #786b54; }
+
+
+.gm-application-notice { margin: 0; padding: 14px 16px; border-left: 4px solid #b48a43; background: #dfc89c38; color: #5b4530; font-size: 15px; line-height: 1.7; }
+.gm-approval dl { margin: 0; display: grid; gap: 6px; }
+.gm-approval dt { color: #7b6d58; font-size: 13px; }
+.gm-approval dd { margin: 0 0 12px; overflow-wrap: anywhere; font-size: 20px; }
+.gm-approval p { line-height: 1.7; }

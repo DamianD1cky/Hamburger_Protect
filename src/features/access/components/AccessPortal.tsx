@@ -15,6 +15,7 @@ import type { EmployeePosition } from "../../campaign/domain/types";
 import {
   getAccessErrorMessage,
   GM_PASSWORD_MIN_LENGTH,
+  type GmAccess,
 } from "../data/nhostCampaignAccess";
 
 const employeePositions: Array<{
@@ -32,6 +33,8 @@ type GmMode = "signin" | "signup";
 
 interface AccessPortalProps {
   session: StoredSession | null;
+  gmAccess: GmAccess | null;
+  onRefreshGmAccess: () => Promise<void>;
   accessError: string;
   onSignInGm: (input: { username: string; password: string }) => Promise<void>;
   onRegisterGm: (input: {
@@ -50,6 +53,8 @@ interface AccessPortalProps {
 
 export function AccessPortal({
   session,
+  gmAccess,
+  onRefreshGmAccess,
   accessError,
   onSignInGm,
   onRegisterGm,
@@ -84,15 +89,14 @@ export function AccessPortal({
 
   useEffect(() => {
     if (!regularUser) return;
-    setGmName(
-      (current) => current || session?.user?.displayName || "",
-    );
+    setGmName((current) => current || session?.user?.displayName || "");
   }, [regularUser, session?.user?.displayName]);
 
   const view = useMemo(() => {
-    if (regularUser) return "create";
+    if (regularUser)
+      return gmAccess?.status === "approved" ? "create" : "approval";
     return mode;
-  }, [mode, regularUser]);
+  }, [mode, regularUser, gmAccess?.status]);
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
@@ -139,7 +143,11 @@ export function AccessPortal({
 
       <header className="access-brand">
         <p className="access-kicker">汉○王员工专用 · 内部文件</p>
-        <h1>危机营业<br />签到处</h1>
+        <h1>
+          危机营业
+          <br />
+          签到处
+        </h1>
         <p className="access-decree">
           顾客至上，品质为王，<strong>永不停止营业。</strong>
         </p>
@@ -161,13 +169,15 @@ export function AccessPortal({
             <div>
               <small>危机应对与持续营业指南</small>
               <h2>
-                {view === "create"
-                  ? "建立本次夜班"
-                  : view === "gm"
-                    ? gmMode === "signup"
-                      ? "登记店长账号"
-                      : "店长账号登录"
-                    : "员工报到单"}
+                {view === "approval"
+                  ? "GM 权限申请"
+                  : view === "create"
+                    ? "建立本次夜班"
+                    : view === "gm"
+                      ? gmMode === "signup"
+                        ? "申请店长账号"
+                        : "店长账号登录"
+                      : "员工报到单"}
               </h2>
             </div>
             <span className="manual-file-number">BK-ZM-09</span>
@@ -239,7 +249,9 @@ export function AccessPortal({
                   value={joinCode}
                   onChange={(event) =>
                     setJoinCode(
-                      event.target.value.replace(/[^a-z0-9]/gi, "").toUpperCase(),
+                      event.target.value
+                        .replace(/[^a-z0-9]/gi, "")
+                        .toUpperCase(),
                     )
                   }
                   placeholder="A1B2C3"
@@ -256,6 +268,11 @@ export function AccessPortal({
 
           {view === "gm" && (
             <form className="access-form" onSubmit={submitGm}>
+              <p className="gm-application-notice">
+                GM
+                需联系站长申请。注册后请提供账号名，审批通过后才能创建班次和使用
+                GM 功能。
+              </p>
               <label>
                 <span>店长账号名</span>
                 <input
@@ -315,10 +332,10 @@ export function AccessPortal({
               <button className="access-submit" type="submit" disabled={busy}>
                 {busy
                   ? gmMode === "signup"
-                    ? "正在登记总部档案"
+                    ? "正在提交申请"
                     : "正在核对店长身份"
                   : gmMode === "signup"
-                    ? "注册并开始值班"
+                    ? "注册并申请 GM 权限"
                     : "进入店长后台"}
                 {!busy &&
                   (gmMode === "signup" ? (
@@ -338,16 +355,66 @@ export function AccessPortal({
               >
                 {gmMode === "signup"
                   ? "已有店长账号？改为登录"
-                  : "还没有店长账号？立即注册"}
+                  : "还没有店长账号？联系站长申请"}
               </button>
             </form>
+          )}
+
+          {view === "approval" && (
+            <div className="access-form gm-approval" aria-live="polite">
+              <p className="gm-application-notice">
+                GM 需联系站长申请。请向站长提供下方账号名，无需提供密码。
+              </p>
+              <dl>
+                <dt>申请账号</dt>
+                <dd>
+                  {gmAccess?.accountName.replace(/@gm\.local$/, "") ??
+                    String(
+                      session?.user?.metadata?.gmUsername ??
+                        session?.user?.email ??
+                        "",
+                    )}
+                </dd>
+                <dt>审批状态</dt>
+                <dd>
+                  {gmAccess?.status === "pending"
+                    ? "等待站长审批"
+                    : gmAccess?.status === "rejected"
+                      ? "申请未通过"
+                      : gmAccess?.status === "revoked"
+                        ? "GM 权限已撤销"
+                        : "审批状态读取失败"}
+                </dd>
+              </dl>
+              <p>
+                {gmAccess?.status === "pending"
+                  ? "站长批准后，此页面会自动更新。"
+                  : "如需开通权限，请联系站长确认。"}
+              </p>
+              {gmAccess?.reviewNote && <p>站长备注：{gmAccess.reviewNote}</p>}
+              <button
+                className="access-submit"
+                type="button"
+                disabled={busy}
+                onClick={() => void run(onRefreshGmAccess)}
+              >
+                {busy ? "正在查询" : "刷新审批结果"}
+              </button>
+              <button
+                className="access-signout"
+                type="button"
+                onClick={() => void onSignOut()}
+              >
+                退出店长账号
+              </button>
+            </div>
           )}
 
           {view === "create" && (
             <form className="access-form" onSubmit={submitCampaign}>
               <div className="manager-confirmed">
                 <BadgeCheck aria-hidden="true" />
-                <span>总部已确认店长身份：{session?.user?.displayName}</span>
+                <span>站长已批准 GM 权限：{session?.user?.displayName}</span>
               </div>
               <label>
                 <span>本次战役 / 夜班名称</span>
@@ -372,7 +439,11 @@ export function AccessPortal({
                 {busy ? "正在张贴营业公告" : "创建战役并开始营业"}
                 {!busy && <Store aria-hidden="true" />}
               </button>
-              <button className="access-signout" type="button" onClick={() => void onSignOut()}>
+              <button
+                className="access-signout"
+                type="button"
+                onClick={() => void onSignOut()}
+              >
                 退出店长账号
               </button>
             </form>
@@ -385,9 +456,18 @@ export function AccessPortal({
           )}
 
           <footer className="manual-rules">
-            <span><ChefHat aria-hidden="true" />没有任务时，制作汉堡</span>
-            <span><Wrench aria-hidden="true" />设施用途不限于标签</span>
-            <span><ShieldAlert aria-hidden="true" />异常顾客不办会员</span>
+            <span>
+              <ChefHat aria-hidden="true" />
+              没有任务时，制作汉堡
+            </span>
+            <span>
+              <Wrench aria-hidden="true" />
+              设施用途不限于标签
+            </span>
+            <span>
+              <ShieldAlert aria-hidden="true" />
+              异常顾客不办会员
+            </span>
           </footer>
         </div>
       </main>

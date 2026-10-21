@@ -19,6 +19,7 @@ import { AccessPortal } from "../features/access/components/AccessPortal";
 import {
   createCampaign,
   getActiveCampaign,
+  getGmAccess,
   joinCampaign,
   registerGm,
   signInGm,
@@ -99,10 +100,22 @@ function CloudCampaignApp() {
   const queryClient = useQueryClient();
   const session = useNhostSession();
 
+  const regularUser = Boolean(session?.user && !session.user.isAnonymous);
+  const gmAccessQuery = useQuery({
+    queryKey: ["gm-access", session?.user?.id ?? "signed-out"],
+    queryFn: getGmAccess,
+    enabled: regularUser,
+    staleTime: 5_000,
+    refetchInterval: regularUser ? 5_000 : false,
+    refetchIntervalInBackground: false,
+    retry: 1,
+  });
+  const approved = gmAccessQuery.data?.status === "approved";
+
   const accessQuery = useQuery({
     queryKey: ["active-campaign", session?.user?.id ?? "signed-out"],
     queryFn: getActiveCampaign,
-    enabled: Boolean(session?.user),
+    enabled: Boolean(session?.user) && (!regularUser || approved),
     staleTime: 5_000,
     retry: 1,
   });
@@ -113,15 +126,20 @@ function CloudCampaignApp() {
 
   const handleSignOut = async () => {
     await signOut();
+    queryClient.removeQueries({ queryKey: ["gm-access"] });
     queryClient.removeQueries({ queryKey: ["active-campaign"] });
     queryClient.removeQueries({ queryKey: ["campaign-board"] });
   };
 
-  if (session?.user && !session.user.isAnonymous && accessQuery.isLoading) {
+  if (regularUser && gmAccessQuery.isLoading) {
+    return <CloudStatus message="正在核对 GM 审批状态" />;
+  }
+
+  if (regularUser && approved && accessQuery.isLoading) {
     return <CloudStatus message="正在核对本次排班" />;
   }
 
-  if (accessQuery.data?.status === "active") {
+  if (accessQuery.data?.status === "active" && (!regularUser || approved)) {
     return (
       <CampaignBoardWorkspace
         campaignId={accessQuery.data.campaignId}
@@ -133,8 +151,16 @@ function CloudCampaignApp() {
   return (
     <AccessPortal
       session={session}
+      gmAccess={gmAccessQuery.data ?? null}
+      onRefreshGmAccess={async () => {
+        await gmAccessQuery.refetch();
+      }}
       accessError={
-        accessQuery.error instanceof Error ? accessQuery.error.message : ""
+        gmAccessQuery.error instanceof Error
+          ? gmAccessQuery.error.message
+          : accessQuery.error instanceof Error
+            ? accessQuery.error.message
+            : ""
       }
       onSignInGm={async (input) => {
         await signInGm(input);

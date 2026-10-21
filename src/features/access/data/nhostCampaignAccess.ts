@@ -1,5 +1,8 @@
 import { nhost } from "../../../lib/nhost/client";
-import type { CampaignRole, EmployeePosition } from "../../campaign/domain/types";
+import type {
+  CampaignRole,
+  EmployeePosition,
+} from "../../campaign/domain/types";
 
 /**
  * Nhost 的邮箱密码认证需要一个邮箱作为账号标识，但店长不需要看到这一层。
@@ -9,6 +12,16 @@ const GM_ACCOUNT_DOMAIN = "gm.local";
 
 export const GM_USERNAME_PATTERN = /^[a-z0-9_-]{3,20}$/;
 export const GM_PASSWORD_MIN_LENGTH = 8;
+
+export interface GmAccess {
+  userId: string;
+  accountName: string;
+  displayName: string;
+  status: "pending" | "approved" | "rejected" | "revoked";
+  requestedAt: string;
+  reviewedAt: string | null;
+  reviewNote: string;
+}
 
 export interface ActiveCampaignAccess {
   campaignId: string;
@@ -96,14 +109,28 @@ function describeError(error: unknown) {
 }
 
 const accessErrorMessages: Array<[string[], string]> = [
-  [["one_active_campaign_per_player"], "你已经参加了一个仍在营业的战役，不能重复入店。"],
+  [
+    ["one_active_campaign_per_player"],
+    "你已经参加了一个仍在营业的战役，不能重复入店。",
+  ],
   [["campaign_not_found"], "班次码无效，或该战役已经打烊。"],
-  [["user-already-exists", "already exists", "uniqueness"], "该账号名已被占用，请换一个或直接登录。"],
-  [["invalid-email-password", "invalid email or password", "incorrect password"], "账号或密码不正确。"],
+  [
+    ["user-already-exists", "already exists", "uniqueness"],
+    "该账号名已被占用，请换一个或直接登录。",
+  ],
+  [
+    [
+      "invalid-email-password",
+      "invalid email or password",
+      "incorrect password",
+    ],
+    "账号或密码不正确。",
+  ],
   [["password-too-short"], "密码至少需要 " + GM_PASSWORD_MIN_LENGTH + " 位。"],
   [["disabled-endpoint", "signup-disabled"], "该入口已被总部关闭。"],
   [["unverified-user", "unverified"], "账号尚未激活，请联系总部处理。"],
   [["role-not-allowed", "disabled-user"], "该账号没有值班权限。"],
+  [["gm_approval_required"], "GM 权限尚未获批，请联系站长申请。"],
   [["gm_account_required"], "只有店长账号可以创建战役。"],
   [["gm_job_title_required", "invalid_job_title"], "岗位不符合员工手册规定。"],
   [["auth_required"], "会话已失效，请重新签到。"],
@@ -143,6 +170,47 @@ export async function getActiveCampaign(): Promise<ActiveCampaignAccess | null> 
     role: membership.role,
     characterName: membership.character_name,
     jobTitle: membership.job_title,
+  };
+}
+
+export async function getGmAccess(): Promise<GmAccess> {
+  const session = requireClient().getUserSession();
+  if (!session?.user || session.user.isAnonymous)
+    throw new Error("GM_ACCOUNT_REQUIRED");
+  const query = `query GmAccess($userId: uuid!) {
+    gm_access(where: {user_id: {_eq: $userId}}, limit: 1) {
+      user_id account_name display_name status requested_at reviewed_at review_note
+    }
+  }`;
+  type RemoteAccess = {
+    user_id: string;
+    account_name: string;
+    display_name: string;
+    status: GmAccess["status"];
+    requested_at: string;
+    reviewed_at: string | null;
+    review_note: string;
+  };
+  const read = () =>
+    request<{ gm_access: RemoteAccess[] }>(query, { userId: session.user!.id });
+  let result = await read();
+  if (!result.gm_access.length) {
+    // The trusted session determines the applicant; an existing decision cannot be reset.
+    await request(`mutation RequestGmAccess {
+      request_gm_access { user_id }
+    }`);
+    result = await read();
+  }
+  const row = result.gm_access[0];
+  if (!row) throw new Error("GM 审批状态读取失败，请重试。");
+  return {
+    userId: row.user_id,
+    accountName: row.account_name,
+    displayName: row.display_name,
+    status: row.status,
+    requestedAt: row.requested_at,
+    reviewedAt: row.reviewed_at,
+    reviewNote: row.review_note,
   };
 }
 
