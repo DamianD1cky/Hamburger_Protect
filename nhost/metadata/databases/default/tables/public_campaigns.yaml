@@ -79,14 +79,24 @@ update_permissions:
     - burger_index
     filter:
       _and:
-      - status:
-          _eq: active
-      - members:
-          _and:
-          - user_id:
+      - _exists:
+          _table:
+            schema: public
+            name: gm_access
+          _where:
+            user_id:
               _eq: X-Hasura-User-Id
-          - role:
-              _eq: gm
-          - active:
-              _eq: true
+            status:
+              _eq: approved
+      - _and:
+        - status:
+            _eq: active
+        - members:
+            _and:
+            - user_id:
+                _eq: X-Hasura-User-Id
+            - role:
+                _eq: gm
+            - active:
+                _eq: true
     check: null

@@ -8,3 +8,4 @@
 - "!include public_submit_quest.yaml"
 - "!include public_review_quest_submission.yaml"
 - "!include public_archive_campaign.yaml"
+- "!include public_request_gm_access.yaml"

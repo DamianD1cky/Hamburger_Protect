@@ -16,3 +16,4 @@
 - "!include public_checklist_items.yaml"
 - "!include public_event_log.yaml"
 - "!include public_campaign_archives.yaml"
+- "!include public_gm_access.yaml"

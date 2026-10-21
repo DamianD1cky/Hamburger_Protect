@@ -9,13 +9,23 @@ insert_permissions:
 - role: user
   permission:
     check:
-      campaign:
-        _and:
-        - status:
-            _eq: active
-        - members:
+      _and:
+      - _exists:
+          _table:
+            schema: public
+            name: gm_access
+          _where:
             user_id:
               _eq: X-Hasura-User-Id
+            status:
+              _eq: approved
+      - campaign:
+          _and:
+          - status:
+              _eq: active
+          - members:
+              user_id:
+                _eq: X-Hasura-User-Id
     set:
       author_id: X-Hasura-User-Id
     columns:
@@ -97,19 +107,29 @@ update_permissions:
     - rotation
     filter:
       _and:
-      - campaign:
-          status:
-            _eq: active
-      - _or:
-        - author_id:
-            _eq: X-Hasura-User-Id
+      - _exists:
+          _table:
+            schema: public
+            name: gm_access
+          _where:
+            user_id:
+              _eq: X-Hasura-User-Id
+            status:
+              _eq: approved
+      - _and:
         - campaign:
-            members:
-              _and:
-              - user_id:
-                  _eq: X-Hasura-User-Id
-              - role:
-                  _eq: gm
+            status:
+              _eq: active
+        - _or:
+          - author_id:
+              _eq: X-Hasura-User-Id
+          - campaign:
+              members:
+                _and:
+                - user_id:
+                    _eq: X-Hasura-User-Id
+                - role:
+                    _eq: gm
     check:
 - role: anonymous
   permission:
@@ -141,19 +161,29 @@ delete_permissions:
   permission:
     filter:
       _and:
-      - campaign:
-          status:
-            _eq: active
-      - _or:
-        - author_id:
-            _eq: X-Hasura-User-Id
+      - _exists:
+          _table:
+            schema: public
+            name: gm_access
+          _where:
+            user_id:
+              _eq: X-Hasura-User-Id
+            status:
+              _eq: approved
+      - _and:
         - campaign:
-            members:
-              _and:
-              - user_id:
-                  _eq: X-Hasura-User-Id
-              - role:
-                  _eq: gm
+            status:
+              _eq: active
+        - _or:
+          - author_id:
+              _eq: X-Hasura-User-Id
+          - campaign:
+              members:
+                _and:
+                - user_id:
+                    _eq: X-Hasura-User-Id
+                - role:
+                    _eq: gm
 - role: anonymous
   permission:
     filter:
