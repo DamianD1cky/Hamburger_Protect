@@ -12,7 +12,7 @@ signingKey = '{{ secrets.NHOST_JWT_PRIVATE_KEY }}'
 kid = '{{ secrets.NHOST_JWT_KID }}'
 
 [hasura.settings]
-corsDomain = ['http://localhost:4174', 'http://localhost:5173', 'https://hamburger-protect.vercel.app']
+corsDomain = ['http://localhost:4174', 'http://localhost:5173', 'https://hamburger-protect.vercel.app', 'https://hamburger.damiandicky.site']
 devMode = false
 enableAllowList = false
 enableConsole = true
@@ -40,7 +40,7 @@ mode = 'disabled'
 
 [auth.redirections]
 clientUrl = 'https://hamburger-protect.vercel.app'
-allowedUrls = ['http://localhost:4174', 'http://localhost:5173', 'https://hamburger-protect.vercel.app']
+allowedUrls = ['http://localhost:4174', 'http://localhost:5173', 'https://hamburger-protect.vercel.app', 'https://hamburger.damiandicky.site']
 
 [auth.signUp]
 enabled = true
