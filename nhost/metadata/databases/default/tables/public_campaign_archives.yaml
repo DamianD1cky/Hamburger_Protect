@@ -14,15 +14,27 @@ select_permissions:
     - archived_by
     - archived_at
     filter:
-      campaign:
-        members:
-          user_id:
-            _eq: X-Hasura-User-Id
+      _and:
+      - _exists:
+          _table:
+            schema: public
+            name: gm_access
+          _where:
+            user_id:
+              _eq: X-Hasura-User-Id
+            status:
+              _eq: approved
+      - campaign:
+          members:
+            _and:
+            - user_id:
+                _eq: X-Hasura-User-Id
+            - role:
+                _eq: gm
 - role: anonymous
   permission:
     columns:
     - campaign_id
-    - snapshot
     - archived_by
     - archived_at
     filter:

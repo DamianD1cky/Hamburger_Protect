@@ -11,4 +11,16 @@ dist
 coverage
 .nhost
 .secrets
-.env*
+
+# Local credentials, exports and private certificates
+.secrets.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credentials.json
+auth.json
+*.dump
+*.sql.gz

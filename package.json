@@ -9,7 +9,9 @@
     "check": "tsc -b --pretty false",
     "preview": "vite preview",
     "nhost:validate": "nhost config validate",
-    "nhost:up": "nhost up"
+    "nhost:up": "nhost up",
+    "setup:security": "sh scripts/setup-secret-scan.sh",
+    "check:secrets": "gitleaks git --log-opts=--all --redact=100 --no-banner --no-color --max-archive-depth=2"
   },
   "dependencies": {
     "@nhost/nhost-js": "^4.9.0",

@@ -14,7 +14,7 @@
 - 玩家：填写角色名、岗位和班次码，以匿名员工身份加入，无需注册。
 - 同一玩家只能参加一个进行中的战役。
 - 只有获批 GM 能发布任务、修改检查项内容并审核工作报告；玩家可以编辑物资和更新检查状态。
-- 战役结束后生成只读归档。
+- 战役结束后生成只读归档；包含玩家提交报告的完整快照仅本战役获批 GM 可读。
 
 ## 站长审批 GM 权限
 
@@ -121,3 +121,13 @@ npm run check
 npm run build
 npx @nhost/cli config validate
 ```
+
+## 开源仓库的密钥保护
+
+仅将 `VITE_NHOST_SUBDOMAIN` 和 `VITE_NHOST_REGION` 这类公开服务标识放入前端配置。管理密钥、JWT 私钥、个人访问令牌和密码保存在本地忽略文件或云平台的 Secret 配置中；`VITE_` 前缀的变量会进入公开网页，不能存放凭据。
+
+本地安装 Gitleaks 后，运行 `npm run setup:security` 启用提交前与推送前检查，运行 `npm run check:secrets` 扫描全部 Git 历史。每个新克隆都需要执行一次设置。GitHub Actions 会扫描提交历史和公开文件，输出中的凭据全部脱敏。
+
+提交者邮箱也会公开。请在 GitHub 的 Settings → Emails 中复制隐私邮箱，使用 `git config --local user.email "你的 GitHub 隐私邮箱"` 配置本仓库。此设置只影响后续提交，无法删除旧提交中的邮箱。
+
+若凭据曾进入公开历史，应先在对应服务撤销或轮换，再处理 Git 历史；仅删除当前文件无法消除历史副本。
