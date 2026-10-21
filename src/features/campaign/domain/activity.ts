@@ -59,6 +59,14 @@ export function activitySummary(event: BoardActivity) {
   const subject = title ? `「${title}」` : "";
   const label = entityLabels[event.entityType] ?? "公告板";
   switch (event.eventType) {
+    case "join_requested":
+      return `申请加入班次 · ${event.payload.job_title ?? ""}`;
+    case "join_approved":
+      return `批准了「${event.payload.character_name ?? "玩家"}」的入店申请`;
+    case "join_rejected":
+      return `拒绝了「${event.payload.character_name ?? "玩家"}」的入店申请`;
+    case "join_cancelled":
+      return "撤回了入店申请";
     case "campaign_created":
       return "创建了班次";
     case "member_joined":

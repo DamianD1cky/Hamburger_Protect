@@ -16,6 +16,7 @@ import {
   getAccessErrorMessage,
   GM_PASSWORD_MIN_LENGTH,
   type GmAccess,
+  type CampaignJoinRequest,
 } from "../data/nhostCampaignAccess";
 
 const employeePositions: Array<{
@@ -34,6 +35,9 @@ type GmMode = "signin" | "signup";
 interface AccessPortalProps {
   session: StoredSession | null;
   gmAccess: GmAccess | null;
+  joinRequest: CampaignJoinRequest | null;
+  onRefreshJoinRequest: () => Promise<void>;
+  onCancelJoinRequest: (id: string) => Promise<void>;
   onRefreshGmAccess: () => Promise<void>;
   accessError: string;
   onSignInGm: (input: { username: string; password: string }) => Promise<void>;
@@ -54,6 +58,9 @@ interface AccessPortalProps {
 export function AccessPortal({
   session,
   gmAccess,
+  joinRequest,
+  onRefreshJoinRequest,
+  onCancelJoinRequest,
   onRefreshGmAccess,
   accessError,
   onSignInGm,
@@ -95,8 +102,9 @@ export function AccessPortal({
   const view = useMemo(() => {
     if (regularUser)
       return gmAccess?.status === "approved" ? "create" : "approval";
+    if (joinRequest && mode === "employee") return "join-approval";
     return mode;
-  }, [mode, regularUser, gmAccess?.status]);
+  }, [mode, regularUser, gmAccess?.status, joinRequest]);
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
@@ -169,15 +177,17 @@ export function AccessPortal({
             <div>
               <small>危机应对与持续营业指南</small>
               <h2>
-                {view === "approval"
-                  ? "GM 权限申请"
-                  : view === "create"
-                    ? "建立本次夜班"
-                    : view === "gm"
-                      ? gmMode === "signup"
-                        ? "申请店长账号"
-                        : "店长账号登录"
-                      : "员工报到单"}
+                {view === "join-approval"
+                  ? "入店申请"
+                  : view === "approval"
+                    ? "GM 权限申请"
+                    : view === "create"
+                      ? "建立本次夜班"
+                      : view === "gm"
+                        ? gmMode === "signup"
+                          ? "申请店长账号"
+                          : "店长账号登录"
+                        : "员工报到单"}
               </h2>
             </div>
             <span className="manual-file-number">BK-ZM-09</span>
@@ -210,6 +220,9 @@ export function AccessPortal({
 
           {view === "employee" && (
             <form className="access-form" onSubmit={submitJoin}>
+              <p className="gm-application-notice">
+                班次码用于申请加入。请先与 GM 确认身份，批准后才能进入公告板。
+              </p>
               <label>
                 <span>员工姓名 / 角色名</span>
                 <input
@@ -260,10 +273,68 @@ export function AccessPortal({
                 />
               </label>
               <button className="access-submit" type="submit" disabled={busy}>
-                {busy ? "正在分配岗位" : "确认报到并进入餐厅"}
+                {busy ? "正在提交入店申请" : "申请加入班次"}
                 {!busy && <ArrowRight aria-hidden="true" />}
               </button>
             </form>
+          )}
+
+          {view === "join-approval" && joinRequest && (
+            <div className="access-form gm-approval" aria-live="polite">
+              <p className="gm-application-notice">
+                入店申请已提交给本班次
+                GM。等待期间请保留当前浏览器身份，批准后会自动进入公告板。
+              </p>
+              <dl>
+                <dt>申请班次</dt>
+                <dd>{joinRequest.campaignName}</dd>
+                <dt>角色与岗位</dt>
+                <dd>
+                  {joinRequest.characterName} · {joinRequest.jobTitle}
+                </dd>
+                <dt>审批状态</dt>
+                <dd>
+                  {joinRequest.status === "pending"
+                    ? "等待 GM 审批"
+                    : joinRequest.status === "approved"
+                      ? "GM 已批准，正在核对排班"
+                      : "入店申请未通过"}
+                </dd>
+              </dl>
+              {joinRequest.status === "rejected" && (
+                <p>请联系 GM 核对申请。同一账号重复提交不会重置审批结果。</p>
+              )}
+              {joinRequest.reviewNote && (
+                <p>GM 备注：{joinRequest.reviewNote}</p>
+              )}
+              <button
+                className="access-submit"
+                type="button"
+                disabled={busy}
+                onClick={() => void run(onRefreshJoinRequest)}
+              >
+                {busy ? "正在查询" : "刷新入店审批结果"}
+              </button>
+              {joinRequest.status === "pending" && (
+                <button
+                  className="access-signout"
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(() => onCancelJoinRequest(joinRequest.id))
+                  }
+                >
+                  撤回入店申请
+                </button>
+              )}
+              <button
+                className="access-signout"
+                type="button"
+                onClick={() => void onSignOut()}
+              >
+                退出当前身份
+              </button>
+            </div>
           )}
 
           {view === "gm" && (

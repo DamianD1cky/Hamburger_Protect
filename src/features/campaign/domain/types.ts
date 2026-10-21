@@ -84,6 +84,7 @@ export interface BoardActivity {
     before?: Record<string, unknown> | null;
     after?: Record<string, unknown> | null;
     job_title?: string;
+    character_name?: string;
     actor_name?: string;
   };
   createdAt: string;

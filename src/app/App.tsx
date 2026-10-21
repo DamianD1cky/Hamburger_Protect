@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Copy, LogOut, RefreshCw } from "lucide-react";
+import { BookOpen, Copy, LogOut, RefreshCw, UserPlus } from "lucide-react";
 import {
   lazy,
   Suspense,
@@ -18,6 +18,10 @@ import type {
 import { AccessPortal } from "../features/access/components/AccessPortal";
 import {
   createCampaign,
+  cancelCampaignJoin,
+  getCampaignJoinInbox,
+  getOwnJoinRequest,
+  reviewCampaignJoin,
   getActiveCampaign,
   getGmAccess,
   joinCampaign,
@@ -117,11 +121,24 @@ function CloudCampaignApp() {
     queryFn: getActiveCampaign,
     enabled: Boolean(session?.user) && (!regularUser || approved),
     staleTime: 5_000,
+    refetchInterval: (query) =>
+      !regularUser && query.state.data?.status !== "active" ? 5_000 : false,
+    refetchIntervalInBackground: false,
+    retry: 1,
+  });
+  const joinRequestQuery = useQuery({
+    queryKey: ["join-request", session?.user?.id ?? "signed-out"],
+    queryFn: getOwnJoinRequest,
+    enabled: Boolean(session?.user?.isAnonymous) && !accessQuery.data,
+    staleTime: 5_000,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
     retry: 1,
   });
 
   const refreshAccess = async () => {
     await queryClient.invalidateQueries({ queryKey: ["active-campaign"] });
+    await queryClient.invalidateQueries({ queryKey: ["join-request"] });
   };
 
   const handleSignOut = async () => {
@@ -129,10 +146,19 @@ function CloudCampaignApp() {
     queryClient.removeQueries({ queryKey: ["gm-access"] });
     queryClient.removeQueries({ queryKey: ["active-campaign"] });
     queryClient.removeQueries({ queryKey: ["campaign-board"] });
+    queryClient.removeQueries({ queryKey: ["join-request"] });
+    queryClient.removeQueries({ queryKey: ["join-inbox"] });
   };
 
   if (regularUser && gmAccessQuery.isLoading) {
     return <CloudStatus message="正在核对 GM 审批状态" />;
+  }
+
+  if (
+    session?.user?.isAnonymous &&
+    (accessQuery.isLoading || joinRequestQuery.isLoading)
+  ) {
+    return <CloudStatus message="正在核对入店申请" />;
   }
 
   if (regularUser && approved && accessQuery.isLoading) {
@@ -152,15 +178,23 @@ function CloudCampaignApp() {
     <AccessPortal
       session={session}
       gmAccess={gmAccessQuery.data ?? null}
+      joinRequest={joinRequestQuery.data ?? null}
+      onRefreshJoinRequest={refreshAccess}
+      onCancelJoinRequest={async (id) => {
+        await cancelCampaignJoin(id);
+        await refreshAccess();
+      }}
       onRefreshGmAccess={async () => {
         await gmAccessQuery.refetch();
       }}
       accessError={
-        gmAccessQuery.error instanceof Error
-          ? gmAccessQuery.error.message
-          : accessQuery.error instanceof Error
-            ? accessQuery.error.message
-            : ""
+        joinRequestQuery.error instanceof Error
+          ? joinRequestQuery.error.message
+          : gmAccessQuery.error instanceof Error
+            ? gmAccessQuery.error.message
+            : accessQuery.error instanceof Error
+              ? accessQuery.error.message
+              : ""
       }
       onSignInGm={async (input) => {
         await signInGm(input);
@@ -216,6 +250,26 @@ function CampaignBoardWorkspace({
   const [notesOpen, setNotesOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
+  const joinInbox = useQuery({
+    queryKey: ["join-inbox", campaignId],
+    queryFn: () => getCampaignJoinInbox(campaignId),
+    enabled:
+      !demo &&
+      campaign.board?.viewer.role === "gm" &&
+      campaign.board.campaign.status === "active",
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    staleTime: 5_000,
+    retry: 1,
+  });
+  const reviewJoinRequest = async (
+    id: string,
+    approved: boolean,
+    note: string,
+  ) => {
+    await reviewCampaignJoin(id, approved, note);
+    await Promise.all([joinInbox.refetch(), campaign.refetch()]);
+  };
   const [handbookOpen, setHandbookOpen] = useState(false);
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | undefined>(undefined);
@@ -227,6 +281,15 @@ function CampaignBoardWorkspace({
   }, []);
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+  const lastPendingCount = useRef<number | null>(null);
+  useEffect(() => {
+    const count = joinInbox.data?.total;
+    if (count === undefined) return;
+    if (count > (lastPendingCount.current ?? 0)) {
+      showToast(`有 ${count} 条入店申请等待审批`);
+    }
+    lastPendingCount.current = count;
+  }, [joinInbox.data?.total, showToast]);
 
   const openComposer = useCallback(
     (
@@ -430,6 +493,22 @@ function CampaignBoardWorkspace({
             <Copy aria-hidden="true" />
           </button>
         )}
+        {!demo && board.viewer.role === "gm" && (
+          <button
+            type="button"
+            className={
+              (joinInbox.data?.total ?? 0) > 0
+                ? "join-inbox-button has-pending"
+                : "join-inbox-button"
+            }
+            onClick={() => setRosterOpen(true)}
+            aria-label={`入店申请，${joinInbox.data?.total ?? 0} 条待审批`}
+            title="审批玩家入店申请"
+          >
+            <UserPlus aria-hidden="true" />
+            <span>{joinInbox.data?.total ?? 0}</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setHandbookOpen(true)}
@@ -521,6 +600,18 @@ function CampaignBoardWorkspace({
         {rosterOpen && (
           <RosterDialog
             members={board.members}
+            joinInbox={
+              board.viewer.role === "gm" && !demo
+                ? (joinInbox.data ?? { requests: [], total: 0 })
+                : undefined
+            }
+            inboxError={
+              joinInbox.error instanceof Error ? joinInbox.error.message : ""
+            }
+            onRefreshInbox={async () => {
+              await joinInbox.refetch();
+            }}
+            onReviewJoin={reviewJoinRequest}
             onClose={() => setRosterOpen(false)}
           />
         )}

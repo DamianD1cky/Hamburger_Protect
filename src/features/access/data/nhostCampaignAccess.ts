@@ -23,6 +23,50 @@ export interface GmAccess {
   reviewNote: string;
 }
 
+export interface CampaignJoinRequest {
+  id: string;
+  campaignId: string;
+  userId: string;
+  campaignName: string;
+  characterName: string;
+  jobTitle: Exclude<EmployeePosition, "店长">;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  requestedAt: string;
+  reviewedAt: string | null;
+  reviewNote: string;
+}
+
+interface RemoteJoinRequest {
+  id: string;
+  campaign_id: string;
+  user_id: string;
+  campaign_name: string;
+  character_name: string;
+  job_title: CampaignJoinRequest["jobTitle"];
+  status: CampaignJoinRequest["status"];
+  requested_at: string;
+  reviewed_at: string | null;
+  review_note: string;
+}
+
+const JOIN_REQUEST_FIELDS = `id campaign_id user_id campaign_name character_name job_title
+  status requested_at reviewed_at review_note`;
+
+function toJoinRequest(row: RemoteJoinRequest): CampaignJoinRequest {
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    userId: row.user_id,
+    campaignName: row.campaign_name,
+    characterName: row.character_name,
+    jobTitle: row.job_title,
+    status: row.status,
+    requestedAt: row.requested_at,
+    reviewedAt: row.reviewed_at,
+    reviewNote: row.review_note,
+  };
+}
+
 export interface ActiveCampaignAccess {
   campaignId: string;
   name: string;
@@ -112,6 +156,15 @@ const accessErrorMessages: Array<[string[], string]> = [
   [
     ["one_active_campaign_per_player"],
     "你已经参加了一个仍在营业的战役，不能重复入店。",
+  ],
+  [
+    ["join_request_pending"],
+    "你已有待审批的入店申请，请先等待结果或撤回申请。",
+  ],
+  [["join_request_already_reviewed"], "申请状态已变更，请刷新后查看结果。"],
+  [
+    ["player_account_required"],
+    "玩家入店申请需要匿名员工身份，请先退出店长账号。",
   ],
   [["campaign_not_found"], "班次码无效，或该战役已经打烊。"],
   [
@@ -292,28 +345,75 @@ export async function joinCampaign(input: {
   if (await getActiveCampaign()) {
     throw new Error("ONE_ACTIVE_CAMPAIGN_PER_PLAYER");
   }
-  try {
-    await request(
-      `mutation JoinCampaign($args: join_campaign_args!) {
-        join_campaign(args: $args) { campaign_id }
-      }`,
-      {
-        args: {
-          p_join_code: input.joinCode.trim().toUpperCase(),
-          p_character_name: input.characterName.trim(),
-          p_job_title: input.jobTitle,
-        },
+  await request(
+    `mutation RequestCampaignJoin($args: request_campaign_join_args!) {
+      request_campaign_join(args: $args) { id }
+    }`,
+    {
+      args: {
+        p_join_code: input.joinCode.trim().toUpperCase(),
+        p_character_name: input.characterName.trim(),
+        p_job_title: input.jobTitle,
       },
-    );
-  } catch (error) {
-    // 本实例下函数返回行固定回传 null，函数只能靠异常报错，而 Hasura 会把
-    // 函数内的 raise 折叠成 database query error。重复入店已在上面排除，
-    // 因此这里剩下的可能只有班次码查无此局。
-    if (describeError(error).includes("database query error")) {
-      throw new Error("CAMPAIGN_NOT_FOUND");
+    },
+  );
+}
+
+export async function getOwnJoinRequest(): Promise<CampaignJoinRequest | null> {
+  const session = requireClient().getUserSession();
+  if (!session?.user?.isAnonymous) return null;
+  const data = await request<{ campaign_join_requests: RemoteJoinRequest[] }>(
+    `query OwnJoinRequest($userId: uuid!) {
+      campaign_join_requests(where: {user_id: {_eq: $userId}, status: {_neq: "cancelled"}},
+        order_by: [{requested_at: desc}, {id: desc}], limit: 1) { ${JOIN_REQUEST_FIELDS} }
+    }`,
+    { userId: session.user.id },
+  );
+  return data.campaign_join_requests[0]
+    ? toJoinRequest(data.campaign_join_requests[0])
+    : null;
+}
+
+export async function getCampaignJoinInbox(campaignId: string) {
+  const data = await request<{
+    campaign_join_requests: RemoteJoinRequest[];
+    campaign_join_requests_aggregate: { aggregate: { count: number } };
+  }>(
+    `query CampaignJoinInbox($campaignId: uuid!) {
+    campaign_join_requests(where: {campaign_id: {_eq: $campaignId}, status: {_eq: "pending"}},
+      order_by: [{requested_at: asc}, {id: asc}], limit: 30) { ${JOIN_REQUEST_FIELDS} }
+    campaign_join_requests_aggregate(where: {campaign_id: {_eq: $campaignId}, status: {_eq: "pending"}}) {
+      aggregate { count }
     }
-    throw error;
-  }
+  }`,
+    { campaignId },
+  );
+  return {
+    requests: data.campaign_join_requests.map(toJoinRequest),
+    total: data.campaign_join_requests_aggregate.aggregate.count,
+  };
+}
+
+export async function reviewCampaignJoin(
+  id: string,
+  approved: boolean,
+  note: string,
+) {
+  await request(
+    `mutation ReviewCampaignJoin($args: review_campaign_join_args!) {
+    review_campaign_join(args: $args) { id }
+  }`,
+    { args: { p_request_id: id, p_approved: approved, p_note: note.trim() } },
+  );
+}
+
+export async function cancelCampaignJoin(id: string) {
+  await request(
+    `mutation CancelCampaignJoin($args: cancel_campaign_join_args!) {
+    cancel_campaign_join(args: $args) { id }
+  }`,
+    { args: { p_request_id: id } },
+  );
 }
 
 export async function signOut() {

@@ -2621,3 +2621,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .gm-approval dt { color: #7b6d58; font-size: 13px; }
 .gm-approval dd { margin: 0 0 12px; overflow-wrap: anywhere; font-size: 20px; }
 .gm-approval p { line-height: 1.7; }
+
+
+.join-request-inbox { margin-bottom: 24px; }
+.join-inbox-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.join-inbox-heading h2 { margin: 8px 0; font-size: 22px; }
+.join-request-row { padding: 18px 0; border-bottom: 1px dashed #b9b09b; }
+.join-request-row header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
+.join-request-row header strong { overflow-wrap: anywhere; font-size: 22px; color: #875319; }
+.join-request-meta { font-size: 13px; color: #706858; line-height: 1.6; }
+.join-request-warning { padding: 10px; background: #dfc89c38; color: #875319; font-size: 14px; }
+.join-request-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 12px; }
+.shop-status .join-inbox-button { display: flex; align-items: center; gap: 4px; width: auto; padding: 4px 8px; }
+.shop-status .join-inbox-button.has-pending { background: #e6b541; color: #30251b; }
