@@ -14,6 +14,7 @@ interface NoteCardProps {
   note: BoardNote;
   viewScaleRef: RefObject<number>;
   canEdit: boolean;
+  noteTextureUrl: string | null;
   onEdit: (note: BoardNote, element: HTMLElement) => void;
   onMove: (noteId: string, x: number, y: number) => Promise<unknown>;
 }
@@ -22,6 +23,7 @@ export function NoteCard({
   note,
   viewScaleRef,
   canEdit,
+  noteTextureUrl,
   onEdit,
   onMove,
 }: NoteCardProps) {
@@ -104,6 +106,7 @@ export function NoteCard({
         left: note.x,
         top: note.y,
         transform: "rotate(" + note.rotation + "deg)",
+        backgroundImage: noteTextureUrl ? `url(${noteTextureUrl})` : undefined,
       }}
       onClick={(event) => {
         if (canEdit && window.matchMedia("(max-width: 1024px)").matches)

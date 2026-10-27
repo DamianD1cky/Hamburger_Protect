@@ -18,6 +18,7 @@ interface RemoteRequest {
   campaign_name: string;
   character_name: string;
   job_title: CampaignJoinRequest["jobTitle"];
+  profile_text: string;
   status: CampaignJoinRequest["status"];
   requested_at: string;
   reviewed_at: string | null;
@@ -31,6 +32,7 @@ function toRequest(r: RemoteRequest): CampaignJoinRequest {
     campaignName: r.campaign_name,
     characterName: r.character_name,
     jobTitle: r.job_title,
+    profileText: r.profile_text,
     status: r.status,
     requestedAt: r.requested_at,
     reviewedAt: r.reviewed_at,
@@ -132,7 +134,8 @@ export async function createCampaign(input: {
 export async function joinCampaign(input: {
   joinCode: string;
   characterName: string;
-  jobTitle: Exclude<EmployeePosition, "店长">;
+  jobTitle: string;
+  profileText: string;
 }) {
   const client = requireSupabase();
   let {
@@ -144,6 +147,7 @@ export async function joinCampaign(input: {
         data: {
           displayName: input.characterName.trim(),
           employeePosition: input.jobTitle,
+          profileText: input.profileText,
         },
       },
     });
@@ -158,6 +162,7 @@ export async function joinCampaign(input: {
     p_join_code: input.joinCode.trim().toUpperCase(),
     p_character_name: input.characterName.trim(),
     p_job_title: input.jobTitle,
+    p_profile_text: input.profileText.trim(),
   });
 }
 export async function getOwnJoinRequest(): Promise<CampaignJoinRequest | null> {

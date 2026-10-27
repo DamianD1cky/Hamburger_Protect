@@ -11,7 +11,6 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { EmployeePosition } from "../../campaign/domain/types";
 import {
   getAccessErrorMessage,
   GM_PASSWORD_MIN_LENGTH,
@@ -19,15 +18,7 @@ import {
   type CampaignJoinRequest,
 } from "../data/campaignAccess";
 
-const employeePositions: Array<{
-  value: Exclude<EmployeePosition, "店长">;
-  label: string;
-}> = [
-  { value: "厨师", label: "厨师 · 继续出餐或利用厨房设备" },
-  { value: "维修师", label: "维修师 · 电路、设备与应急电源" },
-  { value: "服务员", label: "服务员 · 物资、顾客与临时防线" },
-  { value: "顾客", label: "顾客 · 搬运、建议或等待订单" },
-];
+const employeePositions = ["厨师", "维修师", "服务员", "顾客"] as const;
 
 type PortalMode = "employee" | "gm";
 type GmMode = "signin" | "signup";
@@ -51,7 +42,8 @@ interface AccessPortalProps {
   onJoinCampaign: (input: {
     joinCode: string;
     characterName: string;
-    jobTitle: Exclude<EmployeePosition, "店长">;
+    jobTitle: string;
+    profileText: string;
   }) => Promise<void>;
 }
 
@@ -80,17 +72,14 @@ export function AccessPortal({
     session?.user?.displayName ?? "",
   );
   const [joinCode, setJoinCode] = useState("");
-  const [jobTitle, setJobTitle] = useState<Exclude<EmployeePosition, "店长">>(
-    () => {
-      const stored = session?.user?.metadata?.employeePosition;
-      return stored === "厨师" ||
-        stored === "维修师" ||
-        stored === "服务员" ||
-        stored === "顾客"
-        ? stored
-        : "服务员";
-    },
-  );
+  const [jobTitle, setJobTitle] = useState(() => {
+    const stored = session?.user?.metadata?.employeePosition;
+    return typeof stored === "string" && stored.trim() ? stored : "服务员";
+  });
+  const [profileText, setProfileText] = useState(() => {
+    const stored = session?.user?.metadata?.profileText;
+    return typeof stored === "string" ? stored : "";
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -141,7 +130,9 @@ export function AccessPortal({
 
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
-    void run(() => onJoinCampaign({ joinCode, characterName, jobTitle }));
+    void run(() =>
+      onJoinCampaign({ joinCode, characterName, jobTitle, profileText }),
+    );
   };
 
   return (
@@ -235,21 +226,30 @@ export function AccessPortal({
                 />
               </label>
               <label>
-                <span>当前岗位</span>
-                <select
+                <span>岗位 / 身份称呼</span>
+                <input
+                  required
+                  maxLength={40}
+                  list="employee-position-presets"
                   value={jobTitle}
-                  onChange={(event) =>
-                    setJobTitle(
-                      event.target.value as Exclude<EmployeePosition, "店长">,
-                    )
-                  }
-                >
+                  onChange={(event) => setJobTitle(event.target.value)}
+                  placeholder="例：厨师、保安、流浪记者"
+                />
+                <datalist id="employee-position-presets">
                   {employeePositions.map((position) => (
-                    <option key={position.value} value={position.value}>
-                      {position.label}
-                    </option>
+                    <option key={position} value={position} />
                   ))}
-                </select>
+                </datalist>
+              </label>
+              <label>
+                <span>角色资料（房间成员可见，可选）</span>
+                <textarea
+                  maxLength={2000}
+                  rows={4}
+                  value={profileText}
+                  onChange={(event) => setProfileText(event.target.value)}
+                  placeholder="背景、能力、随身物品或需要队友知道的信息"
+                />
               </label>
               <label>
                 <span>6 位班次码</span>
@@ -350,7 +350,7 @@ export function AccessPortal({
                   required
                   minLength={3}
                   maxLength={20}
-                  pattern="[a-z0-9_-]{3,20}"
+                  pattern={"[a-z0-9_\\-]{3,20}"}
                   value={gmUsername}
                   onChange={(event) =>
                     setGmUsername(

@@ -10,6 +10,9 @@ import type {
   CampaignBoard,
   ResourceDraft,
   ChecklistDraft,
+  CampaignMediaKind,
+  CampaignSettingsDraft,
+  MemberProfileDraft,
   NoteDraft,
   QuestDraft,
   QuestStatus,
@@ -69,6 +72,10 @@ export function useCampaignBoard(
       commit(() => repository.saveChecklistItem(campaignId, draft, id)),
     deleteChecklistItem: (id: string) =>
       commit(() => repository.deleteChecklistItem(campaignId, id)),
+    saveChecklistCategory: (name: string, id?: string) =>
+      commit(() => repository.saveChecklistCategory(campaignId, name, id)),
+    deleteChecklistCategory: (id: string) =>
+      commit(() => repository.deleteChecklistCategory(campaignId, id)),
     setBurgerIndex: (value: number) =>
       commit(() => repository.setBurgerIndex(campaignId, value)),
     toggleChecklist: (itemId: string) =>
@@ -85,5 +92,17 @@ export function useCampaignBoard(
       commit(() => repository.moveNote(campaignId, noteId, x, y)),
     deleteNote: (noteId: string) =>
       commit(() => repository.deleteNote(campaignId, noteId)),
+    setNotePinned: (noteId: string, pinned: boolean) =>
+      commit(() => repository.setNotePinned(campaignId, noteId, pinned)),
+    updateMemberProfile: (draft: MemberProfileDraft) =>
+      commit(() => repository.updateMemberProfile(campaignId, draft)),
+    removeMember: (userId: string, note?: string) =>
+      commit(() => repository.removeMember(campaignId, userId, note)),
+    updateCampaignSettings: (draft: CampaignSettingsDraft) =>
+      commit(() => repository.updateCampaignSettings(campaignId, draft)),
+    uploadCampaignMedia: (kind: CampaignMediaKind, file: File) =>
+      commit(() => repository.uploadCampaignMedia(campaignId, kind, file)),
+    clearCampaignMedia: (kind: CampaignMediaKind) =>
+      commit(() => repository.clearCampaignMedia(campaignId, kind)),
   };
 }

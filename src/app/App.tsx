@@ -1,5 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Copy, LogOut, RefreshCw, UserPlus } from "lucide-react";
+import {
+  BookOpen,
+  Copy,
+  LogOut,
+  RefreshCw,
+  Settings,
+  UserPlus,
+} from "lucide-react";
 import {
   lazy,
   Suspense,
@@ -84,6 +91,11 @@ const NotesDialog = lazy(() =>
     default: module.NotesDialog,
   })),
 );
+const RoomSettingsDialog = lazy(() =>
+  import("../components/board/RoomSettingsDialog").then((module) => ({
+    default: module.RoomSettingsDialog,
+  })),
+);
 
 const closedComposer: ComposerState = {
   open: false,
@@ -152,8 +164,7 @@ function CloudCampaignApp() {
     queryFn: getActiveCampaign,
     enabled: Boolean(session?.user) && (!regularUser || approved),
     staleTime: 5_000,
-    refetchInterval: (query) =>
-      !regularUser && query.state.data?.status !== "active" ? 5_000 : false,
+    refetchInterval: !regularUser ? 5_000 : false,
     refetchIntervalInBackground: false,
     retry: 1,
   });
@@ -244,7 +255,8 @@ function CloudCampaignApp() {
       onJoinCampaign={async (input: {
         joinCode: string;
         characterName: string;
-        jobTitle: Exclude<EmployeePosition, "店长">;
+        jobTitle: string;
+        profileText: string;
       }) => {
         await joinCampaign(input);
         await refreshAccess();
@@ -295,6 +307,7 @@ function CampaignBoardWorkspace({
   const [notesOpen, setNotesOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
+  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const joinInbox = useQuery({
     queryKey: [
       "join-inbox",
@@ -339,6 +352,19 @@ function CampaignBoardWorkspace({
     }
     lastPendingCount.current = count;
   }, [joinInbox.data?.total, showToast]);
+  useEffect(() => {
+    const hidden = campaign.board?.settings.hiddenSections ?? [];
+    const sectionByZone = {
+      inventory: "inventory",
+      tasks: "tasks",
+      shifts: "shifts",
+      safety: "safety",
+      notes: "activity",
+    } as const;
+    if (focusZone !== "overview" && hidden.includes(sectionByZone[focusZone])) {
+      setFocusZone("overview");
+    }
+  }, [campaign.board?.settings.hiddenSections, focusZone, setFocusZone]);
 
   const openComposer = useCallback(
     (
@@ -445,9 +471,11 @@ function CampaignBoardWorkspace({
       showToast(
         status === "completed"
           ? "工作报告已由店长确认"
-          : status === "open"
-            ? "任务已重新张贴"
-            : "工作记录已更新",
+          : status === "failed"
+            ? "工作报告已退回重试"
+            : status === "open"
+              ? "任务已重新张贴"
+              : "工作记录已更新",
       );
     },
     [campaign, showToast],
@@ -558,6 +586,16 @@ function CampaignBoardWorkspace({
             <span>{joinInbox.data?.total ?? 0}</span>
           </button>
         )}
+        {board.viewer.role === "gm" && (
+          <button
+            type="button"
+            onClick={() => setRoomSettingsOpen(true)}
+            aria-label="打开房间配置"
+            title="房间配置"
+          >
+            <Settings aria-hidden="true" />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setHandbookOpen(true)}
@@ -578,7 +616,11 @@ function CampaignBoardWorkspace({
         )}
       </div>
 
-      <FocusDock active={focusZone} onChange={setFocusZone} />
+      <FocusDock
+        active={focusZone}
+        hiddenSections={board.settings.hiddenSections}
+        onChange={setFocusZone}
+      />
 
       <Suspense fallback={<CloudStatus message="正在打开详情" />}>
         {composer.open && (
@@ -613,6 +655,8 @@ function CampaignBoardWorkspace({
             onClose={() => setBoardEditor(null)}
             onSaveChecklist={campaign.saveChecklistItem}
             onDeleteChecklist={campaign.deleteChecklistItem}
+            onSaveCategory={campaign.saveChecklistCategory}
+            onDeleteCategory={campaign.deleteChecklistCategory}
             onSetIndex={campaign.setBurgerIndex}
           />
         )}
@@ -644,11 +688,34 @@ function CampaignBoardWorkspace({
               setNotesOpen(false);
               openComposer("note", null, event.currentTarget);
             }}
+            onTogglePin={campaign.setNotePinned}
+          />
+        )}
+        {roomSettingsOpen && (
+          <RoomSettingsDialog
+            board={board}
+            onClose={() => setRoomSettingsOpen(false)}
+            onSave={async (draft) => {
+              await campaign.updateCampaignSettings(draft);
+              showToast("房间配置已保存");
+            }}
+            onUpload={async (kind, file) => {
+              await campaign.uploadCampaignMedia(kind, file);
+              showToast("房间图片已更新");
+            }}
+            onClearMedia={async (kind) => {
+              await campaign.clearCampaignMedia(kind);
+              showToast("已恢复默认图片");
+            }}
+            onOpenRoster={() => {
+              setRoomSettingsOpen(false);
+              setRosterOpen(true);
+            }}
           />
         )}
         {rosterOpen && (
           <RosterDialog
-            members={board.members}
+            board={board}
             joinInbox={
               board.viewer.role === "gm" && !demo
                 ? (joinInbox.data ?? { requests: [], total: 0 })
@@ -661,6 +728,15 @@ function CampaignBoardWorkspace({
               await joinInbox.refetch();
             }}
             onReviewJoin={reviewJoinRequest}
+            onUpdateProfile={async (draft) => {
+              await campaign.updateMemberProfile(draft);
+              showToast("角色资料已更新");
+            }}
+            onRemoveMember={async (userId, note) => {
+              await campaign.removeMember(userId, note);
+              await joinInbox.refetch();
+              showToast("成员已移出，未提交任务已释放");
+            }}
             onClose={() => setRosterOpen(false)}
           />
         )}

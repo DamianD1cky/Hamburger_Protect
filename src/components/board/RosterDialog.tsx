@@ -1,7 +1,12 @@
+import { LogOut, Pencil, UserRound } from "lucide-react";
 import { useState } from "react";
 import type { CampaignJoinRequest } from "../../features/access/data/campaignAccess";
 import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
-import type { CampaignMember } from "../../features/campaign/domain/types";
+import type {
+  CampaignBoard,
+  CampaignMember,
+  MemberProfileDraft,
+} from "../../features/campaign/domain/types";
 import { PaperDialog } from "../composer/PaperDialog";
 
 function JoinRequestRow({
@@ -42,8 +47,11 @@ function JoinRequestRow({
       </p>
       {duplicateName && (
         <p className="join-request-warning">
-          存在同名成员或申请，请先核对是否为同一位玩家。
+          存在同名成员或申请，请先核对编号与本人身份。
         </p>
+      )}
+      {request.profileText && (
+        <p className="join-request-profile">{request.profileText}</p>
       )}
       <label className="field">
         <span>审批备注（可选）</span>
@@ -67,7 +75,6 @@ function JoinRequestRow({
           className="text-button"
           disabled={busy}
           onClick={() => void review(false)}
-          aria-label={`拒绝入店：${identity}`}
         >
           拒绝
         </button>
@@ -76,7 +83,6 @@ function JoinRequestRow({
           className="publish-button"
           disabled={busy}
           onClick={() => void review(true)}
-          aria-label={`批准入店：${identity}`}
         >
           {busy ? "处理中…" : "批准加入"}
         </button>
@@ -85,24 +91,213 @@ function JoinRequestRow({
   );
 }
 
+function MemberDetail({
+  member,
+  board,
+  onUpdateProfile,
+  onRemoveMember,
+}: {
+  member: CampaignMember;
+  board: CampaignBoard;
+  onUpdateProfile: (draft: MemberProfileDraft) => Promise<unknown>;
+  onRemoveMember: (userId: string, note: string) => Promise<unknown>;
+}) {
+  const own = member.userId === board.viewer.id;
+  const canRemove =
+    board.viewer.role === "gm" &&
+    member.role === "player" &&
+    member.active &&
+    board.campaign.status === "active";
+  const [editing, setEditing] = useState(false);
+  const [characterName, setCharacterName] = useState(member.characterName);
+  const [jobTitle, setJobTitle] = useState(member.jobTitle);
+  const [profileText, setProfileText] = useState(member.profileText);
+  const [removalNote, setRemovalNote] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const unfinished = board.quests.filter(
+    (quest) =>
+      quest.claimedBy === member.userId && quest.status !== "completed",
+  );
+  const save = async () => {
+    if (busy || !characterName.trim() || !jobTitle.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onUpdateProfile({
+        characterName: characterName.trim(),
+        jobTitle: jobTitle.trim(),
+        profileText: profileText.trim(),
+      });
+      setEditing(false);
+    } catch {
+      setError("资料保存失败，请检查当前成员资格后重试。");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    if (!confirmRemove) {
+      setConfirmRemove(true);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await onRemoveMember(member.userId, removalNote.trim());
+    } catch {
+      setError("移出失败，成员状态可能已变化，请刷新排班。");
+      setBusy(false);
+    }
+  };
+  return (
+    <section
+      className="member-detail"
+      aria-label={`${member.characterName}资料`}
+    >
+      <header>
+        <div>
+          <small>
+            成员编号 {member.userId.slice(0, 8)} ·{" "}
+            {member.active ? "在岗" : "已离岗"}
+          </small>
+          <h2>{member.characterName}</h2>
+          <p>{member.jobTitle}</p>
+        </div>
+        {own && member.active && board.campaign.status === "active" && (
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => setEditing((value) => !value)}
+            aria-label="编辑自己的角色资料"
+            title="编辑资料"
+          >
+            <Pencil />
+          </button>
+        )}
+      </header>
+      {editing ? (
+        <fieldset className="editor-fields" disabled={busy}>
+          <label className="field">
+            <span>角色名字</span>
+            <input
+              value={characterName}
+              onChange={(event) => setCharacterName(event.target.value)}
+              maxLength={40}
+              required
+            />
+          </label>
+          <label className="field">
+            <span>岗位 / 身份称呼</span>
+            <input
+              value={jobTitle}
+              onChange={(event) => setJobTitle(event.target.value)}
+              maxLength={40}
+              required
+            />
+          </label>
+          <label className="field">
+            <span>角色资料（房间成员可见）</span>
+            <textarea
+              value={profileText}
+              onChange={(event) => setProfileText(event.target.value)}
+              maxLength={2000}
+              rows={6}
+            />
+          </label>
+          <div className="member-detail-actions">
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setEditing(false)}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="publish-button"
+              onClick={() => void save()}
+            >
+              {busy ? "保存中…" : "保存资料"}
+            </button>
+          </div>
+        </fieldset>
+      ) : (
+        <p className="member-profile-text">
+          {member.profileText || "这位成员还没有填写角色资料。"}
+        </p>
+      )}
+      {canRemove && (
+        <div className="member-removal">
+          <p>
+            未完成任务：<strong>{unfinished.length}</strong>{" "}
+            项。尚未提交的任务会释放，待审核报告会保留给 GM 处理。
+          </p>
+          {confirmRemove && (
+            <label className="field">
+              <span>移出备注（可选）</span>
+              <input
+                value={removalNote}
+                onChange={(event) => setRemovalNote(event.target.value)}
+                maxLength={200}
+                placeholder="例：重复身份"
+              />
+            </label>
+          )}
+          <button
+            type="button"
+            className="text-button danger-button"
+            disabled={busy}
+            onClick={() => void remove()}
+          >
+            <LogOut />
+            {confirmRemove ? "确认移出房间" : "移出房间"}
+          </button>
+        </div>
+      )}
+      {error && (
+        <p className="access-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function RosterDialog({
-  members,
+  board,
   onClose,
   joinInbox,
   inboxError = "",
   onRefreshInbox,
   onReviewJoin,
+  onUpdateProfile,
+  onRemoveMember,
 }: {
-  members: CampaignMember[];
+  board: CampaignBoard;
   onClose: () => void;
   joinInbox?: { requests: CampaignJoinRequest[]; total: number };
   inboxError?: string;
   onRefreshInbox: () => Promise<void>;
   onReviewJoin: (id: string, approved: boolean, note: string) => Promise<void>;
+  onUpdateProfile: (draft: MemberProfileDraft) => Promise<unknown>;
+  onRemoveMember: (userId: string, note: string) => Promise<unknown>;
 }) {
-  const active = members.filter((member) => member.active);
+  const active = board.members.filter((member) => member.active);
+  const inactive = board.members.filter((member) => !member.active);
+  const [selectedId, setSelectedId] = useState(
+    board.members.find((member) => member.userId === board.viewer.id)?.userId ??
+      active[0]?.userId ??
+      "",
+  );
+  const selected = board.members.find((member) => member.userId === selectedId);
   return (
-    <PaperDialog title={`危机排班 · ${active.length} 人在岗`} onClose={onClose}>
+    <PaperDialog
+      title={`危机排班 · ${active.length} 人在岗`}
+      className="roster-dialog"
+      onClose={onClose}
+    >
       {joinInbox && (
         <section className="join-request-inbox" aria-label="待审批入店申请">
           <div className="join-inbox-heading">
@@ -143,39 +338,55 @@ export function RosterDialog({
               onReview={onReviewJoin}
             />
           ))}
-          {joinInbox.total > joinInbox.requests.length && (
-            <p className="editor-help">
-              显示最早的 {joinInbox.requests.length}{" "}
-              条申请，处理后会自动显示后续申请。
-            </p>
-          )}
         </section>
       )}
-      <table className="roster-table">
-        <thead>
-          <tr>
-            <th>岗位</th>
-            <th>角色名</th>
-            <th>身份</th>
-          </tr>
-        </thead>
-        <tbody>
+      <div className="roster-layout">
+        <div className="roster-member-list" role="list" aria-label="房间成员">
           {active.map((member) => (
-            <tr key={member.userId}>
-              <td>{member.jobTitle}</td>
-              <td>{member.characterName}</td>
-              <td>
-                {member.role === "gm"
-                  ? "值班店长"
-                  : member.role === "observer"
-                    ? "观察者"
-                    : "临时员工"}
-              </td>
-            </tr>
+            <button
+              type="button"
+              role="listitem"
+              className={selectedId === member.userId ? "is-selected" : ""}
+              key={member.userId}
+              onClick={() => setSelectedId(member.userId)}
+            >
+              <UserRound />
+              <span>
+                <strong>{member.characterName}</strong>
+                <small>{member.jobTitle}</small>
+              </span>
+            </button>
           ))}
-        </tbody>
-      </table>
-      {!active.length && <p>暂无在岗成员。</p>}
+          {inactive.length > 0 && (
+            <details className="inactive-members">
+              <summary>已离岗 · {inactive.length}</summary>
+              {inactive.map((member) => (
+                <button
+                  type="button"
+                  className={selectedId === member.userId ? "is-selected" : ""}
+                  key={member.userId}
+                  onClick={() => setSelectedId(member.userId)}
+                >
+                  <UserRound />
+                  <span>
+                    <strong>{member.characterName}</strong>
+                    <small>{member.jobTitle}</small>
+                  </span>
+                </button>
+              ))}
+            </details>
+          )}
+        </div>
+        {selected && (
+          <MemberDetail
+            key={selected.userId}
+            member={selected}
+            board={board}
+            onUpdateProfile={onUpdateProfile}
+            onRemoveMember={onRemoveMember}
+          />
+        )}
+      </div>
     </PaperDialog>
   );
 }

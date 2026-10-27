@@ -5,6 +5,9 @@ import type {
   BoardActivity,
   ResourceDraft,
   ChecklistDraft,
+  CampaignMediaKind,
+  CampaignSettingsDraft,
+  MemberProfileDraft,
   NoteDraft,
   QuestDraft,
   QuestStatus,
@@ -25,20 +28,39 @@ function uid(prefix: string) {
 function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.campaign.burgerIndex ??= 5;
   board.viewer.jobTitle ??= board.viewer.role === "gm" ? "店长" : "服务员";
+  board.checklistCategories ??= [];
+  board.settings ??= {
+    sectionTitles: {},
+    hiddenSections: [],
+    backgroundPath: null,
+    noteTexturePath: null,
+    backgroundUrl: null,
+    noteTextureUrl: null,
+  };
   board.members ??= [
     {
       userId: board.viewer.id,
       role: board.viewer.role,
       characterName: board.viewer.displayName,
       jobTitle: board.viewer.jobTitle,
+      profileText: "",
       active: board.campaign.status === "active",
       joinedAt: new Date().toISOString(),
+      leftAt: null,
     },
   ];
   board.notes ??= [];
   board.activities ??= [];
   board.hasMoreActivity = board.activities.length > 30;
+  board.members.forEach((member) => {
+    member.profileText ??= "";
+    member.leftAt ??= null;
+  });
+  board.checklist.forEach((item) => (item.categoryId ??= null));
+  board.quests.forEach((quest) => (quest.claimedBy ??= null));
   board.notes.forEach((note) => {
+    note.pinned ??= false;
+    note.pinnedAt ??= null;
     note.authorName ??=
       board.members.find((member) => member.userId === note.authorId)
         ?.characterName ?? "未知员工";
@@ -77,6 +99,7 @@ function loadLegacyBoard(): CampaignBoard | null {
         due: String(task.due ?? ""),
         status: task.status === "done" ? "completed" : "open",
         createdBy: board.viewer.id,
+        claimedBy: null,
       }));
     }
 
@@ -97,6 +120,8 @@ function loadLegacyBoard(): CampaignBoard | null {
         createdAt: String(note.createdAt ?? new Date().toISOString()),
         authorId: board.viewer.id,
         authorName: board.viewer.displayName,
+        pinned: false,
+        pinnedAt: null,
       }));
     }
 
@@ -109,11 +134,13 @@ function loadLegacyBoard(): CampaignBoard | null {
 // Match the server snapshots; no fabricated history is added to existing demo data.
 function snapshots(board: CampaignBoard) {
   return [
-    ...board.notes.map(({ id, title, body, color, x, y, rotation }) => ({
-      id,
-      entity: "note",
-      value: { title, body, color, x, y, rotation },
-    })),
+    ...board.notes.map(
+      ({ id, title, body, color, x, y, rotation, pinned }) => ({
+        id,
+        entity: "note",
+        value: { title, body, color, x, y, rotation, pinned },
+      }),
+    ),
     ...board.quests.map(({ id, title, body, status, assigneeName, due }) => ({
       id,
       entity: "quest",
@@ -124,10 +151,10 @@ function snapshots(board: CampaignBoard) {
       entity: "resource",
       value: { name, quantity, status, group_index: group },
     })),
-    ...board.checklist.map(({ id, label, completed }) => ({
+    ...board.checklist.map(({ id, label, completed, categoryId }) => ({
       id,
       entity: "checklist",
-      value: { label, completed },
+      value: { label, completed, category_id: categoryId },
     })),
     {
       id: board.campaign.id,
@@ -136,6 +163,14 @@ function snapshots(board: CampaignBoard) {
         name: board.campaign.name,
         burger_index: board.campaign.burgerIndex,
         status: board.campaign.status,
+      },
+    },
+    {
+      id: board.campaign.id,
+      entity: "settings",
+      value: {
+        section_titles: board.settings.sectionTitles,
+        hidden_sections: board.settings.hiddenSections,
       },
     },
   ];
@@ -276,11 +311,12 @@ class LocalCampaignRepository implements CampaignRepository {
     return this.manage((board) => {
       const item = board.checklist.find((entry) => entry.id === id);
       if (id && !item) throw new Error("检查项已被移除，请刷新后重试");
-      if (item) item.label = draft.label;
+      if (item) Object.assign(item, draft);
       else
         board.checklist.push({
           id: uid("check"),
           label: draft.label,
+          categoryId: draft.categoryId,
           completed: false,
         });
     });
@@ -289,6 +325,31 @@ class LocalCampaignRepository implements CampaignRepository {
   async deleteChecklistItem(_campaignId: string, id: string) {
     return this.manage((board) => {
       board.checklist = board.checklist.filter((item) => item.id !== id);
+    });
+  }
+  async saveChecklistCategory(
+    _campaignId: string,
+    name: string,
+    id?: string,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      const category = board.checklistCategories.find((item) => item.id === id);
+      if (category) category.name = name;
+      else board.checklistCategories.push({ id: uid("category"), name });
+    });
+  }
+
+  async deleteChecklistCategory(
+    _campaignId: string,
+    id: string,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      board.checklistCategories = board.checklistCategories.filter(
+        (item) => item.id !== id,
+      );
+      board.checklist.forEach((item) => {
+        if (item.categoryId === id) item.categoryId = null;
+      });
     });
   }
 
@@ -319,6 +380,7 @@ class LocalCampaignRepository implements CampaignRepository {
         ...draft,
         status: "open",
         createdBy: board.viewer.id,
+        claimedBy: null,
       });
     });
   }
@@ -330,7 +392,17 @@ class LocalCampaignRepository implements CampaignRepository {
   ) {
     return this.mutate((board) => {
       const quest = board.quests.find((item) => item.id === questId);
-      if (quest) quest.status = status;
+      if (quest) {
+        quest.status = status;
+        if (status === "claimed") {
+          quest.claimedBy = board.viewer.id;
+          quest.assigneeName = board.viewer.displayName;
+        }
+        if (status === "open") {
+          quest.claimedBy = null;
+          quest.assigneeName = "待认领";
+        }
+      }
     });
   }
 
@@ -357,6 +429,8 @@ class LocalCampaignRepository implements CampaignRepository {
         createdAt: new Date().toISOString(),
         authorId: board.viewer.id,
         authorName: board.viewer.displayName,
+        pinned: false,
+        pinnedAt: null,
       });
     });
   }
@@ -371,6 +445,88 @@ class LocalCampaignRepository implements CampaignRepository {
   async deleteNote(_campaignId: string, noteId: string) {
     return this.mutate((board) => {
       board.notes = board.notes.filter((note) => note.id !== noteId);
+    });
+  }
+
+  async setNotePinned(
+    _campaignId: string,
+    noteId: string,
+    pinned: boolean,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      const note = board.notes.find((item) => item.id === noteId);
+      if (!note) throw new Error("便签不存在");
+      note.pinned = pinned;
+      note.pinnedAt = pinned ? new Date().toISOString() : null;
+    });
+  }
+
+  async updateMemberProfile(_campaignId: string, draft: MemberProfileDraft) {
+    return this.updateAsMember((board) => {
+      const member = board.members.find(
+        (item) => item.userId === board.viewer.id,
+      );
+      if (!member) throw new Error("成员不存在");
+      member.characterName = draft.characterName;
+      member.jobTitle = draft.jobTitle;
+      member.profileText = draft.profileText;
+      board.viewer.displayName = draft.characterName;
+      board.viewer.jobTitle = draft.jobTitle;
+    });
+  }
+
+  async removeMember(
+    _campaignId: string,
+    userId: string,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      const member = board.members.find((item) => item.userId === userId);
+      if (!member || member.role !== "player") throw new Error("玩家不存在");
+      member.active = false;
+      member.leftAt = new Date().toISOString();
+      board.quests.forEach((quest) => {
+        if (
+          quest.claimedBy === userId &&
+          ["claimed", "in_progress", "failed"].includes(quest.status)
+        ) {
+          quest.status = "open";
+          quest.claimedBy = null;
+          quest.assigneeName = "待认领";
+        }
+      });
+    });
+  }
+
+  async updateCampaignSettings(
+    _campaignId: string,
+    draft: CampaignSettingsDraft,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      board.settings.sectionTitles = draft.sectionTitles;
+      board.settings.hiddenSections = draft.hiddenSections;
+    });
+  }
+
+  async uploadCampaignMedia(
+    _campaignId: string,
+    _kind: CampaignMediaKind,
+    _file: File,
+  ): Promise<CampaignBoard> {
+    throw new Error("演示模式不保存自定义图片");
+  }
+
+  async clearCampaignMedia(
+    _campaignId: string,
+    kind: CampaignMediaKind,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      if (kind === "background") {
+        board.settings.backgroundPath = null;
+        board.settings.backgroundUrl = null;
+      } else {
+        board.settings.noteTexturePath = null;
+        board.settings.noteTextureUrl = null;
+      }
     });
   }
 }

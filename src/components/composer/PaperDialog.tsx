@@ -7,11 +7,13 @@ export function PaperDialog({
   kicker = "危机营业公告板",
   children,
   onClose,
+  className = "",
 }: {
   title: string;
   kicker?: string;
   children: ReactNode;
   onClose: () => void;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
@@ -37,7 +39,7 @@ export function PaperDialog({
   return (
     <dialog
       ref={ref}
-      className="paper-dialog"
+      className={`paper-dialog ${className}`.trim()}
       aria-label={title}
       onCancel={(event) => {
         event.preventDefault();

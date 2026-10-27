@@ -16,17 +16,26 @@
 - 只有获批 GM 能发布任务、修改检查项内容并审核工作报告；玩家可以编辑物资和更新检查状态。
 - 战役结束后生成只读归档；包含玩家提交报告的完整快照仅本战役获批 GM 可读。
 
+## 本轮迭代能力
+
+- 任务状态明确区分可领取、已领取、待审核、需重试和已完成；GM 可审核通过或退回重试。
+- GM 可管理成员与入店申请，移出玩家后立即失权，未提交任务释放，玩家可重新申请。
+- 角色岗位改为自由填写；本人可维护角色名、岗位和最长 2000 字的房间资料。
+- 便签目录支持 GM 共享置顶；检查清单支持单层分类。
+- 房间配置支持 7 个区块的标题和显隐，以及私有场景背景、便签纸张图片。图片支持 JPEG、PNG、WebP，单文件最大 5 MiB。
+- 任意区块添加、复制、删除、游戏时间及社区串门尚未定义，不在本轮范围。
+
 ## 站长审批 GM 权限
 
 1. 申请者注册后，把账号名告知站长，页面显示「等待站长审批」。站长不需要申请者的密码。
-2. 站长登录 Nhost 控制台，选择 **Hamburger-Protect → Database → public → gm_access**。
-3. 根据 `account_name`（格式为 `账号名@gm.local`）和 `display_name` 核对申请者；`user` 关系可查看对应认证账号。
+2. 站长登录 Supabase Dashboard，选择 **Hamburger-Protect → Table Editor → public.gm_access**。
+3. 根据 `account_name`（格式为 `账号名@gm.local`）和 `display_name` 核对申请者；`auth_user_id` 可核对对应认证账号。
 4. 编辑这条记录的 `status`，保存为 `approved`。页面会每 5 秒检查一次审批结果，获批后可创建班次或进入原有战役。
 5. 拒绝申请时设置 `rejected`，撤销已有授权时设置 `revoked`。可填写 `review_note` 向申请者说明原因；`reviewed_at` 会自动更新时间。
 
 新注册账号和更新前已有账号均默认 `pending`；现有战役数据保留，原 GM 需由站长批准后继续管理。不要批量批准 QA 测试账号，也不要通过修改用户 `metadata` 授权。
 
-只有 Nhost 项目管理员可以审批；网站里的 GM 不能审批自己或他人。审批表对普通账号只开放自己的结果查询，没有写权限。创建班次和所有 GM 写入操作由后端检查授权，撤销权限对现有会话生效。
+只有 Supabase 项目管理员可以审批；网站里的 GM 不能审批自己或他人。审批表对普通账号只开放自己的结果查询，没有写权限。创建班次和所有 GM 写入操作由后端检查授权，撤销权限对现有会话生效。
 
 本方案控制的是 GM 使用权限，仍保留账号注册和匿名玩家报到。申请记录在账号首次登录网站时自动建立，重复请求不会覆盖已经批准、拒绝或撤销的结果。
 
@@ -55,7 +64,7 @@
 
 - Vite + React + TypeScript
 - TanStack Query
-- Supabase Auth、PostgreSQL、受控 RPC 与 RLS（迁移目标）
+- Supabase Auth、PostgreSQL、受控 RPC、RLS 与私有 Storage（生产后端）
 - Nhost / Hasura 接入保留至迁移与观察完成
 - TanStack Query 每 5 秒轮询公告板
 - Vercel
@@ -69,9 +78,9 @@ npm run dev
 
 默认访问 <http://127.0.0.1:5173>。本地未配置后端时使用浏览器演示仓储；也可以明确配置 `VITE_BACKEND=local`。线上必须明确选择后端或提供云端配置，否则显示配置错误。选择云端后，连接或认证失败不会回退到本地数据。
 
-## Nhost 环境变量
+## Nhost 兼容配置
 
-复制 `.env.example` 为 `.env.local`，填写 Nhost 项目的公开客户端配置：
+Nhost 仅用于迁移观察期和旧会话恢复。需要验证旧接入时，在本地填写公开客户端配置：
 
 ```bash
 VITE_NHOST_SUBDOMAIN=your-project-subdomain
@@ -104,9 +113,11 @@ nhost/
 
 ## 云端部署
 
-1. Nhost 从仓库根目录读取 `nhost/` 并自动应用迁移和 metadata。
-2. Vercel 配置 `VITE_NHOST_SUBDOMAIN` 与 `VITE_NHOST_REGION`。
-3. 推送 `main` 后，Nhost 与 Vercel 分别自动部署后端和前端。
+1. 使用 `npm run supabase:push` 将已评审迁移部署到已链接的 Supabase 项目，禁止对生产库执行重置。
+2. 先运行云端事务 smoke test，再确认 `private.runtime` 的业务写入与公开状态。
+3. Vercel 配置 `VITE_BACKEND=supabase`、Supabase URL、publishable key 和 GM 账号域名。
+4. 运行 `npm run check`、`npm run check:database`、`npm run build` 和密钥扫描后部署前端。
+5. 生产域名为 <https://hamburger.damiandicky.site>；部署后验证桌面、手机、Auth 和 Storage 签名 URL。
 
 ## 目录结构
 
@@ -118,19 +129,23 @@ src/
 ├── components/handbook/         员工手册速查
 ├── features/access/             登录、建局、加入战役
 ├── features/campaign/domain/    战役领域类型与状态机
-├── features/campaign/data/      本地/Nhost 数据仓储
+├── features/campaign/data/      本地、Nhost、Supabase 数据仓储
 ├── features/campaign/hooks/     React 数据接口
 ├── hooks/                       纯视图交互 Hook
-└── lib/nhost/                   Nhost 客户端
-nhost/                           数据库迁移、配置与 Hasura metadata
+├── lib/nhost/                   Nhost 兼容客户端
+└── lib/supabase/                Supabase 客户端
+nhost/                           旧数据库迁移、配置与 Hasura metadata
+supabase/                        生产数据库迁移、测试与 Edge Functions
 ```
 
 ## 验证
 
 ```bash
 npm run check
+npm run check:database
+npm run check:migration
 npm run build
-npx @nhost/cli config validate
+npm run check:secrets
 ```
 
 ## 开源仓库的密钥保护

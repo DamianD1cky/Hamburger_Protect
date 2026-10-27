@@ -16,6 +16,8 @@ export function BoardEditorDialog({
   onClose,
   onSaveChecklist,
   onDeleteChecklist,
+  onSaveCategory,
+  onDeleteCategory,
   onSetIndex,
 }: {
   kind: BoardEditorKind;
@@ -23,11 +25,20 @@ export function BoardEditorDialog({
   onClose: () => void;
   onSaveChecklist: (draft: ChecklistDraft, id?: string) => Promise<unknown>;
   onDeleteChecklist: (id: string) => Promise<unknown>;
+  onSaveCategory: (name: string, id?: string) => Promise<unknown>;
+  onDeleteCategory: (id: string) => Promise<unknown>;
   onSetIndex: (value: number) => Promise<unknown>;
 }) {
   const items = board.checklist;
   const [id, setId] = useState(items[0]?.id ?? "");
   const [name, setName] = useState(items[0]?.label ?? "");
+  const [categoryId, setCategoryId] = useState(items[0]?.categoryId ?? "");
+  const [managedCategoryId, setManagedCategoryId] = useState(
+    board.checklistCategories[0]?.id ?? "",
+  );
+  const [categoryName, setCategoryName] = useState(
+    board.checklistCategories[0]?.name ?? "",
+  );
   const [index, setIndex] = useState(board.campaign.burgerIndex);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -37,7 +48,9 @@ export function BoardEditorDialog({
   const info = burgerIndexInfo(index);
   const select = (value: string) => {
     setId(value);
-    setName(items.find((item) => item.id === value)?.label ?? "");
+    const selected = items.find((item) => item.id === value);
+    setName(selected?.label ?? "");
+    setCategoryId(selected?.categoryId ?? "");
     setConfirmDelete(false);
     setError("");
   };
@@ -58,7 +71,12 @@ export function BoardEditorDialog({
     event.preventDefault();
     if (kind === "index") void run(() => onSetIndex(index));
     else if (name.trim())
-      void run(() => onSaveChecklist({ label: name.trim() }, id || undefined));
+      void run(() =>
+        onSaveChecklist(
+          { label: name.trim(), categoryId: categoryId || null },
+          id || undefined,
+        ),
+      );
   };
   return (
     <PaperDialog
@@ -135,6 +153,84 @@ export function BoardEditorDialog({
                   required
                 />
               </label>
+              <label className="field">
+                <span>所属分类</span>
+                <select
+                  value={categoryId}
+                  onChange={(event) => setCategoryId(event.target.value)}
+                >
+                  <option value="">未分类</option>
+                  {board.checklistCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="category-manager">
+                <label className="field">
+                  <span>分类管理</span>
+                  <select
+                    value={managedCategoryId}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setManagedCategoryId(value);
+                      setCategoryName(
+                        board.checklistCategories.find(
+                          (category) => category.id === value,
+                        )?.name ?? "",
+                      );
+                    }}
+                  >
+                    {board.checklistCategories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                    <option value="">＋ 新建分类</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>分类名称</span>
+                  <input
+                    value={categoryName}
+                    onChange={(event) => setCategoryName(event.target.value)}
+                    maxLength={40}
+                    placeholder="例：开店准备"
+                  />
+                </label>
+                <div className="category-actions">
+                  {managedCategoryId && (
+                    <button
+                      className="text-button danger-button"
+                      type="button"
+                      onClick={() =>
+                        void run(() => onDeleteCategory(managedCategoryId))
+                      }
+                    >
+                      删除分类
+                    </button>
+                  )}
+                  <button
+                    className="text-button"
+                    type="button"
+                    disabled={!categoryName.trim()}
+                    onClick={() =>
+                      void run(() =>
+                        onSaveCategory(
+                          categoryName.trim(),
+                          managedCategoryId || undefined,
+                        ),
+                      )
+                    }
+                  >
+                    {managedCategoryId ? "保存分类" : "新增分类"}
+                  </button>
+                </div>
+                <p className="editor-help">
+                  删除分类会把其中的检查项移到「未分类」，不会删除内容或完成状态。
+                </p>
+              </div>
             </>
           )}
         </fieldset>

@@ -7,6 +7,7 @@ import stickerBottomLeft from "../../../assets/stickers/bl.webp";
 import stickerBottomRight from "../../../assets/stickers/br.webp";
 import stickerMiniOne from "../../../assets/stickers/mini1.webp";
 import stickerMiniTwo from "../../../assets/stickers/mini2.webp";
+import { sectionTitle } from "../../features/campaign/domain/campaignSettings";
 import type {
   BoardNote,
   CampaignBoard,
@@ -71,6 +72,9 @@ export function BoardScene({
     board.viewer.role === "gm" && board.campaign.status === "active";
   const canUpdateSharedBoard =
     board.viewer.role !== "observer" && board.campaign.status === "active";
+  const hidden = new Set(board.settings.hiddenSections);
+  const title = (key: Parameters<typeof sectionTitle>[0]) =>
+    sectionTitle(key, board.settings.sectionTitles);
 
   return (
     <div className="viewport">
@@ -78,7 +82,7 @@ export function BoardScene({
         <picture className="scene-picture">
           <img
             className="scene"
-            src={sceneUrl}
+            src={board.settings.backgroundUrl ?? sceneUrl}
             width="2496"
             height="1664"
             alt=""
@@ -86,81 +90,120 @@ export function BoardScene({
             draggable={false}
             decoding="async"
             fetchPriority="high"
+            onError={(event) => {
+              if (event.currentTarget.src !== sceneUrl) {
+                event.currentTarget.src = sceneUrl;
+              }
+            }}
           />
         </picture>
 
         <BoardClock />
 
         <main className="board" aria-label={board.campaign.name + "战役公告板"}>
-          <InventorySection
-            resources={board.resources}
-            canManage={canUpdateSharedBoard}
-            onOpenSheet={onOpenResourceSheet}
-          />
-          <TaskSection
-            quests={board.quests}
-            role={board.viewer.role}
-            campaignActive={board.campaign.status === "active"}
-            onCompose={onComposeQuest}
-            onEdit={onEditQuest}
-            onTransition={onTransitionQuest}
-          />
-          <ShiftSection members={board.members} onExpand={onExpandRoster} />
-          <BurgerIndexSection
-            value={board.campaign.burgerIndex}
-            canManage={canManage}
-            onManage={onManageIndex}
-          />
-          <MemoSection board={board} onOpen={onOpenActivity} />
-          <SafetySection
-            checklist={board.checklist}
-            canManage={canManage}
-            canToggle={canUpdateSharedBoard}
-            onToggle={onToggleChecklist}
-            onManage={onManageChecklist}
-          />
+          {!hidden.has("inventory") && (
+            <InventorySection
+              title={title("inventory")}
+              resources={board.resources}
+              canManage={canUpdateSharedBoard}
+              onOpenSheet={onOpenResourceSheet}
+            />
+          )}
+          {!hidden.has("tasks") && (
+            <TaskSection
+              title={title("tasks")}
+              quests={board.quests}
+              viewer={board.viewer}
+              campaignActive={board.campaign.status === "active"}
+              onCompose={onComposeQuest}
+              onEdit={onEditQuest}
+              onTransition={onTransitionQuest}
+            />
+          )}
+          {!hidden.has("shifts") && (
+            <ShiftSection
+              title={title("shifts")}
+              members={board.members}
+              onExpand={onExpandRoster}
+            />
+          )}
+          {!hidden.has("index") && (
+            <BurgerIndexSection
+              title={title("index")}
+              value={board.campaign.burgerIndex}
+              canManage={canManage}
+              onManage={onManageIndex}
+            />
+          )}
+          {!hidden.has("activity") && (
+            <MemoSection
+              title={title("activity")}
+              board={board}
+              onOpen={onOpenActivity}
+            />
+          )}
+          {!hidden.has("safety") && (
+            <SafetySection
+              title={title("safety")}
+              checklist={board.checklist}
+              categories={board.checklistCategories}
+              canManage={canManage}
+              canToggle={canUpdateSharedBoard}
+              onToggle={onToggleChecklist}
+              onManage={onManageChecklist}
+            />
+          )}
 
-          <div className="user-notes" data-section="notes" aria-live="polite">
-            <h2 className="mobile-notes-heading">便签</h2>
-            {board.notes.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                viewScaleRef={viewScaleRef}
-                canEdit={
-                  canEditNotes &&
-                  (board.viewer.role === "gm" ||
-                    note.authorId === board.viewer.id)
-                }
-                onEdit={onEditNote}
-                onMove={onMoveNote}
-              />
-            ))}
-          </div>
-
-          <div className="pin-actions">
-            <button
-              className="pin-view"
-              type="button"
-              onClick={onOpenNotes}
-              aria-label={`查看全部便签，共 ${board.notes.length} 条`}
-              title="查看全部便签"
-            >
-              <List aria-hidden="true" />
-              <span>{board.notes.length}</span>
-            </button>
-            {canEditNotes && (
-              <button
-                className="pin-add"
-                type="button"
-                onClick={onComposeNote}
-                aria-label="填写便签"
-                title="填写便签"
+          {!hidden.has("notes") && (
+            <>
+              <div
+                className="user-notes"
+                data-section="notes"
+                aria-live="polite"
               >
-                <Plus aria-hidden="true" />
-              </button>
-            )}
-          </div>
+                <h2 className="mobile-notes-heading">{title("notes")}</h2>
+                {board.notes.map((note) => (
+                  <NoteCard
+                    key={note.id}
+                    note={note}
+                    noteTextureUrl={board.settings.noteTextureUrl}
+                    viewScaleRef={viewScaleRef}
+                    canEdit={
+                      canEditNotes &&
+                      (board.viewer.role === "gm" ||
+                        note.authorId === board.viewer.id)
+                    }
+                    onEdit={onEditNote}
+                    onMove={onMoveNote}
+                  />
+                ))}
+              </div>
+
+              <div className="pin-actions">
+                <button
+                  className="pin-view"
+                  type="button"
+                  onClick={onOpenNotes}
+                  aria-label={`查看全部便签，共 ${board.notes.length} 条`}
+                  title="查看全部便签"
+                >
+                  <List aria-hidden="true" />
+                  <span>{board.notes.length}</span>
+                </button>
+                {canEditNotes && (
+                  <button
+                    className="pin-add"
+                    type="button"
+                    onClick={onComposeNote}
+                    aria-label="填写便签"
+                    title="填写便签"
+                  >
+                    <Plus aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </main>
 
         <img

@@ -18,7 +18,7 @@
 
 ### 1. 本地与预发布验证
 
-执行 `npm run check`、`npm run check:database`、`npm run check:migration` 和 `npm run build`。`supabase/tests/cloud_smoke.sql` 可通过已授权 CLI 的 `db query --linked --project-ref 目标项目 --file supabase/tests/cloud_smoke.sql` 运行，测试数据在事务结束时回滚。部署 Supabase 基线到新的目标项目，保持 `private.runtime.business_writes=false`。配置 Auth：匿名登录启用、密码最少 8 位、合成邮箱方案关闭邮件确认、Site URL 与允许重定向地址设置正确。
+执行 `npm run check`、`npm run check:database`、`npm run check:migration` 和 `npm run build`。`supabase/tests/cloud_smoke.sql` 与 `supabase/tests/iteration_smoke.sql` 可通过已授权 CLI 的 `db query --linked --project-ref 目标项目 --file 测试文件` 运行，测试数据在事务结束时回滚。部署 Supabase 基线到新的目标项目，保持 `private.runtime.business_writes=false`。配置 Auth：匿名登录启用、密码最少 8 位、合成邮箱方案关闭邮件确认、Site URL 与允许重定向地址设置正确。
 
 先导出一次来源一致快照，使用 `export --output 仓库外的快照.snapshot.json`；使用 `validate --file 快照路径` 校验文件，使用 `import --file 快照路径 --rehearsal` 导入空的演练目标，再使用 `verify --file 快照路径` 核对。演练项目用完后保留其核验结果；正式目标必须新建，不能让工具覆盖演练数据。
 
@@ -68,9 +68,17 @@
 
 观察至少一次真实跑团流程。身份窗口结束后运行 `migration-window --days 0`，关闭 Edge Function 并撤销迁移专用 Secret，再从活跃前端移除 Nhost 配置和迁移代码。保留备份和未绑定历史 profile；是否停用旧 Nhost 项目由既定恢复窗口决定。
 
+### 6. 网站迭代增量迁移
+
+`20261028000000_iteration_p0_p2.sql` 是生产基线之后的增量迁移，新增房间配置、清单分类、角色资料、便签置顶、成员移出和私有图片 Storage。部署顺序固定为：本地数据库回归、`supabase db push`、真实云端 `iteration_smoke.sql`、前端构建、Vercel 部署、生产只读 smoke。
+
+`campaign-media` 必须保持私有，允许类型仅为 JPEG、PNG、WebP，单文件上限 5 MiB。前端只保存对象路径，通过短期签名 URL 展示。GM 上传新图片或恢复默认后应删除旧对象；排查失败上传时先核对房间配置路径，再清理孤立对象，不能扩大 bucket 为公开读取。
+
+移出成员会立即终止其活跃房间读取，释放没有待审核报告的未完成任务，并取消旧入店申请；待审核报告和历史内容保留。运行线上验收时只使用独立测试身份与战役，结束后按依赖顺序清理，并确认临时战役、业务身份和 Storage 对象均为 0。
+
 ## 深度交互
 
-当前方案没有承诺保留旧密码、零停机或开放写入后的即时回退。匿名身份在新平台仍依赖浏览器会话，长期角色找回机制需要单独设计。生产执行必须同时具备来源和目标授权连接；只有前端 URL 和 publishable key，仍不足以导入历史数据。
+初始方案未假设旧密码可迁移；实际执行已保留 24 个来源 bcrypt 密码，仍不承诺开放写入后的即时回退。匿名身份在新平台仍依赖浏览器会话，长期角色找回机制需要单独设计。生产执行必须同时具备来源和目标授权连接；只有前端 URL 和 publishable key，仍不足以导入历史数据。
 
 
 当前目标已经是生产数据库，后续不要执行空库导入、准备导入或同步脚本。最终同步已在来源冻结时完成，账号关联未被覆盖。新的结构变更应通过新的 Supabase migration 发布。

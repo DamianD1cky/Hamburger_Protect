@@ -29,7 +29,8 @@ export interface CampaignJoinRequest {
   userId: string;
   campaignName: string;
   characterName: string;
-  jobTitle: Exclude<EmployeePosition, "店长">;
+  jobTitle: string;
+  profileText: string;
   status: "pending" | "approved" | "rejected" | "cancelled";
   requestedAt: string;
   reviewedAt: string | null;
@@ -60,6 +61,7 @@ function toJoinRequest(row: RemoteJoinRequest): CampaignJoinRequest {
     campaignName: row.campaign_name,
     characterName: row.character_name,
     jobTitle: row.job_title,
+    profileText: "",
     status: row.status,
     requestedAt: row.requested_at,
     reviewedAt: row.reviewed_at,
@@ -324,7 +326,8 @@ export async function createCampaign(input: {
 export async function joinCampaign(input: {
   joinCode: string;
   characterName: string;
-  jobTitle: Exclude<EmployeePosition, "店长">;
+  jobTitle: string;
+  profileText: string;
 }) {
   const client = requireClient();
   let session = client.getUserSession();

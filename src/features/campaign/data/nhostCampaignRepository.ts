@@ -5,6 +5,9 @@ import type {
   BoardActivity,
   ResourceDraft,
   ChecklistDraft,
+  CampaignMediaKind,
+  CampaignSettingsDraft,
+  MemberProfileDraft,
   NoteColor,
   EmployeePosition,
   NoteDraft,
@@ -24,8 +27,10 @@ interface RemoteBoard {
     role: "gm" | "player" | "observer";
     character_name: string;
     job_title: EmployeePosition;
+    profile_text?: string;
     active: boolean;
     joined_at: string;
+    left_at?: string | null;
   }>;
   resources: Array<{
     id: string;
@@ -34,7 +39,13 @@ interface RemoteBoard {
     quantity: string;
     status: ResourceStatus;
   }>;
-  checklist_items: Array<{ id: string; label: string; completed: boolean }>;
+  checklist_categories?: Array<{ id: string; name: string }>;
+  checklist_items: Array<{
+    id: string;
+    label: string;
+    completed: boolean;
+    category_id?: string | null;
+  }>;
   quests: Array<{
     id: string;
     title: string;
@@ -43,6 +54,7 @@ interface RemoteBoard {
     due_at: string | null;
     status: QuestStatus;
     created_by: string;
+    claimed_by?: string | null;
     submissions: Array<{ id: string }>;
   }>;
   notes: Array<{
@@ -55,7 +67,15 @@ interface RemoteBoard {
     rotation: number;
     created_at: string;
     author_id: string;
+    pinned?: boolean;
+    pinned_at?: string | null;
   }>;
+  settings?: {
+    section_titles?: Record<string, string>;
+    hidden_sections?: string[];
+    background_path?: string | null;
+    note_texture_path?: string | null;
+  };
 }
 
 interface RemoteActivity {
@@ -188,8 +208,10 @@ function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
       role: member.role,
       characterName: member.character_name,
       jobTitle: member.job_title,
+      profileText: member.profile_text ?? "",
       active: member.active,
       joinedAt: member.joined_at,
+      leftAt: member.left_at ?? null,
     })),
     resources: remote.resources.map((item) => ({
       id: item.id,
@@ -198,10 +220,17 @@ function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
       quantity: item.quantity,
       status: item.status,
     })),
+    checklistCategories: (remote.checklist_categories ?? []).map(
+      (category) => ({
+        id: category.id,
+        name: category.name,
+      }),
+    ),
     checklist: remote.checklist_items.map((item) => ({
       id: item.id,
       label: item.label,
       completed: item.completed,
+      categoryId: item.category_id ?? null,
     })),
     quests: remote.quests.map((quest) => ({
       id: quest.id,
@@ -211,6 +240,7 @@ function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
       due: dueTime(quest.due_at),
       status: quest.status,
       createdBy: quest.created_by,
+      claimedBy: quest.claimed_by ?? null,
       pendingSubmissionId: quest.submissions[0]?.id,
     })),
     activities: activityPage(events).items,
@@ -228,7 +258,17 @@ function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
       authorName:
         remote.members.find((member) => member.user_id === note.author_id)
           ?.character_name ?? "未知员工",
+      pinned: note.pinned ?? false,
+      pinnedAt: note.pinned_at ?? null,
     })),
+    settings: {
+      sectionTitles: remote.settings?.section_titles ?? {},
+      hiddenSections: [],
+      backgroundPath: remote.settings?.background_path ?? null,
+      noteTexturePath: remote.settings?.note_texture_path ?? null,
+      backgroundUrl: null,
+      noteTextureUrl: null,
+    },
   };
 }
 
@@ -445,6 +485,58 @@ class NhostCampaignRepository implements CampaignRepository {
       { id: noteId },
     );
     return this.getBoard(campaignId);
+  }
+  async saveChecklistCategory(
+    _campaignId: string,
+    _name: string,
+    _id?: string,
+  ): Promise<CampaignBoard> {
+    throw new Error("Nhost 已冻结，请使用 Supabase 后端");
+  }
+  async deleteChecklistCategory(
+    _campaignId: string,
+    _id: string,
+  ): Promise<CampaignBoard> {
+    throw new Error("Nhost 已冻结，请使用 Supabase 后端");
+  }
+  async setNotePinned(
+    _campaignId: string,
+    _id: string,
+    _pinned: boolean,
+  ): Promise<CampaignBoard> {
+    throw new Error("Nhost 已冻结，请使用 Supabase 后端");
+  }
+  async updateMemberProfile(
+    _campaignId: string,
+    _draft: MemberProfileDraft,
+  ): Promise<CampaignBoard> {
+    throw new Error("Nhost 已冻结，请使用 Supabase 后端");
+  }
+  async removeMember(
+    _campaignId: string,
+    _userId: string,
+    _note?: string,
+  ): Promise<CampaignBoard> {
+    throw new Error("Nhost 已冻结，请使用 Supabase 后端");
+  }
+  async updateCampaignSettings(
+    _campaignId: string,
+    _draft: CampaignSettingsDraft,
+  ): Promise<CampaignBoard> {
+    throw new Error("Nhost 已冻结，请使用 Supabase 后端");
+  }
+  async uploadCampaignMedia(
+    _campaignId: string,
+    _kind: CampaignMediaKind,
+    _file: File,
+  ): Promise<CampaignBoard> {
+    throw new Error("Nhost 已冻结，请使用 Supabase 后端");
+  }
+  async clearCampaignMedia(
+    _campaignId: string,
+    _kind: CampaignMediaKind,
+  ): Promise<CampaignBoard> {
+    throw new Error("Nhost 已冻结，请使用 Supabase 后端");
   }
 }
 

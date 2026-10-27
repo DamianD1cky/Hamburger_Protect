@@ -4,6 +4,10 @@ import type {
   BoardActivity,
   ResourceDraft,
   ChecklistDraft,
+  CampaignMediaKind,
+  CampaignSectionKey,
+  CampaignSettingsDraft,
+  MemberProfileDraft,
   NoteColor,
   EmployeePosition,
   NoteDraft,
@@ -11,7 +15,7 @@ import type {
   QuestStatus,
   ResourceStatus,
 } from "../domain/types";
-import { rpc } from "../../../lib/supabase/client";
+import { requireSupabase, rpc } from "../../../lib/supabase/client";
 import {
   getSupabaseAppSession,
   requireSupabaseSession,
@@ -27,8 +31,10 @@ interface RemoteBoard {
     role: "gm" | "player" | "observer";
     character_name: string;
     job_title: EmployeePosition;
+    profile_text: string;
     active: boolean;
     joined_at: string;
+    left_at: string | null;
   }>;
   resources: Array<{
     id: string;
@@ -37,7 +43,13 @@ interface RemoteBoard {
     quantity: string;
     status: ResourceStatus;
   }>;
-  checklist_items: Array<{ id: string; label: string; completed: boolean }>;
+  checklist_categories: Array<{ id: string; name: string }>;
+  checklist_items: Array<{
+    id: string;
+    label: string;
+    completed: boolean;
+    category_id: string | null;
+  }>;
   quests: Array<{
     id: string;
     title: string;
@@ -46,6 +58,7 @@ interface RemoteBoard {
     due_at: string | null;
     status: QuestStatus;
     created_by: string;
+    claimed_by: string | null;
     submissions: Array<{ id: string }>;
   }>;
   notes: Array<{
@@ -58,7 +71,15 @@ interface RemoteBoard {
     rotation: number;
     created_at: string;
     author_id: string;
+    pinned: boolean;
+    pinned_at: string | null;
   }>;
+  settings: {
+    section_titles: Partial<Record<CampaignSectionKey, string>>;
+    hidden_sections: CampaignSectionKey[];
+    background_path: string | null;
+    note_texture_path: string | null;
+  };
 }
 
 interface RemoteActivity {
@@ -72,6 +93,27 @@ interface RemoteActivity {
 }
 
 const ACTIVITY_PAGE_SIZE = 30;
+
+const mediaUrlCache = new Map<string, { url: string; expiresAt: number }>();
+
+async function signedMediaUrl(path: string | null) {
+  if (!path) return null;
+  const cached = mediaUrlCache.get(path);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
+  try {
+    const { data, error } = await requireSupabase()
+      .storage.from("campaign-media")
+      .createSignedUrl(path, 3600);
+    if (error) return null;
+    mediaUrlCache.set(path, {
+      url: data.signedUrl,
+      expiresAt: Date.now() + 50 * 60 * 1000,
+    });
+    return data.signedUrl;
+  } catch {
+    return null;
+  }
+}
 
 function activityPage(rows: RemoteActivity[]) {
   return {
@@ -109,12 +151,19 @@ function dueTimestamp(value: string) {
   return date.toISOString();
 }
 
-function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
+async function toBoard(
+  remote: RemoteBoard,
+  events: RemoteActivity[],
+): Promise<CampaignBoard> {
   const session = getSupabaseAppSession();
   if (!session) throw new Error("AUTH_REQUIRED");
   const user = session.user!;
   const viewer = remote.members.find((member) => member.user_id === user.id);
   if (!viewer) throw new Error("Current user is not a campaign member");
+  const [backgroundUrl, noteTextureUrl] = await Promise.all([
+    signedMediaUrl(remote.settings.background_path),
+    signedMediaUrl(remote.settings.note_texture_path),
+  ]);
   return {
     campaign: {
       id: remote.id,
@@ -134,8 +183,10 @@ function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
       role: member.role,
       characterName: member.character_name,
       jobTitle: member.job_title,
+      profileText: member.profile_text,
       active: member.active,
       joinedAt: member.joined_at,
+      leftAt: member.left_at,
     })),
     resources: remote.resources.map((item) => ({
       id: item.id,
@@ -144,10 +195,15 @@ function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
       quantity: item.quantity,
       status: item.status,
     })),
+    checklistCategories: remote.checklist_categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+    })),
     checklist: remote.checklist_items.map((item) => ({
       id: item.id,
       label: item.label,
       completed: item.completed,
+      categoryId: item.category_id,
     })),
     quests: remote.quests.map((quest) => ({
       id: quest.id,
@@ -157,6 +213,7 @@ function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
       due: dueTime(quest.due_at),
       status: quest.status,
       createdBy: quest.created_by,
+      claimedBy: quest.claimed_by,
       pendingSubmissionId: quest.submissions[0]?.id,
     })),
     activities: activityPage(events).items,
@@ -174,7 +231,17 @@ function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
       authorName:
         remote.members.find((member) => member.user_id === note.author_id)
           ?.character_name ?? "未知员工",
+      pinned: note.pinned,
+      pinnedAt: note.pinned_at,
     })),
+    settings: {
+      sectionTitles: remote.settings.section_titles ?? {},
+      hiddenSections: remote.settings.hidden_sections ?? [],
+      backgroundPath: remote.settings.background_path,
+      noteTexturePath: remote.settings.note_texture_path,
+      backgroundUrl,
+      noteTextureUrl,
+    },
   };
 }
 
@@ -186,7 +253,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
       { p_campaign_id: campaignId },
     );
     if (!data) throw new Error("没有本次班次的读取权限");
-    return toBoard(data, data.events);
+    return await toBoard(data, data.events);
   }
   async getActivities(campaignId: string, beforeId?: string) {
     return activityPage(
@@ -220,11 +287,27 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_campaign_id: campaignId,
       p_id: id ?? null,
       p_label: draft.label,
+      p_category_id: draft.categoryId,
     });
     return this.getBoard(campaignId);
   }
   async deleteChecklistItem(campaignId: string, id: string) {
     await rpc("delete_checklist_item", { p_campaign_id: campaignId, p_id: id });
+    return this.getBoard(campaignId);
+  }
+  async saveChecklistCategory(campaignId: string, name: string, id?: string) {
+    await rpc("save_checklist_category", {
+      p_campaign_id: campaignId,
+      p_id: id ?? null,
+      p_name: name,
+    });
+    return this.getBoard(campaignId);
+  }
+  async deleteChecklistCategory(campaignId: string, id: string) {
+    await rpc("delete_checklist_category", {
+      p_campaign_id: campaignId,
+      p_id: id,
+    });
     return this.getBoard(campaignId);
   }
   async setBurgerIndex(campaignId: string, value: number) {
@@ -253,14 +336,14 @@ class SupabaseCampaignRepository implements CampaignRepository {
     else if (status === "pending_review")
       await rpc("submit_quest", { p_quest_id: id, p_message: "" });
     else if (status === "open") await rpc("reopen_quest", { p_quest_id: id });
-    else if (status === "completed") {
+    else if (status === "completed" || status === "failed") {
       const quest = (await this.getBoard(campaignId)).quests.find(
         (q) => q.id === id,
       );
       if (!quest?.pendingSubmissionId) throw new Error("没有待审核报告");
       await rpc("review_quest_submission", {
         p_submission_id: quest.pendingSubmissionId,
-        p_approved: true,
+        p_approved: status === "completed",
         p_message: "",
       });
     } else throw new Error("不支持该任务状态变更");
@@ -296,6 +379,122 @@ class SupabaseCampaignRepository implements CampaignRepository {
   async deleteNote(campaignId: string, id: string) {
     await rpc("delete_note", { p_campaign_id: campaignId, p_id: id });
     return this.getBoard(campaignId);
+  }
+  async setNotePinned(campaignId: string, id: string, pinned: boolean) {
+    await rpc("set_note_pinned", {
+      p_campaign_id: campaignId,
+      p_note_id: id,
+      p_pinned: pinned,
+    });
+    return this.getBoard(campaignId);
+  }
+  async updateMemberProfile(campaignId: string, draft: MemberProfileDraft) {
+    await rpc("update_member_profile", {
+      p_campaign_id: campaignId,
+      p_character_name: draft.characterName,
+      p_job_title: draft.jobTitle,
+      p_profile_text: draft.profileText,
+    });
+    return this.getBoard(campaignId);
+  }
+  async removeMember(campaignId: string, userId: string, note = "") {
+    await rpc("remove_campaign_member", {
+      p_campaign_id: campaignId,
+      p_user_id: userId,
+      p_note: note,
+    });
+    return this.getBoard(campaignId);
+  }
+  async updateCampaignSettings(
+    campaignId: string,
+    draft: CampaignSettingsDraft,
+  ) {
+    const board = await this.getBoard(campaignId);
+    await this.persistSettings(campaignId, board, {
+      sectionTitles: draft.sectionTitles,
+      hiddenSections: draft.hiddenSections,
+    });
+    return this.getBoard(campaignId);
+  }
+  async uploadCampaignMedia(
+    campaignId: string,
+    kind: CampaignMediaKind,
+    file: File,
+  ) {
+    const extensions: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    };
+    const extension = extensions[file.type];
+    if (!extension || file.size > 5 * 1024 * 1024) {
+      throw new Error("图片仅支持 JPEG、PNG、WebP，且不能超过 5 MiB");
+    }
+    const board = await this.getBoard(campaignId);
+    const path = `${campaignId}/${kind}-${crypto.randomUUID()}.${extension}`;
+    const bucket = requireSupabase().storage.from("campaign-media");
+    const upload = await bucket.upload(path, file, {
+      contentType: file.type,
+      upsert: false,
+    });
+    if (upload.error) throw new Error("图片上传失败");
+    try {
+      await this.persistSettings(campaignId, board, {
+        [kind === "background" ? "backgroundPath" : "noteTexturePath"]: path,
+      });
+    } catch (error) {
+      await bucket.remove([path]);
+      throw error;
+    }
+    const previous =
+      kind === "background"
+        ? board.settings.backgroundPath
+        : board.settings.noteTexturePath;
+    if (previous) {
+      await bucket.remove([previous]);
+      mediaUrlCache.delete(previous);
+    }
+    return this.getBoard(campaignId);
+  }
+  async clearCampaignMedia(campaignId: string, kind: CampaignMediaKind) {
+    const board = await this.getBoard(campaignId);
+    const previous =
+      kind === "background"
+        ? board.settings.backgroundPath
+        : board.settings.noteTexturePath;
+    await this.persistSettings(campaignId, board, {
+      [kind === "background" ? "backgroundPath" : "noteTexturePath"]: null,
+    });
+    if (previous) {
+      await requireSupabase().storage.from("campaign-media").remove([previous]);
+      mediaUrlCache.delete(previous);
+    }
+    return this.getBoard(campaignId);
+  }
+  private async persistSettings(
+    campaignId: string,
+    board: CampaignBoard,
+    changes: Partial<{
+      sectionTitles: CampaignSettingsDraft["sectionTitles"];
+      hiddenSections: CampaignSettingsDraft["hiddenSections"];
+      backgroundPath: string | null;
+      noteTexturePath: string | null;
+    }>,
+  ) {
+    await rpc("update_campaign_settings", {
+      p_campaign_id: campaignId,
+      p_section_titles: changes.sectionTitles ?? board.settings.sectionTitles,
+      p_hidden_sections:
+        changes.hiddenSections ?? board.settings.hiddenSections,
+      p_background_path:
+        changes.backgroundPath === undefined
+          ? board.settings.backgroundPath
+          : changes.backgroundPath,
+      p_note_texture_path:
+        changes.noteTexturePath === undefined
+          ? board.settings.noteTexturePath
+          : changes.noteTexturePath,
+    });
   }
 }
 export const supabaseCampaignRepository = new SupabaseCampaignRepository();

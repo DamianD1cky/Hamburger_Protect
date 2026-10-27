@@ -3,7 +3,7 @@ import {
   activitySummary,
 } from "../../features/campaign/domain/activity";
 import { Circle, Plus, RotateCcw, ShieldCheck, Pencil } from "lucide-react";
-import type { MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
 import type {
   CampaignBoard,
   Quest,
@@ -38,10 +38,12 @@ export function InventorySection({
   resources,
   canManage,
   onOpenSheet,
+  title,
 }: {
   resources: CampaignBoard["resources"];
   canManage: boolean;
   onOpenSheet: (group: number) => void;
+  title: string;
 }) {
   return (
     <section
@@ -49,7 +51,7 @@ export function InventorySection({
       data-section="inventory"
     >
       <div className="sign sign-red section-heading">
-        <span>可用物资与设施</span>
+        <span>{title}</span>
       </div>
       <div className="inventory-stack">
         {resourceGroups.map((sheet) => {
@@ -98,7 +100,8 @@ export function InventorySection({
 
 interface TaskSectionProps {
   quests: Quest[];
-  role: CampaignBoard["viewer"]["role"];
+  viewer: CampaignBoard["viewer"];
+  title: string;
   campaignActive: boolean;
   onCompose: (event: MouseEvent<HTMLElement>) => void;
   onEdit: (quest: Quest, event: MouseEvent<HTMLElement>) => void;
@@ -111,40 +114,89 @@ interface TaskSectionProps {
 
 function TaskItem({
   quest,
-  role,
+  viewer,
   campaignActive,
   onEdit,
   onTransition,
-}: Omit<TaskSectionProps, "quests" | "onCompose"> & { quest: Quest }) {
-  const nextStatus = campaignActive
-    ? nextQuestStatus(role, quest.status)
+}: Omit<TaskSectionProps, "quests" | "onCompose" | "title"> & {
+  quest: Quest;
+}) {
+  const [busy, setBusy] = useState(false);
+  const proposedStatus = campaignActive
+    ? nextQuestStatus(viewer.role, quest.status)
     : null;
+  const nextStatus =
+    viewer.role === "player" &&
+    proposedStatus === "pending_review" &&
+    quest.claimedBy !== viewer.id
+      ? null
+      : proposedStatus;
   const completed = quest.status === "completed";
   const review = quest.status === "pending_review";
   const ActionIcon = completed ? RotateCcw : review ? ShieldCheck : Circle;
-  const actionLabel = nextStatus
-    ? transitionLabels[quest.status]
-    : "等待玩家推进";
+  const progressLabel =
+    viewer.role === "gm" && ["claimed", "in_progress"].includes(quest.status)
+      ? "等待玩家提交"
+      : questLabels[quest.status];
+  const actionLabel = !campaignActive
+    ? "房间已归档"
+    : nextStatus
+      ? transitionLabels[quest.status]
+      : viewer.role === "gm" &&
+          ["open", "claimed", "in_progress"].includes(quest.status)
+        ? "等待玩家提交"
+        : "当前身份不能推进";
+  const transition = async (status: QuestStatus, source: HTMLElement) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onTransition(quest, status, source);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="task-item" data-task-id={quest.id}>
-      <button
-        className="task-check"
-        type="button"
-        disabled={!nextStatus}
-        aria-label={actionLabel}
-        title={actionLabel}
-        onClick={(event) => {
-          if (!nextStatus) return;
-          void onTransition(
-            quest,
-            nextStatus,
-            event.currentTarget.closest(".task-item") as HTMLElement,
-          );
-        }}
-      >
-        <ActionIcon aria-hidden="true" />
-      </button>
+    <div
+      className="task-item"
+      data-task-id={quest.id}
+      aria-busy={busy || undefined}
+    >
+      <span className="task-actions">
+        <button
+          className="task-check"
+          type="button"
+          disabled={!nextStatus || busy}
+          aria-label={actionLabel}
+          title={actionLabel}
+          onClick={(event) => {
+            if (!nextStatus) return;
+            void transition(
+              nextStatus,
+              event.currentTarget.closest(".task-item") as HTMLElement,
+            );
+          }}
+        >
+          <ActionIcon aria-hidden="true" />
+        </button>
+        {review && viewer.role === "gm" && campaignActive && (
+          <button
+            className="task-reject"
+            type="button"
+            disabled={busy}
+            aria-label="退回任务重试"
+            title="退回重试"
+            onClick={(event) =>
+              void transition(
+                "failed",
+                event.currentTarget.closest(".task-item") as HTMLElement,
+              )
+            }
+          >
+            <RotateCcw aria-hidden="true" />
+          </button>
+        )}
+      </span>
       <button
         className="task-content"
         type="button"
@@ -157,7 +209,7 @@ function TaskItem({
         <span className="task-meta">
           {quest.assigneeName || "待认领"}
           {quest.due ? " · " + quest.due : ""}
-          <i data-status={quest.status}> · {questLabels[quest.status]}</i>
+          <i data-status={quest.status}> · {progressLabel}</i>
         </span>
       </button>
     </div>
@@ -166,7 +218,8 @@ function TaskItem({
 
 export function TaskSection({
   quests,
-  role,
+  viewer,
+  title,
   campaignActive,
   onCompose,
   onEdit,
@@ -178,8 +231,8 @@ export function TaskSection({
   return (
     <section className="board-section task-section" data-section="tasks">
       <div className="sign sign-red task-sign">
-        <span>工作指示与报告</span>
-        {role === "gm" && campaignActive && (
+        <span>{title}</span>
+        {viewer.role === "gm" && campaignActive && (
           <button
             className="sign-action"
             type="button"
@@ -200,7 +253,7 @@ export function TaskSection({
               <TaskItem
                 key={quest.id}
                 quest={quest}
-                role={role}
+                viewer={viewer}
                 campaignActive={campaignActive}
                 onEdit={onEdit}
                 onTransition={onTransition}
@@ -216,7 +269,7 @@ export function TaskSection({
               <TaskItem
                 key={quest.id}
                 quest={quest}
-                role={role}
+                viewer={viewer}
                 campaignActive={campaignActive}
                 onEdit={onEdit}
                 onTransition={onTransition}
@@ -232,14 +285,16 @@ export function TaskSection({
 export function ShiftSection({
   members,
   onExpand,
+  title,
 }: {
   members: CampaignBoard["members"];
   onExpand: () => void;
+  title: string;
 }) {
   const active = members.filter((member) => member.active);
   return (
     <section className="board-section shift-section" data-section="shifts">
-      <div className="sign sign-blue">危机排班</div>
+      <div className="sign sign-blue">{title}</div>
       <button
         className="shift-paper roster-preview"
         type="button"
@@ -269,10 +324,12 @@ export function BurgerIndexSection({
   value,
   canManage,
   onManage,
+  title,
 }: {
   value: number;
   canManage: boolean;
   onManage: () => void;
+  title: string;
 }) {
   const info = burgerIndexInfo(value);
   return (
@@ -282,7 +339,7 @@ export function BurgerIndexSection({
       data-color={info.color}
     >
       <div className="index-heading">
-        <span>汉堡屋指数</span>
+        <span>{title}</span>
         {canManage && (
           <button
             type="button"
@@ -318,13 +375,15 @@ export function BurgerIndexSection({
 export function MemoSection({
   board,
   onOpen,
+  title,
 }: {
   board: CampaignBoard;
   onOpen: () => void;
+  title: string;
 }) {
   return (
     <section className="board-section memo-section" data-section="notes">
-      <div className="sign sign-yellow">工作记录</div>
+      <div className="sign sign-yellow">{title}</div>
       <button
         className="paper memo-paper notes-preview"
         type="button"
@@ -350,6 +409,8 @@ export function MemoSection({
 
 interface SafetySectionProps {
   checklist: CampaignBoard["checklist"];
+  categories: CampaignBoard["checklistCategories"];
+  title: string;
   canManage: boolean;
   canToggle: boolean;
   onToggle: (id: string) => void;
@@ -358,6 +419,8 @@ interface SafetySectionProps {
 
 export function SafetySection({
   checklist,
+  categories,
+  title,
   canManage,
   canToggle,
   onToggle,
@@ -366,7 +429,7 @@ export function SafetySection({
   return (
     <section className="board-section safety-section" data-section="safety">
       <div className="sign sign-green section-heading">
-        <span>每日检查清单</span>
+        <span>{title}</span>
         {canManage && (
           <button
             className="sign-action"
@@ -385,19 +448,38 @@ export function SafetySection({
               暂无检查项{canManage ? "，点击铅笔添加。" : "，等待 GM 登记。"}
             </p>
           )}
-          {checklist.map((item) => (
-            <button
-              className={"safety-item " + (item.completed ? "is-done" : "")}
-              type="button"
-              key={item.id}
-              disabled={!canToggle}
-              title={canToggle ? "更新检查状态" : "仅在岗员工可以更新检查状态"}
-              onClick={() => onToggle(item.id)}
-            >
-              <span className="safety-box" aria-hidden="true" />
-              <span>{item.label}</span>
-            </button>
-          ))}
+          {[...categories, { id: "", name: "未分类" }].map((category) => {
+            const items = checklist.filter(
+              (item) => (item.categoryId ?? "") === category.id,
+            );
+            if (!items.length) return null;
+            return (
+              <details
+                className="safety-group"
+                key={category.id || "uncategorized"}
+                open
+              >
+                <summary>
+                  {category.name} <span>{items.length}</span>
+                </summary>
+                {items.map((item) => (
+                  <button
+                    className={`safety-item ${item.completed ? "is-done" : ""}`}
+                    type="button"
+                    key={item.id}
+                    disabled={!canToggle}
+                    title={
+                      canToggle ? "更新检查状态" : "仅在岗员工可以更新检查状态"
+                    }
+                    onClick={() => onToggle(item.id)}
+                  >
+                    <span className="safety-box" aria-hidden="true" />
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </details>
+            );
+          })}
         </div>
         <div className="inspection-stamp" aria-hidden="true">
           <small>汉堡店防御检查</small>

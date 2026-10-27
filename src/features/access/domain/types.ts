@@ -28,7 +28,8 @@ export interface CampaignJoinRequest {
   userId: string;
   campaignName: string;
   characterName: string;
-  jobTitle: Exclude<EmployeePosition, "店长">;
+  jobTitle: string;
+  profileText: string;
   status: "pending" | "approved" | "rejected" | "cancelled";
   requestedAt: string;
   reviewedAt: string | null;

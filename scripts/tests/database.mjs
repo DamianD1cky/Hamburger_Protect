@@ -43,7 +43,8 @@ try {
  create table auth.users(id uuid primary key,email text,is_anonymous boolean default false,raw_user_meta_data jsonb default '{}');
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
  create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
- grant usage on schema auth to authenticated; grant execute on all functions in schema auth to authenticated;`);
+ create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]); create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text); alter table storage.objects enable row level security;
+ grant usage on schema auth,storage to authenticated; grant execute on all functions in schema auth to authenticated;`);
   await db.exec(
     await readFile(
       new URL(
@@ -62,7 +63,24 @@ try {
       "utf8",
     ),
   );
- await db.exec(await readFile(new URL('../../supabase/migrations/20261027020000_publication_gate.sql',import.meta.url),'utf8'));
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/20261027020000_publication_gate.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/20261028000000_iteration_p0_p2.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
 
   await db.exec("begin;set local role anon");
   check(
@@ -192,6 +210,8 @@ try {
     "campaign_archives",
     "gm_access",
     "campaign_join_requests",
+    "campaign_settings",
+    "checklist_categories",
   ]) {
     check(
       (
@@ -303,6 +323,116 @@ try {
       submission.id,
     ]),
   );
+  const category = await asUser(1, () =>
+    first("select (public.save_checklist_category($1,'开店准备')).id", [c.id]),
+  );
+  await asUser(1, () =>
+    db.query("select public.save_checklist_item($1,'检查冷柜',null,$2)", [
+      c.id,
+      category.id,
+    ]),
+  );
+  const groupedBoard = await asUser(3, () =>
+    first("select public.get_campaign_board($1) board", [c.id]),
+  );
+  check(
+    groupedBoard.board.checklist_categories[0].name === "开店准备" &&
+      groupedBoard.board.checklist_items.some(
+        (item) => item.category_id === category.id,
+      ),
+    "checklist category groups are returned with items",
+  );
+  await asUser(3, () =>
+    db.query(
+      "select public.update_member_profile($1,'厨师三改名','夜班幸存者','公开资料')",
+      [c.id],
+    ),
+  );
+  const profileBoard = await asUser(4, () =>
+    first("select public.get_campaign_board($1) board", [c.id]),
+  );
+  check(
+    profileBoard.board.members.find((member) => member.user_id === actors[3])
+      .profile_text === "公开资料",
+    "members can read room profile details",
+  );
+  const profileEvents = await asUser(4, () =>
+    first("select public.get_activities($1) events", [c.id]),
+  );
+  check(
+    !JSON.stringify(profileEvents.events).includes("公开资料"),
+    "profile body is not copied into shared activity logs",
+  );
+  await asUser(1, () =>
+    db.query("select public.set_note_pinned($1,$2,true)", [c.id, note.id]),
+  );
+  check(
+    (
+      await asUser(3, () =>
+        first("select public.get_campaign_board($1) board", [c.id]),
+      )
+    ).board.notes.find((item) => item.id === note.id).pinned === true,
+    "GM can pin a shared note",
+  );
+  await asUser(1, () =>
+    db.query("select public.update_campaign_settings($1,$2,$3,null,null)", [
+      c.id,
+      { tasks: "今晚任务" },
+      ["activity"],
+    ]),
+  );
+  const configured = await asUser(3, () =>
+    first("select public.get_campaign_board($1) board", [c.id]),
+  );
+  check(
+    configured.board.settings.section_titles.tasks === "今晚任务" &&
+      configured.board.settings.hidden_sections.includes("activity"),
+    "room titles and hidden sections are shared",
+  );
+  await denied(
+    1,
+    "select public.update_campaign_settings($1,'{}','{}',$2,null)",
+    [c.id, `${other.id}/background.webp`],
+    /INVALID_CAMPAIGN_SETTINGS/,
+  );
+  const releaseQuest = await asUser(1, () =>
+    first(
+      "select * from public.create_quest($1,'待释放任务','内容','待认领',null)",
+      [c.id],
+    ),
+  );
+  await asUser(4, () =>
+    db.query("select public.claim_quest($1)", [releaseQuest.id]),
+  );
+  await asUser(1, () =>
+    db.query("select public.remove_campaign_member($1,$2,'重复身份')", [
+      c.id,
+      actors[4],
+    ]),
+  );
+  check(
+    (
+      await first("select status,claimed_by from public.quests where id=$1", [
+        releaseQuest.id,
+      ])
+    ).status === "open",
+    "removing a player releases unsubmitted work",
+  );
+  check(
+    (
+      await asUser(4, () =>
+        first("select public.get_campaign_board($1) board", [c.id]),
+      )
+    ).board === null,
+    "removed player immediately loses active room access",
+  );
+  const reapplied = await asUser(4, () =>
+    first(
+      "select * from public.request_campaign_join($1,'玩家四','自由岗位','再次申请')",
+      [c.join_code],
+    ),
+  );
+  check(reapplied.status === "pending", "removed player can apply again");
   await db.query(
     "update public.gm_access set status='revoked' where user_id=$1",
     [actors[1]],

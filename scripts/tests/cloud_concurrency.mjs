@@ -161,7 +161,7 @@ try {
 } finally {
   if (campaign) {
     await query(
-      `begin;delete from public.quests where campaign_id='${campaign.id}'::uuid;delete from public.notes where campaign_id='${campaign.id}'::uuid;delete from public.resources where campaign_id='${campaign.id}'::uuid;delete from public.checklist_items where campaign_id='${campaign.id}'::uuid;delete from public.campaigns where id='${campaign.id}'::uuid;commit;select 'test_campaign_removed' result;`,
+      `begin;delete from public.quests where campaign_id='${campaign.id}'::uuid;delete from public.notes where campaign_id='${campaign.id}'::uuid;delete from public.resources where campaign_id='${campaign.id}'::uuid;delete from public.checklist_items where campaign_id='${campaign.id}'::uuid;delete from public.campaign_settings where campaign_id='${campaign.id}'::uuid;alter table public.campaigns disable trigger campaigns_activity;delete from public.campaigns where id='${campaign.id}'::uuid;alter table public.campaigns enable trigger campaigns_activity;commit;select 'test_campaign_removed' result;`,
     );
   }
   if (actors.length) {

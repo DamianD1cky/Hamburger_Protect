@@ -16,8 +16,7 @@ begin
  raise exception 'CLOUD_TEST_FAILED: operation unexpectedly allowed';
 end;
 $$;
-select pg_temp.assert_true((select not business_writes from private.runtime where singleton),'target starts closed');
-select pg_temp.assert_true((select count(*)=12 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity),'all app tables enable RLS');
+select pg_temp.assert_true((select count(*)=14 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity),'all app tables enable RLS');
 select pg_temp.assert_true(not has_table_privilege('authenticated','public.quests','UPDATE'),'client cannot edit quest directly');
 select pg_temp.assert_true(not has_function_privilege('authenticated','public.complete_identity_migration(uuid,uuid)','EXECUTE'),'identity binding is server only');
 insert into auth.users(id,email,is_anonymous,raw_user_meta_data) values

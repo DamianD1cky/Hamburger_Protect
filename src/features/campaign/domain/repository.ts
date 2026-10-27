@@ -3,6 +3,9 @@ import type {
   ActivityPage,
   ResourceDraft,
   ChecklistDraft,
+  CampaignMediaKind,
+  CampaignSettingsDraft,
+  MemberProfileDraft,
   NoteDraft,
   QuestDraft,
   QuestStatus,
@@ -23,6 +26,15 @@ export interface CampaignRepository {
     id?: string,
   ): Promise<CampaignBoard>;
   deleteChecklistItem(campaignId: string, id: string): Promise<CampaignBoard>;
+  saveChecklistCategory(
+    campaignId: string,
+    name: string,
+    id?: string,
+  ): Promise<CampaignBoard>;
+  deleteChecklistCategory(
+    campaignId: string,
+    id: string,
+  ): Promise<CampaignBoard>;
   setBurgerIndex(campaignId: string, value: number): Promise<CampaignBoard>;
   toggleChecklist(campaignId: string, itemId: string): Promise<CampaignBoard>;
   saveQuest(
@@ -48,4 +60,31 @@ export interface CampaignRepository {
     y: number,
   ): Promise<CampaignBoard>;
   deleteNote(campaignId: string, noteId: string): Promise<CampaignBoard>;
+  setNotePinned(
+    campaignId: string,
+    noteId: string,
+    pinned: boolean,
+  ): Promise<CampaignBoard>;
+  updateMemberProfile(
+    campaignId: string,
+    draft: MemberProfileDraft,
+  ): Promise<CampaignBoard>;
+  removeMember(
+    campaignId: string,
+    userId: string,
+    note?: string,
+  ): Promise<CampaignBoard>;
+  updateCampaignSettings(
+    campaignId: string,
+    draft: CampaignSettingsDraft,
+  ): Promise<CampaignBoard>;
+  uploadCampaignMedia(
+    campaignId: string,
+    kind: CampaignMediaKind,
+    file: File,
+  ): Promise<CampaignBoard>;
+  clearCampaignMedia(
+    campaignId: string,
+    kind: CampaignMediaKind,
+  ): Promise<CampaignBoard>;
 }

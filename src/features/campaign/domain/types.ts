@@ -1,6 +1,9 @@
 export type CampaignRole = "gm" | "player" | "observer";
 export type CampaignStatus = "active" | "archived";
-export type EmployeePosition = "店长" | "厨师" | "维修师" | "服务员" | "顾客";
+export type EmployeePosition = string;
+export type CampaignSectionKey =
+  "inventory" | "tasks" | "shifts" | "index" | "activity" | "safety" | "notes";
+export type CampaignMediaKind = "background" | "noteTexture";
 export type QuestStatus =
   | "open"
   | "claimed"
@@ -31,8 +34,10 @@ export interface CampaignMember {
   role: CampaignRole;
   characterName: string;
   jobTitle: EmployeePosition;
+  profileText: string;
   active: boolean;
   joinedAt: string;
+  leftAt: string | null;
 }
 
 export interface ResourceItem {
@@ -43,10 +48,16 @@ export interface ResourceItem {
   status: ResourceStatus;
 }
 
+export interface ChecklistCategory {
+  id: string;
+  name: string;
+}
+
 export interface ChecklistItem {
   id: string;
   label: string;
   completed: boolean;
+  categoryId: string | null;
 }
 
 export interface Quest {
@@ -57,6 +68,7 @@ export interface Quest {
   due: string;
   status: QuestStatus;
   createdBy: string;
+  claimedBy: string | null;
   pendingSubmissionId?: string;
 }
 
@@ -71,6 +83,8 @@ export interface BoardNote {
   createdAt: string;
   authorId: string;
   authorName: string;
+  pinned: boolean;
+  pinnedAt: string | null;
 }
 
 export interface BoardActivity {
@@ -95,14 +109,25 @@ export interface ActivityPage {
   hasMore: boolean;
 }
 
+export interface CampaignSettings {
+  sectionTitles: Partial<Record<CampaignSectionKey, string>>;
+  hiddenSections: CampaignSectionKey[];
+  backgroundPath: string | null;
+  noteTexturePath: string | null;
+  backgroundUrl: string | null;
+  noteTextureUrl: string | null;
+}
+
 export interface CampaignBoard {
   campaign: CampaignSummary;
   viewer: Viewer;
   members: CampaignMember[];
   resources: ResourceItem[];
+  checklistCategories: ChecklistCategory[];
   checklist: ChecklistItem[];
   quests: Quest[];
   notes: BoardNote[];
+  settings: CampaignSettings;
   activities: BoardActivity[];
   hasMoreActivity: boolean;
 }
@@ -113,6 +138,18 @@ export type ResourceDraft = Pick<
 >;
 export interface ChecklistDraft {
   label: string;
+  categoryId: string | null;
+}
+
+export interface MemberProfileDraft {
+  characterName: string;
+  jobTitle: string;
+  profileText: string;
+}
+
+export interface CampaignSettingsDraft {
+  sectionTitles: Partial<Record<CampaignSectionKey, string>>;
+  hiddenSections: CampaignSectionKey[];
 }
 
 export interface QuestDraft {
