@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CampaignJoinRequest } from "../../features/access/data/nhostCampaignAccess";
+import type { CampaignJoinRequest } from "../../features/access/data/campaignAccess";
 import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
 import type { CampaignMember } from "../../features/campaign/domain/types";
 import { PaperDialog } from "../composer/PaperDialog";

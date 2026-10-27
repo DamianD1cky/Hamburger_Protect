@@ -11,20 +11,30 @@
     "nhost:validate": "nhost config validate",
     "nhost:up": "nhost up",
     "setup:security": "sh scripts/setup-secret-scan.sh",
-    "check:secrets": "gitleaks git --log-opts=--all --redact=100 --no-banner --no-color --max-archive-depth=2"
+    "check:secrets": "gitleaks git --log-opts=--all --redact=100 --no-banner --no-color --max-archive-depth=2",
+    "supabase:up": "supabase start",
+    "supabase:status": "supabase status",
+    "supabase:push": "supabase db push",
+    "check:database": "node scripts/tests/database.mjs",
+    "check:migration": "node scripts/tests/migration.mjs",
+    "migration": "node scripts/migration/cli.mjs"
   },
   "dependencies": {
     "@nhost/nhost-js": "^4.9.0",
+    "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-query": "^5.104.2",
     "lucide-react": "^1.57.0",
+    "pg": "^8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.12",
     "@nhost/cli": "^1.52.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "supabase": "^2.122.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
   },

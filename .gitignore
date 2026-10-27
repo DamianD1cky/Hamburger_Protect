@@ -24,3 +24,9 @@ credentials.json
 auth.json
 *.dump
 *.sql.gz
+
+# Private migration snapshots and Supabase local state
+*.snapshot.json
+.migration-data/
+supabase/.temp/
+supabase/.branches/

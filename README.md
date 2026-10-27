@@ -55,8 +55,9 @@
 
 - Vite + React + TypeScript
 - TanStack Query
-- Nhost Auth、PostgreSQL、Realtime GraphQL
-- Hasura metadata 权限
+- Supabase Auth、PostgreSQL、受控 RPC 与 RLS（迁移目标）
+- Nhost / Hasura 接入保留至迁移与观察完成
+- TanStack Query 每 5 秒轮询公告板
 - Vercel
 
 ## 本地运行
@@ -66,7 +67,7 @@ npm install
 npm run dev
 ```
 
-默认访问 <http://127.0.0.1:5173>。未配置 Nhost 时，应用使用浏览器本地演示仓储；配置后显示真实 GM / 玩家入口。
+默认访问 <http://127.0.0.1:5173>。本地未配置后端时使用浏览器演示仓储；也可以明确配置 `VITE_BACKEND=local`。线上必须明确选择后端或提供云端配置，否则显示配置错误。选择云端后，连接或认证失败不会回退到本地数据。
 
 ## Nhost 环境变量
 
@@ -141,3 +142,43 @@ npx @nhost/cli config validate
 提交者邮箱也会公开。请在 GitHub 的 Settings → Emails 中复制隐私邮箱，使用 `git config --local user.email "你的 GitHub 隐私邮箱"` 配置本仓库。此设置只影响后续提交，无法删除旧提交中的邮箱。
 
 若凭据曾进入公开历史，应先在对应服务撤销或轮换，再处理 Git 历史；仅删除当前文件无法消除历史副本。
+
+
+## Supabase 接入与迁移
+
+Supabase 已承接生产读写，历史数据和 GM 身份已迁移，Nhost 业务数据冻结保留为恢复基准。生产环境使用 `VITE_BACKEND=supabase`；不要将生产环境切回 Nhost，除非已完成新数据的反向恢复。
+
+Supabase 前端公开配置：
+
+```dotenv
+VITE_BACKEND=supabase
+VITE_SUPABASE_URL=你的项目 URL
+VITE_SUPABASE_PUBLISHABLE_KEY=你的 publishable key
+VITE_GM_ACCOUNT_DOMAIN=gm.local
+```
+
+本地 Supabase CLI 提供的 anon key 可以填入同一公开 key 配置。管理 Secret、数据库连接和密码绝不能使用 `VITE_` 前缀。
+
+后端文件位于 `supabase/`，数据库基线包含 11 张业务表、独立 `profiles`、RLS、受控业务函数、原子日志和归档隐私。新实例默认关闭业务写入；部署 SQL 后仍需导入与核对数据，再显式开放。
+
+```bash
+npm run check
+npm run check:database
+npm run check:migration
+npm run build
+```
+
+数据库测试使用 PGlite 执行 PostgreSQL SQL，模拟 Supabase 可信 JWT 上下文，验证权限和业务状态。迁移测试验证快照校验、完整回滚、日志、微秒时间、identity 序列及 HTTP 身份验证。它们不替代云端 Auth、真实连接和并发事务验收。
+
+本地完整 Supabase 需要 Docker；当前可用 CLI：
+
+```bash
+npm run supabase:up
+npm run supabase:status
+```
+
+部署时先通过 CLI 认证并链接到正确目标项目，再使用 `npm run supabase:push`。本地配置默认 PostgreSQL 17，目标数据库必须先实测版本与兼容性。不要对现有生产库运行重置命令。
+
+迁移操作顺序、环境变量及回退限制见 [Supabase 运维步骤](supabase/OPERATIONS.md)。真实快照只保存到仓库外，工具默认拒绝覆盖文件、拒绝导入非空目标、拒绝在业务写入开放时导入。
+
+迁移后的站长审批位置为 Supabase Table Editor 的 `public.gm_access`；只修改目标身份对应记录的 `status` 和可选备注。账号身份保存在 `profiles`，授权仍来自 GM 审批表及战役成员关系，不能通过编辑用户 metadata 批准 GM。

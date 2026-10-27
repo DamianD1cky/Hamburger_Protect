@@ -28,8 +28,8 @@ import {
   registerGm,
   signInGm,
   signOut,
-} from "../features/access/data/nhostCampaignAccess";
-import { useNhostSession } from "../features/access/hooks/useNhostSession";
+} from "../features/access/data/campaignAccess";
+import { useAuthSession } from "../features/access/hooks/useAuthSession";
 import { defaultBoard } from "../features/campaign/domain/defaults";
 import type {
   ComposerTarget,
@@ -39,7 +39,8 @@ import type {
 } from "../features/campaign/domain/types";
 import { useCampaignBoard } from "../features/campaign/hooks/useCampaignBoard";
 import { useBoardViewport } from "../hooks/useBoardViewport";
-import { isNhostConfigured } from "../lib/nhost/client";
+import { backend, backendError } from "../lib/backend";
+import { rpc } from "../lib/supabase/client";
 
 const BoardScene = lazy(() =>
   import("../components/board/BoardScene").then((module) => ({
@@ -92,17 +93,47 @@ const closedComposer: ComposerState = {
 };
 
 export function App() {
-  if (!isNhostConfigured) {
+  if (backendError) return <CloudStatus message={backendError} />;
+  if (backend === "local") {
     return (
       <CampaignBoardWorkspace campaignId={defaultBoard.campaign.id} demo />
     );
   }
+  return backend === "supabase" ? <SupabaseEntry /> : <CloudCampaignApp />;
+}
+
+function SupabaseEntry() {
+  const status = useQuery({
+    queryKey: ["service-status", "supabase"],
+    queryFn: () => rpc<"ready" | "maintenance">("get_service_status"),
+    staleTime: 5_000,
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    retry: 1,
+  });
+  if (status.isLoading) return <CloudStatus message="正在连接公告板" />;
+  if (status.error)
+    return <CloudStatus message="暂时无法连接公告板，请稍后重试" retry />;
+  if (status.data !== "ready")
+    return <CloudStatus message="公告板正在迁移，请稍候。完成后会自动进入。" />;
   return <CloudCampaignApp />;
 }
 
 function CloudCampaignApp() {
   const queryClient = useQueryClient();
-  const session = useNhostSession();
+  const auth = useAuthSession();
+  const session = auth.session;
+  useEffect(() => {
+    for (const key of [
+      "gm-access",
+      "active-campaign",
+      "campaign-board",
+      "join-request",
+      "join-inbox",
+    ]) {
+      queryClient.removeQueries({ queryKey: [key], type: "inactive" });
+    }
+  }, [queryClient, session?.user.id, session?.user.authUserId]);
 
   const regularUser = Boolean(session?.user && !session.user.isAnonymous);
   const gmAccessQuery = useQuery({
@@ -149,6 +180,9 @@ function CloudCampaignApp() {
     queryClient.removeQueries({ queryKey: ["join-request"] });
     queryClient.removeQueries({ queryKey: ["join-inbox"] });
   };
+
+  if (auth.loading) return <CloudStatus message="正在恢复登录身份" />;
+  if (auth.error) return <CloudStatus message={auth.error} retry />;
 
   if (regularUser && gmAccessQuery.isLoading) {
     return <CloudStatus message="正在核对 GM 审批状态" />;
@@ -219,13 +253,24 @@ function CloudCampaignApp() {
   );
 }
 
-function CloudStatus({ message }: { message: string }) {
+function CloudStatus({
+  message,
+  retry = false,
+}: {
+  message: string;
+  retry?: boolean;
+}) {
   return (
     <div className="cloud-status-screen">
       <div className="backdrop" aria-hidden="true" />
       <span className="verification-spinner" aria-hidden="true" />
       <strong>{message}</strong>
       <small>请勿擅自离岗</small>
+      {retry && (
+        <button type="button" onClick={() => window.location.reload()}>
+          重试
+        </button>
+      )}
     </div>
   );
 }
@@ -251,7 +296,11 @@ function CampaignBoardWorkspace({
   const [activityOpen, setActivityOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const joinInbox = useQuery({
-    queryKey: ["join-inbox", campaignId],
+    queryKey: [
+      "join-inbox",
+      campaignId,
+      campaign.board?.viewer.id ?? "loading",
+    ],
     queryFn: () => getCampaignJoinInbox(campaignId),
     enabled:
       !demo &&

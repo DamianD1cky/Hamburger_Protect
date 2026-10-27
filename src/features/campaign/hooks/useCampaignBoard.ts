@@ -1,5 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { nhost, isNhostConfigured } from "../../../lib/nhost/client";
+import { nhost } from "../../../lib/nhost/client";
+import { backend } from "../../../lib/backend";
+import { getSupabaseAppSession } from "../../access/data/supabaseSession";
+import { supabaseCampaignRepository } from "../data/supabaseCampaignRepository";
 import { localCampaignRepository } from "../data/localCampaignRepository";
 import { nhostCampaignRepository } from "../data/nhostCampaignRepository";
 import { cloneDefaultBoard, defaultBoard } from "../domain/defaults";
@@ -16,14 +19,20 @@ export function useCampaignBoard(
   requestedCampaignId = defaultBoard.campaign.id,
 ) {
   const queryClient = useQueryClient();
-  const session = nhost?.getUserSession();
-  const cloudEnabled = isNhostConfigured && Boolean(session?.user);
+  const session =
+    backend === "supabase" ? getSupabaseAppSession() : nhost?.getUserSession();
+  const cloudEnabled = backend !== "local";
   const repository = cloudEnabled
-    ? nhostCampaignRepository
+    ? backend === "supabase"
+      ? supabaseCampaignRepository
+      : nhostCampaignRepository
     : localCampaignRepository;
   const boardKey = [
     "campaign-board",
-    cloudEnabled ? "nhost" : "local",
+    backend,
+    session?.user && "authUserId" in session.user
+      ? session.user.authUserId
+      : session?.user?.id,
     session?.user?.id ?? "demo",
     requestedCampaignId,
   ] as const;
@@ -48,9 +57,10 @@ export function useCampaignBoard(
     board,
     error: query.error,
     refetch: query.refetch,
-    dataSource: cloudEnabled ? ("nhost" as const) : ("local" as const),
+    dataSource: backend,
     isLoading: query.isLoading,
-    getActivities: (beforeId?: string) => repository.getActivities(campaignId, beforeId),
+    getActivities: (beforeId?: string) =>
+      repository.getActivities(campaignId, beforeId),
     saveResource: (draft: ResourceDraft, id?: string) =>
       commit(() => repository.saveResource(campaignId, draft, id)),
     deleteResource: (id: string) =>

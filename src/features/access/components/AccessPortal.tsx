@@ -1,4 +1,4 @@
-import type { StoredSession } from "@nhost/nhost-js";
+import type { AppSession } from "../domain/types";
 import {
   ArrowRight,
   BadgeCheck,
@@ -17,7 +17,7 @@ import {
   GM_PASSWORD_MIN_LENGTH,
   type GmAccess,
   type CampaignJoinRequest,
-} from "../data/nhostCampaignAccess";
+} from "../data/campaignAccess";
 
 const employeePositions: Array<{
   value: Exclude<EmployeePosition, "店长">;
@@ -33,7 +33,7 @@ type PortalMode = "employee" | "gm";
 type GmMode = "signin" | "signup";
 
 interface AccessPortalProps {
-  session: StoredSession | null;
+  session: AppSession | null;
   gmAccess: GmAccess | null;
   joinRequest: CampaignJoinRequest | null;
   onRefreshJoinRequest: () => Promise<void>;

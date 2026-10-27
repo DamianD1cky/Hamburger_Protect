@@ -1,0 +1,28 @@
+# Credentials must never be uploaded, including files ignored by Git.
+.env
+.env.*
+.secrets
+.secrets.*
+*.snapshot.json
+*.dump
+*.sql.gz
+*.pem
+*.key
+credentials.json
+auth.json
+.migration-data
+
+# Deployment builds only require the frontend and its application assets.
+/.git
+/.github
+/.githooks
+/.nhost
+/.trae
+/nhost
+/supabase
+/scripts
+/node_modules
+/dist
+/coverage
+*.tsbuildinfo
+*.log
