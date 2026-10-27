@@ -17,7 +17,8 @@
     "supabase:push": "supabase db push",
     "check:database": "node scripts/tests/database.mjs",
     "check:migration": "node scripts/tests/migration.mjs",
-    "migration": "node scripts/migration/cli.mjs"
+    "migration": "node scripts/migration/cli.mjs",
+    "migration:gm-passwords": "node scripts/migration/migrate-gm-passwords.mjs"
   },
   "dependencies": {
     "@nhost/nhost-js": "^4.9.0",

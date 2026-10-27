@@ -53,6 +53,39 @@ export async function managementQuery(query, variables) {
     throw new Error("NHOST_MANAGEMENT_QUERY_FAILED");
   return body.data;
 }
+export async function runSourceSQL(sql, readOnly = true) {
+  const project = JSON.parse(await readFile(".nhost/project.json", "utf8"));
+  const config = await managementQuery(
+    "query($id:uuid!){app(id:$id){config(resolve:true){hasura{adminSecret}}}}",
+    { id: project.id },
+  );
+  const secret = config.app?.config?.hasura?.adminSecret;
+  if (!secret) throw new Error("NHOST_HASURA_SECRET_UNAVAILABLE");
+  const response = await fetch(
+    `https://${project.subdomain}.hasura.${project.region.name}.nhost.run/v2/query`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-hasura-admin-secret": secret,
+      },
+      body: JSON.stringify({
+        type: "run_sql",
+        args: { source: "default", read_only: readOnly, sql },
+      }),
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+  const body = await response.json();
+  if (!response.ok || body.error || !Array.isArray(body.result)) {
+    throw new Error("NHOST_SQL_FAILED");
+  }
+  const [columns, ...values] = body.result;
+  return values.map((row) =>
+    Object.fromEntries(columns.map((column, index) => [column, row[index]])),
+  );
+}
+
 export async function setLegacyRegistration(closed) {
   const project = JSON.parse(await readFile(".nhost/project.json", "utf8"));
   const backup = ".secrets.nhost-auth-before-cutover.json";

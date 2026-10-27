@@ -182,3 +182,5 @@ npm run supabase:status
 迁移操作顺序、环境变量及回退限制见 [Supabase 运维步骤](supabase/OPERATIONS.md)。真实快照只保存到仓库外，工具默认拒绝覆盖文件、拒绝导入非空目标、拒绝在业务写入开放时导入。
 
 迁移后的站长审批位置为 Supabase Table Editor 的 `public.gm_access`；只修改目标身份对应记录的 `status` 和可选备注。账号身份保存在 `profiles`，授权仍来自 GM 审批表及战役成员关系，不能通过编辑用户 metadata 批准 GM。
+
+原 Nhost 中 24 个带密码的 GM 已通过 bcrypt 哈希迁移保留原密码，账号名和审批状态不变；无需使用迁移初始密码。另有 1 个来源账号原本没有密码，继续按站长交接方式处理。

@@ -75,4 +75,6 @@
 
 当前目标已经是生产数据库，后续不要执行空库导入、准备导入或同步脚本。最终同步已在来源冻结时完成，账号关联未被覆盖。新的结构变更应通过新的 Supabase migration 发布。
 
-GM 账号预占已由 `scripts/migration/reserve-gm.mjs` 完成，初始密码只写入 Git 忽略的 `.secrets.gm-migration.json`。此文件只供站长完成密码交接，不进入前端构建、报告或部署资源。匿名身份恢复窗口至 2026-11-10，期满后关闭 Edge Function 的迁移窗口并撤销迁移专用 Secret。
+GM 账号预占已由 `scripts/migration/reserve-gm.mjs` 完成。随后运行 `npm run migration:gm-passwords`，通过 Supabase Admin API 的 `password_hash` 创建能力迁移了 24 个 bcrypt 密码哈希，并逐账号核对目标哈希；Auth UUID、业务身份和审批状态不变。迁移初始密码已从本地交接文件中清除。1 个来源账号原本没有密码，仍保留迁移初始密码供站长单独交接。此文件不进入前端构建、报告或部署资源。
+
+匿名身份恢复窗口至 2026-11-10，期满后关闭 Edge Function 的迁移窗口并撤销迁移专用 Secret。
