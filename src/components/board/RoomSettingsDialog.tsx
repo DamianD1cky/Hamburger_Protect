@@ -1,4 +1,13 @@
-import { Eye, EyeOff, Image, RotateCcw, Upload, Users } from "lucide-react";
+import {
+  Copy,
+  Eye,
+  EyeOff,
+  Globe2,
+  Image,
+  RotateCcw,
+  Upload,
+  Users,
+} from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import {
   campaignSections,
@@ -18,6 +27,7 @@ export function RoomSettingsDialog({
   onSave,
   onUpload,
   onClearMedia,
+  onSetPublic,
   onOpenRoster,
 }: {
   board: CampaignBoard;
@@ -25,6 +35,7 @@ export function RoomSettingsDialog({
   onSave: (draft: CampaignSettingsDraft) => Promise<unknown>;
   onUpload: (kind: CampaignMediaKind, file: File) => Promise<unknown>;
   onClearMedia: (kind: CampaignMediaKind) => Promise<unknown>;
+  onSetPublic: (isPublic: boolean) => Promise<unknown>;
   onOpenRoster: () => void;
 }) {
   const [titles, setTitles] = useState(() => ({
@@ -36,6 +47,7 @@ export function RoomSettingsDialog({
   );
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
   const editable =
     board.viewer.role === "gm" && board.campaign.status === "active";
   const run = async (key: string, operation: () => Promise<unknown>) => {
@@ -76,6 +88,59 @@ export function RoomSettingsDialog({
       <p className="editor-help">
         标题、显隐与图片是本房间的共享配置。隐藏区块保留全部数据，可随时恢复。
       </p>
+      <section className="public-access-setting">
+        <div>
+          <Globe2 aria-hidden="true" />
+          <span>
+            <strong>公开参观</strong>
+            <small>
+              {board.settings.isPublic
+                ? "所有访客可只读查看公告板并留言"
+                : "仅房间成员可以查看公告板"}
+            </small>
+          </span>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={board.settings.isPublic}
+          className={
+            board.settings.isPublic
+              ? "public-access-toggle is-public"
+              : "public-access-toggle"
+          }
+          disabled={!editable || Boolean(busy)}
+          onClick={() =>
+            void run("public", () =>
+              onSetPublic(!board.settings.isPublic),
+            )
+          }
+        >
+          {busy === "public"
+            ? "保存中…"
+            : board.settings.isPublic
+              ? "已公开"
+              : "未公开"}
+        </button>
+        {board.settings.isPublic && (
+          <button
+            type="button"
+            className="text-button public-share-button"
+            onClick={() => {
+              const url = new URL(window.location.href);
+              url.search = "";
+              url.searchParams.set("visit", board.campaign.id);
+              void navigator.clipboard.writeText(url.toString()).then(() => {
+                setShareCopied(true);
+                window.setTimeout(() => setShareCopied(false), 1600);
+              });
+            }}
+          >
+            <Copy aria-hidden="true" />
+            {shareCopied ? "参观链接已复制" : "复制参观链接"}
+          </button>
+        )}
+      </section>
       <button
         type="button"
         className="room-roster-shortcut"

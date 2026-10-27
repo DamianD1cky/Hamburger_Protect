@@ -124,6 +124,7 @@ export function BoardScene({
             <ShiftSection
               title={title("shifts")}
               members={board.members}
+              canExpand={board.viewer.role !== "observer"}
               onExpand={onExpandRoster}
             />
           )}

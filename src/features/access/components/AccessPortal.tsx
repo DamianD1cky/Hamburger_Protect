@@ -3,7 +3,9 @@ import {
   ArrowRight,
   BadgeCheck,
   ChefHat,
+  Eye,
   KeyRound,
+  MessageSquare,
   ShieldAlert,
   Store,
   UserPlus,
@@ -11,6 +13,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import type { PublicCampaign } from "../../campaign/domain/types";
 import {
   getAccessErrorMessage,
   GM_PASSWORD_MIN_LENGTH,
@@ -31,6 +34,9 @@ interface AccessPortalProps {
   onCancelJoinRequest: (id: string) => Promise<void>;
   onRefreshGmAccess: () => Promise<void>;
   accessError: string;
+  publicCampaigns: PublicCampaign[];
+  publicCampaignsLoading: boolean;
+  onVisitPublicCampaign: (campaignId: string) => void;
   onSignInGm: (input: { username: string; password: string }) => Promise<void>;
   onRegisterGm: (input: {
     username: string;
@@ -55,6 +61,9 @@ export function AccessPortal({
   onCancelJoinRequest,
   onRefreshGmAccess,
   accessError,
+  publicCampaigns,
+  publicCampaignsLoading,
+  onVisitPublicCampaign,
   onSignInGm,
   onRegisterGm,
   onCreateCampaign,
@@ -525,6 +534,41 @@ export function AccessPortal({
               {error || accessError}
             </p>
           )}
+
+          <section className="public-room-browser" aria-labelledby="public-rooms-title">
+            <header>
+              <div>
+                <small>无需班次码 · 只读访问</small>
+                <h3 id="public-rooms-title">公开参观房间</h3>
+              </div>
+              <Eye aria-hidden="true" />
+            </header>
+            {publicCampaignsLoading ? (
+              <p>正在查看公开房间…</p>
+            ) : publicCampaigns.length ? (
+              <div className="public-room-list">
+                {publicCampaigns.map((campaign) => (
+                  <button
+                    type="button"
+                    key={campaign.id}
+                    onClick={() => onVisitPublicCampaign(campaign.id)}
+                  >
+                    <span>
+                      <strong>{campaign.name}</strong>
+                      <small>汉堡屋指数 {campaign.burgerIndex}</small>
+                    </span>
+                    <span className="public-room-message-count">
+                      <MessageSquare aria-hidden="true" />
+                      {campaign.messageCount}
+                    </span>
+                    <ArrowRight aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p>当前没有开放参观的房间。</p>
+            )}
+          </section>
 
           <footer className="manual-rules">
             <span>

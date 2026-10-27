@@ -11,6 +11,10 @@ import type {
   ActiveCampaignAccess,
 } from "../domain/types";
 import type { EmployeePosition } from "../../campaign/domain/types";
+import type {
+  PublicCampaign,
+  VisitorMessage,
+} from "../../campaign/domain/types";
 interface RemoteRequest {
   id: string;
   campaign_id: string;
@@ -208,6 +212,77 @@ export async function reviewCampaignJoin(
 }
 export async function cancelCampaignJoin(id: string) {
   await rpc("cancel_campaign_join", { p_request_id: id });
+}
+export async function listPublicCampaigns(): Promise<PublicCampaign[]> {
+  const rows = await rpc<
+    Array<{
+      id: string;
+      name: string;
+      burger_index: number;
+      published_at: string;
+      message_count: number;
+    }>
+  >("list_public_campaigns");
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    burgerIndex: row.burger_index,
+    publishedAt: row.published_at,
+    messageCount: Number(row.message_count),
+  }));
+}
+export async function getVisitorMessages(
+  campaignId: string,
+): Promise<VisitorMessage[]> {
+  const rows = await rpc<
+    Array<{
+      id: string;
+      display_name: string;
+      body: string;
+      created_at: string;
+      is_own: boolean;
+    }>
+  >("get_visitor_messages", { p_campaign_id: campaignId });
+  return rows.map((row) => ({
+    id: row.id,
+    displayName: row.display_name,
+    body: row.body,
+    createdAt: row.created_at,
+    isOwn: row.is_own,
+  }));
+}
+export async function submitVisitorMessage(input: {
+  campaignId: string;
+  displayName: string;
+  body: string;
+}) {
+  const client = requireSupabase();
+  let {
+    data: { session },
+  } = await client.auth.getSession();
+  if (!session) {
+    const result = await client.auth.signInAnonymously({
+      options: { data: { displayName: input.displayName.trim() } },
+    });
+    if (result.error) throw result.error;
+    session = result.data.session;
+  }
+  if (!session) throw new Error("AUTH_REQUIRED");
+  await prepareSupabaseSession(session);
+  await rpc("submit_visitor_message", {
+    p_campaign_id: input.campaignId,
+    p_display_name: input.displayName.trim(),
+    p_body: input.body.trim(),
+  });
+}
+export async function deleteVisitorMessage(
+  campaignId: string,
+  messageId: string,
+) {
+  await rpc("delete_visitor_message", {
+    p_campaign_id: campaignId,
+    p_message_id: messageId,
+  });
 }
 export async function signOut() {
   const { error } = await requireSupabase().auth.signOut();

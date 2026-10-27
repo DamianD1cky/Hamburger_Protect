@@ -109,12 +109,13 @@ nhost/
 - PostgreSQL 约束保证玩家只能同时参加一个进行中的战役
 - GM 专属建局、任务管理、审核和归档函数
 - 玩家专属加入、领取和提交任务函数
+- GM 可控制公开参观；访客只读查看公告板并通过独立留言区互动
 - Hasura `user` / `anonymous` 角色的行级、列级与关系权限
 
 ## 云端部署
 
 1. 使用 `npm run supabase:push` 将已评审迁移部署到已链接的 Supabase 项目，禁止对生产库执行重置。
-2. 先运行云端事务 smoke test，再确认 `private.runtime` 的业务写入与公开状态。
+2. 先运行云端事务 smoke test；R10 使用 `npx supabase db query --linked --file supabase/tests/public_visits_smoke.sql`，再确认 `private.runtime` 的业务写入与公开状态。
 3. Vercel 配置 `VITE_BACKEND=supabase`、Supabase URL、publishable key 和 GM 账号域名。
 4. 运行 `npm run check`、`npm run check:database`、`npm run build` 和密钥扫描后部署前端。
 5. 生产域名为 <https://hamburger.damiandicky.site>；部署后验证桌面、手机、Auth 和 Storage 签名 URL。

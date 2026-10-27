@@ -3,6 +3,7 @@ import {
   BookOpen,
   Copy,
   LogOut,
+  MessageSquare,
   RefreshCw,
   Settings,
   UserPlus,
@@ -27,14 +28,18 @@ import {
   createCampaign,
   cancelCampaignJoin,
   getCampaignJoinInbox,
+  getVisitorMessages,
   getOwnJoinRequest,
+  deleteVisitorMessage,
   reviewCampaignJoin,
   getActiveCampaign,
   getGmAccess,
   joinCampaign,
+  listPublicCampaigns,
   registerGm,
   signInGm,
   signOut,
+  submitVisitorMessage,
 } from "../features/access/data/campaignAccess";
 import { useAuthSession } from "../features/access/hooks/useAuthSession";
 import { defaultBoard } from "../features/campaign/domain/defaults";
@@ -96,6 +101,11 @@ const RoomSettingsDialog = lazy(() =>
     default: module.RoomSettingsDialog,
   })),
 );
+const VisitorMessagesDialog = lazy(() =>
+  import("../components/board/VisitorMessagesDialog").then((module) => ({
+    default: module.VisitorMessagesDialog,
+  })),
+);
 
 const closedComposer: ComposerState = {
   open: false,
@@ -135,6 +145,17 @@ function CloudCampaignApp() {
   const queryClient = useQueryClient();
   const auth = useAuthSession();
   const session = auth.session;
+  const [publicCampaignId, setPublicCampaignId] = useState(
+    () => new URLSearchParams(window.location.search).get("visit") ?? "",
+  );
+  useEffect(() => {
+    const syncPublicVisit = () =>
+      setPublicCampaignId(
+        new URLSearchParams(window.location.search).get("visit") ?? "",
+      );
+    window.addEventListener("popstate", syncPublicVisit);
+    return () => window.removeEventListener("popstate", syncPublicVisit);
+  }, []);
   useEffect(() => {
     for (const key of [
       "gm-access",
@@ -158,6 +179,14 @@ function CloudCampaignApp() {
     retry: 1,
   });
   const approved = gmAccessQuery.data?.status === "approved";
+  const publicCampaignsQuery = useQuery({
+    queryKey: ["public-campaigns"],
+    queryFn: listPublicCampaigns,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    retry: 1,
+  });
 
   const accessQuery = useQuery({
     queryKey: ["active-campaign", session?.user?.id ?? "signed-out"],
@@ -194,6 +223,21 @@ function CloudCampaignApp() {
 
   if (auth.loading) return <CloudStatus message="正在恢复登录身份" />;
   if (auth.error) return <CloudStatus message={auth.error} retry />;
+
+  if (publicCampaignId) {
+    return (
+      <CampaignBoardWorkspace
+        campaignId={publicCampaignId}
+        publicView
+        onExit={async () => {
+          setPublicCampaignId("");
+          const url = new URL(window.location.href);
+          url.searchParams.delete("visit");
+          window.history.replaceState(null, "", url);
+        }}
+      />
+    );
+  }
 
   if (regularUser && gmAccessQuery.isLoading) {
     return <CloudStatus message="正在核对 GM 审批状态" />;
@@ -241,6 +285,15 @@ function CloudCampaignApp() {
               ? accessQuery.error.message
               : ""
       }
+      publicCampaigns={publicCampaignsQuery.data ?? []}
+      publicCampaignsLoading={publicCampaignsQuery.isLoading}
+      onVisitPublicCampaign={(campaignId) => {
+        const url = new URL(window.location.href);
+        url.search = "";
+        url.searchParams.set("visit", campaignId);
+        window.history.pushState(null, "", url);
+        setPublicCampaignId(campaignId);
+      }}
       onSignInGm={async (input) => {
         await signInGm(input);
       }}
@@ -290,15 +343,18 @@ function CloudStatus({
 interface CampaignBoardWorkspaceProps {
   campaignId: string;
   demo?: boolean;
+  publicView?: boolean;
   onExit?: () => Promise<void>;
 }
 
 function CampaignBoardWorkspace({
   campaignId,
   demo = false,
+  publicView = false,
   onExit,
 }: CampaignBoardWorkspaceProps) {
-  const campaign = useCampaignBoard(campaignId);
+  const queryClient = useQueryClient();
+  const campaign = useCampaignBoard(campaignId, publicView);
   const { worldRef, viewScaleRef, focusZone, setFocusZone } =
     useBoardViewport();
   const [composer, setComposer] = useState<ComposerState>(closedComposer);
@@ -308,6 +364,21 @@ function CampaignBoardWorkspace({
   const [activityOpen, setActivityOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
+  const [visitorMessagesOpen, setVisitorMessagesOpen] = useState(false);
+  const visitorMessages = useQuery({
+    queryKey: ["visitor-messages", campaignId],
+    queryFn: () => getVisitorMessages(campaignId),
+    enabled:
+      !demo &&
+      Boolean(campaign.board) &&
+      (publicView ||
+        campaign.board?.viewer.role === "gm" ||
+        Boolean(campaign.board?.settings.isPublic)),
+    refetchInterval: visitorMessagesOpen ? 5_000 : 15_000,
+    refetchIntervalInBackground: false,
+    staleTime: 5_000,
+    retry: 1,
+  });
   const joinInbox = useQuery({
     queryKey: [
       "join-inbox",
@@ -481,7 +552,7 @@ function CampaignBoardWorkspace({
     [campaign, showToast],
   );
 
-  if (campaign.error && !campaign.board) {
+  if (campaign.error && (!campaign.board || publicView)) {
     return (
       <div className="cloud-status-screen is-error">
         <div className="backdrop" aria-hidden="true" />
@@ -491,6 +562,11 @@ function CampaignBoardWorkspace({
           <RefreshCw aria-hidden="true" />
           重新读取
         </button>
+        {publicView && onExit && (
+          <button type="button" onClick={() => void onExit()}>
+            返回签到处
+          </button>
+        )}
       </div>
     );
   }
@@ -501,7 +577,9 @@ function CampaignBoardWorkspace({
 
   const board = campaign.board;
   const roleLabel =
-    board.viewer.role === "gm"
+    publicView
+      ? "访客 / 只读参观"
+      : board.viewer.role === "gm"
       ? "GM / 值班店长"
       : board.viewer.role === "player"
         ? board.viewer.jobTitle
@@ -554,9 +632,13 @@ function CampaignBoardWorkspace({
           {board.campaign.name} · {board.viewer.displayName} · {roleLabel}
         </span>
         <span className="shop-room-code">
-          {demo ? "演示班次" : "班次码 " + board.campaign.joinCode}
+          {publicView
+            ? "公开参观 · 只读"
+            : demo
+              ? "演示班次"
+              : "班次码 " + board.campaign.joinCode}
         </span>
-        {!demo && (
+        {!demo && !publicView && (
           <button
             type="button"
             onClick={() =>
@@ -596,6 +678,21 @@ function CampaignBoardWorkspace({
             <Settings aria-hidden="true" />
           </button>
         )}
+        {!demo &&
+          (publicView ||
+            board.viewer.role === "gm" ||
+            board.settings.isPublic) && (
+            <button
+              type="button"
+              className="visitor-message-button"
+              onClick={() => setVisitorMessagesOpen(true)}
+              aria-label={`访客留言，${visitorMessages.data?.length ?? 0} 条`}
+              title="访客留言"
+            >
+              <MessageSquare aria-hidden="true" />
+              <span>{visitorMessages.data?.length ?? 0}</span>
+            </button>
+          )}
         <button
           type="button"
           onClick={() => setHandbookOpen(true)}
@@ -707,9 +804,42 @@ function CampaignBoardWorkspace({
               await campaign.clearCampaignMedia(kind);
               showToast("已恢复默认图片");
             }}
+            onSetPublic={async (isPublic) => {
+              await campaign.setCampaignPublic(isPublic);
+              await queryClient.invalidateQueries({
+                queryKey: ["public-campaigns"],
+              });
+              showToast(isPublic ? "房间已开放参观" : "房间已关闭参观");
+            }}
             onOpenRoster={() => {
               setRoomSettingsOpen(false);
               setRosterOpen(true);
+            }}
+          />
+        )}
+        {visitorMessagesOpen && (
+          <VisitorMessagesDialog
+            messages={visitorMessages.data ?? []}
+            defaultName={board.viewer.displayName}
+            canModerate={!publicView && board.viewer.role === "gm"}
+            onClose={() => setVisitorMessagesOpen(false)}
+            onSubmit={async (displayName, body) => {
+              await submitVisitorMessage({
+                campaignId,
+                displayName,
+                body,
+              });
+              await visitorMessages.refetch();
+              await queryClient.invalidateQueries({
+                queryKey: ["public-campaigns"],
+              });
+            }}
+            onDelete={async (messageId) => {
+              await deleteVisitorMessage(campaignId, messageId);
+              await visitorMessages.refetch();
+              await queryClient.invalidateQueries({
+                queryKey: ["public-campaigns"],
+              });
             }}
           />
         )}

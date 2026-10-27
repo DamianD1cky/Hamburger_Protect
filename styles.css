@@ -3510,6 +3510,109 @@ textarea:focus-visible {
 }
 
 /* Iteration controls: profiles, shared room settings and grouped checks. */
+.public-room-browser {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 3px double rgba(47, 41, 33, 0.42);
+}
+
+.public-room-browser > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.public-room-browser header small,
+.public-room-browser header h3 {
+  display: block;
+  margin: 0;
+}
+
+.public-room-browser header small {
+  color: #8e2926;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.public-room-browser header h3 {
+  margin-top: 3px;
+  font-family: var(--hand-font);
+  font-size: 25px;
+}
+
+.public-room-browser > header svg {
+  width: 24px;
+  height: 24px;
+  color: #645b4f;
+}
+
+.public-room-browser > p {
+  margin: 14px 0 0;
+  color: #72685b;
+  font-size: 13px;
+}
+
+.public-room-list {
+  margin-top: 12px;
+  border-top: 1px solid #a99f90;
+}
+
+.public-room-list > button {
+  display: grid;
+  width: 100%;
+  min-height: 62px;
+  grid-template-columns: minmax(0, 1fr) auto 20px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+  border: 0;
+  border-bottom: 1px dashed #a99f90;
+  background: transparent;
+  color: #302a23;
+  text-align: left;
+  cursor: pointer;
+}
+
+.public-room-list > button:hover {
+  background: rgba(160, 124, 53, 0.1);
+}
+
+.public-room-list button > span:first-child,
+.public-room-list button strong,
+.public-room-list button small {
+  display: block;
+  min-width: 0;
+}
+
+.public-room-list button strong {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.public-room-list button small {
+  margin-top: 4px;
+  color: #746a5b;
+}
+
+.public-room-list button > svg {
+  width: 18px;
+  height: 18px;
+}
+
+.public-room-message-count {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #716758;
+  font-size: 12px;
+}
+
+.public-room-message-count svg {
+  width: 15px;
+  height: 15px;
+}
+
 .access-form textarea {
   width: 100%;
   min-height: 100px;
@@ -3782,6 +3885,77 @@ textarea:focus-visible {
   height: 21px;
 }
 
+.public-access-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #796d5d;
+  background: #e8deca;
+}
+
+.public-access-setting > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+
+.public-access-setting > div > svg {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: #315c42;
+}
+
+.public-access-setting strong,
+.public-access-setting small {
+  display: block;
+}
+
+.public-access-setting small {
+  margin-top: 4px;
+  color: #6e6457;
+  line-height: 1.4;
+}
+
+.public-access-toggle {
+  min-width: 84px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 2px solid #716758;
+  background: #f6f0e2;
+  color: #554d43;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.public-access-toggle.is-public {
+  border-color: #315c42;
+  background: #315c42;
+  color: #fff;
+}
+
+.public-access-toggle:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.public-share-button {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 7px;
+}
+
+.public-share-button svg {
+  width: 17px;
+  height: 17px;
+}
+
 .room-settings-section {
   margin-top: 24px;
   padding-top: 22px;
@@ -3886,6 +4060,82 @@ textarea:focus-visible {
   height: 18px;
 }
 
+.shop-status .visitor-message-button {
+  display: flex;
+  width: auto;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+}
+
+.visitor-messages-dialog {
+  width: min(720px, calc(100% - 24px));
+}
+
+.visitor-message-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+  background: #e8deca;
+}
+
+.visitor-message-form .field {
+  margin: 0;
+}
+
+.visitor-message-form .publish-button {
+  grid-column: 2;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.visitor-message-list {
+  display: grid;
+  gap: 0;
+  margin-top: 22px;
+  border-top: 2px solid #8d806d;
+}
+
+.visitor-message {
+  position: relative;
+  padding: 16px 48px 16px 4px;
+  border-bottom: 1px dashed #9b8f7d;
+}
+
+.visitor-message header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.visitor-message time {
+  color: #776d5d;
+  font-size: 12px;
+}
+
+.visitor-message p {
+  margin: 9px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+
+.visitor-message > button {
+  position: absolute;
+  top: 10px;
+  right: 0;
+}
+
+.roster-preview:disabled {
+  cursor: default;
+}
+
 @media (max-width: 680px) {
   .roster-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -3912,6 +4162,19 @@ textarea:focus-visible {
   .media-setting-row .text-button,
   .file-button {
     width: 100%;
+    justify-content: center;
+  }
+
+  .public-access-setting,
+  .visitor-message-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .public-access-toggle,
+  .public-share-button,
+  .visitor-message-form .publish-button {
+    width: 100%;
+    grid-column: 1;
     justify-content: center;
   }
 }

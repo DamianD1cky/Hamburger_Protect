@@ -25,6 +25,18 @@ async function asUser(n, fn, anonymous = n > 2) {
     throw error;
   }
 }
+async function asAnon(fn) {
+  await db.exec("begin");
+  try {
+    await db.exec("set local role anon");
+    const result = await fn();
+    await db.exec("commit");
+    return result;
+  } catch (error) {
+    await db.exec("rollback");
+    throw error;
+  }
+}
 async function denied(
   n,
   sql,
@@ -76,6 +88,15 @@ try {
     await readFile(
       new URL(
         "../../supabase/migrations/20261028000000_iteration_p0_p2.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/20261028010000_public_visits.sql",
         import.meta.url,
       ),
       "utf8",
@@ -212,6 +233,7 @@ try {
     "campaign_join_requests",
     "campaign_settings",
     "checklist_categories",
+    "visitor_messages",
   ]) {
     check(
       (
@@ -388,6 +410,140 @@ try {
     configured.board.settings.section_titles.tasks === "今晚任务" &&
       configured.board.settings.hidden_sections.includes("activity"),
     "room titles and hidden sections are shared",
+  );
+  check(
+    (await asAnon(() => first("select public.list_public_campaigns() rooms")))
+      .rooms.length === 0,
+    "rooms are private by default",
+  );
+  check(
+    (
+      await asAnon(() =>
+        first("select public.get_public_campaign_board($1) board", [c.id]),
+      )
+    ).board === null,
+    "private board is hidden from signed-out visitors",
+  );
+  await denied(3, "select public.set_campaign_public($1,true)", [c.id]);
+  await asUser(1, () =>
+    db.query("select public.set_campaign_public($1,true)", [c.id]),
+  );
+  const publicRooms = (
+    await asAnon(() => first("select public.list_public_campaigns() rooms"))
+  ).rooms;
+  check(
+    publicRooms.length === 1 &&
+      publicRooms[0].id === c.id &&
+      !("join_code" in publicRooms[0]),
+    "public discovery lists only opted-in rooms without join codes",
+  );
+  const publicBoard = (
+    await asAnon(() =>
+      first("select public.get_public_campaign_board($1) board", [c.id]),
+    )
+  ).board;
+  check(
+    publicBoard.join_code === "" &&
+      publicBoard.members.length === 3 &&
+      publicBoard.members.every((member) => member.profile_text === "") &&
+      publicBoard.quests.length > 0 &&
+      publicBoard.notes.length > 0 &&
+      publicBoard.resources.length > 0 &&
+      publicBoard.checklist_items.length > 0 &&
+      publicBoard.events.length > 0,
+    "public snapshot contains the visible board without join codes or profiles",
+  );
+  check(
+    publicBoard.quests.every((quest) => quest.submissions.length === 0),
+    "public snapshot never exposes task submission identifiers",
+  );
+  check(
+    await asAnon(() =>
+      first(
+        "select private.can_read_campaign_media($1) allowed",
+        [`${c.id}/background.webp`],
+      ),
+    ).then((row) => row.allowed),
+    "public room media is readable to signed-out visitors",
+  );
+  const visitorMessage = await asUser(6, () =>
+    first(
+      "select * from public.submit_visitor_message($1,'路过顾客','装修很有危机感')",
+      [c.id],
+    ),
+  );
+  check(
+    visitorMessage.display_name === "路过顾客",
+    "authenticated anonymous visitor can leave a message",
+  );
+  await denied(
+    6,
+    "select public.submit_visitor_message($1,'路过顾客','连续留言')",
+    [c.id],
+    /RATE_LIMIT/,
+  );
+  check(
+    (
+      await asAnon(() =>
+        first("select public.get_visitor_messages($1) messages", [c.id]),
+      )
+    ).messages[0].body === "装修很有危机感",
+    "signed-out visitors can read public messages",
+  );
+  await denied(
+    3,
+    "select public.delete_visitor_message($1,$2)",
+    [c.id, visitorMessage.id],
+  );
+  await asUser(1, () =>
+    db.query("select public.set_campaign_public($1,false)", [c.id]),
+  );
+  check(
+    (
+      await asAnon(() =>
+        first("select public.get_public_campaign_board($1) board", [c.id]),
+      )
+    ).board === null,
+    "closing a room immediately revokes public board access",
+  );
+  await assert.rejects(
+    asAnon(() =>
+      db.query("select public.get_visitor_messages($1)", [c.id]),
+    ),
+    /PUBLIC_CAMPAIGN_REQUIRED/,
+  );
+  assertions++;
+  check(
+    !(await asAnon(() =>
+      first(
+        "select private.can_read_campaign_media($1) allowed",
+        [`${c.id}/background.webp`],
+      ),
+    )).allowed,
+    "closing a room immediately revokes public media access",
+  );
+  check(
+    (
+      await asUser(1, () =>
+        first("select public.get_visitor_messages($1) messages", [c.id]),
+      )
+    ).messages.length === 1,
+    "GM can moderate messages after closing public access",
+  );
+  await asUser(1, () =>
+    db.query("select public.delete_visitor_message($1,$2)", [
+      c.id,
+      visitorMessage.id,
+    ]),
+  );
+  check(
+    (
+      await first(
+        "select count(*)::integer count from public.visitor_messages where campaign_id=$1",
+        [c.id],
+      )
+    ).count === 0,
+    "GM can delete visitor messages",
   );
   await denied(
     1,

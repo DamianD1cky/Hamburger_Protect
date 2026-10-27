@@ -112,10 +112,27 @@ export interface ActivityPage {
 export interface CampaignSettings {
   sectionTitles: Partial<Record<CampaignSectionKey, string>>;
   hiddenSections: CampaignSectionKey[];
+  isPublic: boolean;
   backgroundPath: string | null;
   noteTexturePath: string | null;
   backgroundUrl: string | null;
   noteTextureUrl: string | null;
+}
+
+export interface PublicCampaign {
+  id: string;
+  name: string;
+  burgerIndex: number;
+  publishedAt: string;
+  messageCount: number;
+}
+
+export interface VisitorMessage {
+  id: string;
+  displayName: string;
+  body: string;
+  createdAt: string;
+  isOwn: boolean;
 }
 
 export interface CampaignBoard {

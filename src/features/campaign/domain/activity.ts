@@ -42,6 +42,7 @@ const fieldLabels: Record<string, string> = {
   hidden_sections: "隐藏区块",
   background_path: "场景背景",
   note_texture_path: "便签纸张",
+  is_public: "公开参观",
 };
 const colorLabels: Record<string, string> = {
   yellow: "黄色",

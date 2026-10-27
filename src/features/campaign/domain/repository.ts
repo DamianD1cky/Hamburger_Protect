@@ -78,6 +78,10 @@ export interface CampaignRepository {
     campaignId: string,
     draft: CampaignSettingsDraft,
   ): Promise<CampaignBoard>;
+  setCampaignPublic(
+    campaignId: string,
+    isPublic: boolean,
+  ): Promise<CampaignBoard>;
   uploadCampaignMedia(
     campaignId: string,
     kind: CampaignMediaKind,

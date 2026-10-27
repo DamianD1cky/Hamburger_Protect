@@ -32,11 +32,13 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.settings ??= {
     sectionTitles: {},
     hiddenSections: [],
+    isPublic: false,
     backgroundPath: null,
     noteTexturePath: null,
     backgroundUrl: null,
     noteTextureUrl: null,
   };
+  board.settings.isPublic ??= false;
   board.members ??= [
     {
       userId: board.viewer.id,
@@ -504,6 +506,15 @@ class LocalCampaignRepository implements CampaignRepository {
     return this.manage((board) => {
       board.settings.sectionTitles = draft.sectionTitles;
       board.settings.hiddenSections = draft.hiddenSections;
+    });
+  }
+
+  async setCampaignPublic(
+    _campaignId: string,
+    isPublic: boolean,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      board.settings.isPublic = isPublic;
     });
   }
 

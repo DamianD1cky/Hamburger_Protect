@@ -264,6 +264,7 @@ function toBoard(remote: RemoteBoard, events: RemoteActivity[]): CampaignBoard {
     settings: {
       sectionTitles: remote.settings?.section_titles ?? {},
       hiddenSections: [],
+      isPublic: false,
       backgroundPath: remote.settings?.background_path ?? null,
       noteTexturePath: remote.settings?.note_texture_path ?? null,
       backgroundUrl: null,
@@ -522,6 +523,12 @@ class NhostCampaignRepository implements CampaignRepository {
   async updateCampaignSettings(
     _campaignId: string,
     _draft: CampaignSettingsDraft,
+  ): Promise<CampaignBoard> {
+    throw new Error("Nhost 已冻结，请使用 Supabase 后端");
+  }
+  async setCampaignPublic(
+    _campaignId: string,
+    _isPublic: boolean,
   ): Promise<CampaignBoard> {
     throw new Error("Nhost 已冻结，请使用 Supabase 后端");
   }

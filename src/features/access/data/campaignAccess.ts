@@ -34,4 +34,24 @@ export const reviewCampaignJoin =
   backend === "supabase" ? next.reviewCampaignJoin : legacy.reviewCampaignJoin;
 export const cancelCampaignJoin =
   backend === "supabase" ? next.cancelCampaignJoin : legacy.cancelCampaignJoin;
+export const listPublicCampaigns =
+  backend === "supabase" ? next.listPublicCampaigns : async () => [];
+export const getVisitorMessages =
+  backend === "supabase"
+    ? next.getVisitorMessages
+    : async () => {
+        throw new Error("公开参观仅支持 Supabase 后端");
+      };
+export const submitVisitorMessage =
+  backend === "supabase"
+    ? next.submitVisitorMessage
+    : async () => {
+        throw new Error("公开参观仅支持 Supabase 后端");
+      };
+export const deleteVisitorMessage =
+  backend === "supabase"
+    ? next.deleteVisitorMessage
+    : async () => {
+        throw new Error("公开参观仅支持 Supabase 后端");
+      };
 export const signOut = backend === "supabase" ? next.signOut : legacy.signOut;

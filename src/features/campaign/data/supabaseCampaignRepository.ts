@@ -77,6 +77,7 @@ interface RemoteBoard {
   settings: {
     section_titles: Partial<Record<CampaignSectionKey, string>>;
     hidden_sections: CampaignSectionKey[];
+    is_public: boolean;
     background_path: string | null;
     note_texture_path: string | null;
   };
@@ -96,18 +97,20 @@ const ACTIVITY_PAGE_SIZE = 30;
 
 const mediaUrlCache = new Map<string, { url: string; expiresAt: number }>();
 
-async function signedMediaUrl(path: string | null) {
+async function signedMediaUrl(path: string | null, publicView: boolean) {
   if (!path) return null;
-  const cached = mediaUrlCache.get(path);
+  const cacheKey = `${publicView ? "public" : "member"}:${path}`;
+  const cached = mediaUrlCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.url;
   try {
+    const expiresIn = publicView ? 60 : 3600;
     const { data, error } = await requireSupabase()
       .storage.from("campaign-media")
-      .createSignedUrl(path, 3600);
+      .createSignedUrl(path, expiresIn);
     if (error) return null;
-    mediaUrlCache.set(path, {
+    mediaUrlCache.set(cacheKey, {
       url: data.signedUrl,
-      expiresAt: Date.now() + 50 * 60 * 1000,
+      expiresAt: Date.now() + (publicView ? 45 : 50 * 60) * 1000,
     });
     return data.signedUrl;
   } catch {
@@ -154,15 +157,19 @@ function dueTimestamp(value: string) {
 async function toBoard(
   remote: RemoteBoard,
   events: RemoteActivity[],
+  publicView = false,
 ): Promise<CampaignBoard> {
   const session = getSupabaseAppSession();
-  if (!session) throw new Error("AUTH_REQUIRED");
-  const user = session.user!;
-  const viewer = remote.members.find((member) => member.user_id === user.id);
-  if (!viewer) throw new Error("Current user is not a campaign member");
+  const user = session?.user;
+  const viewer = publicView
+    ? null
+    : remote.members.find((member) => member.user_id === user?.id);
+  if (!publicView && !user) throw new Error("AUTH_REQUIRED");
+  if (!publicView && !viewer)
+    throw new Error("Current user is not a campaign member");
   const [backgroundUrl, noteTextureUrl] = await Promise.all([
-    signedMediaUrl(remote.settings.background_path),
-    signedMediaUrl(remote.settings.note_texture_path),
+    signedMediaUrl(remote.settings.background_path, publicView),
+    signedMediaUrl(remote.settings.note_texture_path, publicView),
   ]);
   return {
     campaign: {
@@ -172,12 +179,19 @@ async function toBoard(
       burgerIndex: remote.burger_index,
       status: remote.status,
     },
-    viewer: {
-      id: user.id,
-      displayName: viewer.character_name || user.displayName,
-      role: viewer.role,
-      jobTitle: viewer.job_title,
-    },
+    viewer: publicView
+      ? {
+          id: user?.id ?? "public-visitor",
+          displayName: user?.displayName ?? "访客",
+          role: "observer",
+          jobTitle: "访客",
+        }
+      : {
+          id: user!.id,
+          displayName: viewer!.character_name || user!.displayName,
+          role: viewer!.role,
+          jobTitle: viewer!.job_title,
+        },
     members: remote.members.map((member) => ({
       userId: member.user_id,
       role: member.role,
@@ -237,12 +251,34 @@ async function toBoard(
     settings: {
       sectionTitles: remote.settings.section_titles ?? {},
       hiddenSections: remote.settings.hidden_sections ?? [],
+      isPublic: remote.settings.is_public ?? false,
       backgroundPath: remote.settings.background_path,
       noteTexturePath: remote.settings.note_texture_path,
       backgroundUrl,
       noteTextureUrl,
     },
   };
+}
+
+export async function getPublicCampaignBoard(campaignId: string) {
+  const data = await rpc<(RemoteBoard & { events: RemoteActivity[] }) | null>(
+    "get_public_campaign_board",
+    { p_campaign_id: campaignId },
+  );
+  if (!data) throw new Error("该房间当前未开放参观");
+  return toBoard(data, data.events, true);
+}
+
+export async function getPublicActivities(
+  campaignId: string,
+  beforeId?: string,
+) {
+  return activityPage(
+    await rpc<RemoteActivity[]>("get_public_activities", {
+      p_campaign_id: campaignId,
+      p_before: beforeId ?? null,
+    }),
+  );
 }
 
 class SupabaseCampaignRepository implements CampaignRepository {
@@ -416,6 +452,13 @@ class SupabaseCampaignRepository implements CampaignRepository {
     });
     return this.getBoard(campaignId);
   }
+  async setCampaignPublic(campaignId: string, isPublic: boolean) {
+    await rpc("set_campaign_public", {
+      p_campaign_id: campaignId,
+      p_is_public: isPublic,
+    });
+    return this.getBoard(campaignId);
+  }
   async uploadCampaignMedia(
     campaignId: string,
     kind: CampaignMediaKind,
@@ -452,7 +495,8 @@ class SupabaseCampaignRepository implements CampaignRepository {
         : board.settings.noteTexturePath;
     if (previous) {
       await bucket.remove([previous]);
-      mediaUrlCache.delete(previous);
+      mediaUrlCache.delete(`member:${previous}`);
+      mediaUrlCache.delete(`public:${previous}`);
     }
     return this.getBoard(campaignId);
   }
@@ -467,7 +511,8 @@ class SupabaseCampaignRepository implements CampaignRepository {
     });
     if (previous) {
       await requireSupabase().storage.from("campaign-media").remove([previous]);
-      mediaUrlCache.delete(previous);
+      mediaUrlCache.delete(`member:${previous}`);
+      mediaUrlCache.delete(`public:${previous}`);
     }
     return this.getBoard(campaignId);
   }

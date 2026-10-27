@@ -284,10 +284,12 @@ export function TaskSection({
 
 export function ShiftSection({
   members,
+  canExpand,
   onExpand,
   title,
 }: {
   members: CampaignBoard["members"];
+  canExpand: boolean;
   onExpand: () => void;
   title: string;
 }) {
@@ -298,9 +300,14 @@ export function ShiftSection({
       <button
         className="shift-paper roster-preview"
         type="button"
+        disabled={!canExpand}
         onClick={onExpand}
-        aria-label={`查看全部 ${active.length} 位在岗成员`}
-        aria-haspopup="dialog"
+        aria-label={
+          canExpand
+            ? `查看全部 ${active.length} 位在岗成员`
+            : `${active.length} 位成员在岗`
+        }
+        aria-haspopup={canExpand ? "dialog" : undefined}
       >
         <strong>{active.length} 人在岗</strong>
         <span className="roster-preview-list">
@@ -312,8 +319,8 @@ export function ShiftSection({
           ))}
         </span>
         <span className="roster-more">
-          {active.length > 3 ? `还有 ${active.length - 3} 人 · ` : ""}
-          点击查看完整排班 →
+          {active.length > 3 ? `还有 ${active.length - 3} 人` : ""}
+          {canExpand && `${active.length > 3 ? " · " : ""}点击查看完整排班 →`}
         </span>
       </button>
     </section>

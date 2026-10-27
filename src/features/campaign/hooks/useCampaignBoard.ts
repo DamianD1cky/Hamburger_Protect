@@ -2,7 +2,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { nhost } from "../../../lib/nhost/client";
 import { backend } from "../../../lib/backend";
 import { getSupabaseAppSession } from "../../access/data/supabaseSession";
-import { supabaseCampaignRepository } from "../data/supabaseCampaignRepository";
+import {
+  getPublicActivities,
+  getPublicCampaignBoard,
+  supabaseCampaignRepository,
+} from "../data/supabaseCampaignRepository";
 import { localCampaignRepository } from "../data/localCampaignRepository";
 import { nhostCampaignRepository } from "../data/nhostCampaignRepository";
 import { cloneDefaultBoard, defaultBoard } from "../domain/defaults";
@@ -20,6 +24,7 @@ import type {
 
 export function useCampaignBoard(
   requestedCampaignId = defaultBoard.campaign.id,
+  publicView = false,
 ) {
   const queryClient = useQueryClient();
   const session =
@@ -33,15 +38,20 @@ export function useCampaignBoard(
   const boardKey = [
     "campaign-board",
     backend,
-    session?.user && "authUserId" in session.user
-      ? session.user.authUserId
-      : session?.user?.id,
-    session?.user?.id ?? "demo",
+    publicView
+      ? "public"
+      : session?.user && "authUserId" in session.user
+        ? session.user.authUserId
+        : session?.user?.id,
+    publicView ? "visitor" : (session?.user?.id ?? "demo"),
     requestedCampaignId,
   ] as const;
   const query = useQuery({
     queryKey: boardKey,
-    queryFn: () => repository.getBoard(requestedCampaignId),
+    queryFn: () =>
+      publicView && backend === "supabase"
+        ? getPublicCampaignBoard(requestedCampaignId)
+        : repository.getBoard(requestedCampaignId),
     placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
     refetchInterval: cloudEnabled ? 5_000 : false,
     refetchIntervalInBackground: false,
@@ -63,7 +73,9 @@ export function useCampaignBoard(
     dataSource: backend,
     isLoading: query.isLoading,
     getActivities: (beforeId?: string) =>
-      repository.getActivities(campaignId, beforeId),
+      publicView && backend === "supabase"
+        ? getPublicActivities(campaignId, beforeId)
+        : repository.getActivities(campaignId, beforeId),
     saveResource: (draft: ResourceDraft, id?: string) =>
       commit(() => repository.saveResource(campaignId, draft, id)),
     deleteResource: (id: string) =>
@@ -100,6 +112,8 @@ export function useCampaignBoard(
       commit(() => repository.removeMember(campaignId, userId, note)),
     updateCampaignSettings: (draft: CampaignSettingsDraft) =>
       commit(() => repository.updateCampaignSettings(campaignId, draft)),
+    setCampaignPublic: (isPublic: boolean) =>
+      commit(() => repository.setCampaignPublic(campaignId, isPublic)),
     uploadCampaignMedia: (kind: CampaignMediaKind, file: File) =>
       commit(() => repository.uploadCampaignMedia(campaignId, kind, file)),
     clearCampaignMedia: (kind: CampaignMediaKind) =>
