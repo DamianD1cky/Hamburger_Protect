@@ -833,6 +833,10 @@ button {
   will-change: transform;
 }
 
+.user-note[data-pinned="true"] {
+  z-index: 10;
+}
+
 .user-note:active {
   cursor: grabbing;
 }

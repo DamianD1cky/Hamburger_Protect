@@ -41,7 +41,7 @@ export function NotesDialog({
   return (
     <PaperDialog title={`全部便签 · ${notes.length} 条`} onClose={onClose}>
       <p className="editor-help">
-        置顶便签优先，其余按发布时间从新到旧排列。置顶只影响目录顺序，不改变公告板叠放层级。
+        置顶便签优先并显示在公告板便签堆顶层，其余按发布时间从新到旧排列。
       </p>
       <div className="note-directory">
         {!notes.length && <p className="editor-help">暂无便签。</p>}

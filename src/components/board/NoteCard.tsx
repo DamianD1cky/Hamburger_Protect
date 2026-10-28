@@ -99,6 +99,7 @@ export function NoteCard({
       className="user-note"
       data-note-id={note.id}
       data-color={note.color}
+      data-pinned={note.pinned}
       role={canEdit ? "button" : undefined}
       tabIndex={canEdit ? 0 : -1}
       aria-label={canEdit ? "编辑工作记录：" + note.title : undefined}
