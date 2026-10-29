@@ -288,7 +288,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
       "get_campaign_board",
       { p_campaign_id: campaignId },
     );
-    if (!data) throw new Error("没有本次班次的读取权限");
+    if (!data) throw new Error("没有本房间的读取权限");
     return await toBoard(data, data.events);
   }
   async getActivities(campaignId: string, beforeId?: string) {

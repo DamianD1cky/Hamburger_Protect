@@ -655,11 +655,13 @@ function CampaignBoardWorkspace({
       <div className="shop-status" aria-label="战役状态">
         <span className="status-dot" />
         <span className="shop-status-name">
-          {board.campaign.name} · {board.viewer.displayName} · {roleLabel}
+          <span className="status-part">{board.campaign.name}</span>
+          <span className="status-part">{board.viewer.displayName}</span>
+          <span className="status-part">{roleLabel}</span>
         </span>
         <span className="shop-room-code">
           {publicView
-            ? "公开参观 · 只读"
+            ? "公开参观（只读）"
             : demo
               ? "演示班次"
               : "班次码 " + board.campaign.joinCode}

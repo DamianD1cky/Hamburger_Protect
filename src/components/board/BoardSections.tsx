@@ -83,11 +83,11 @@ export function InventorySection({
               </span>
               {!items.length && (
                 <span className="sheet-empty">
-                  {canManage ? "空白便签 · 点开登记" : "等待 GM 登记"}
+                  {canManage ? "空白便签，点开登记" : "等待 GM 登记"}
                 </span>
               )}
               <span className="inventory-sheet-hint">
-                {items.length > 3 ? `共 ${items.length} 项 · ` : ""}点开
+                {items.length > 3 ? `共 ${items.length} 项，` : ""}点开
                 {canManage ? "修改" : "查看"} →
               </span>
             </button>
@@ -139,7 +139,7 @@ function TaskItem({
       ? "等待玩家提交"
       : questLabels[quest.status];
   const actionLabel = !campaignActive
-    ? "房间已归档"
+    ? "战役已归档"
     : nextStatus
       ? transitionLabels[quest.status]
       : viewer.role === "gm" &&
@@ -208,8 +208,8 @@ function TaskItem({
         <span className="task-excerpt">{quest.body || "暂无补充内容"}</span>
         <span className="task-meta">
           {quest.assigneeName || "待认领"}
-          {quest.due ? " · " + quest.due : ""}
-          <i data-status={quest.status}> · {progressLabel}</i>
+          {quest.due ? "　" + quest.due : ""}
+          <i data-status={quest.status}>　{progressLabel}</i>
         </span>
       </button>
     </div>
@@ -320,7 +320,7 @@ export function ShiftSection({
         </span>
         <span className="roster-more">
           {active.length > 3 ? `还有 ${active.length - 3} 人` : ""}
-          {canExpand && `${active.length > 3 ? " · " : ""}点击查看完整排班 →`}
+          {canExpand && `${active.length > 3 ? "，" : ""}点击查看完整排班 →`}
         </span>
       </button>
     </section>
@@ -404,7 +404,7 @@ export function MemoSection({
         </strong>
         {board.activities.slice(0, 2).map((event) => (
           <span key={event.id}>
-            {activityActor(event, board.members)} · {activitySummary(event)}
+            {activityActor(event, board.members)}　{activitySummary(event)}
           </span>
         ))}
         {!board.activities.length && <span>等待员工更新公告板</span>}

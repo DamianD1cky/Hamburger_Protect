@@ -40,7 +40,7 @@ function JoinRequestRow({
         <span>{request.jobTitle}</span>
       </header>
       <p className="join-request-meta">
-        申请编号 {request.id.slice(0, 8)} ·{" "}
+        申请编号 {request.id.slice(0, 8)}　
         <time dateTime={request.requestedAt}>
           {formatNoteTimestamp(request.requestedAt)}
         </time>
@@ -159,7 +159,7 @@ function MemberDetail({
       <header>
         <div>
           <small>
-            成员编号 {member.userId.slice(0, 8)} ·{" "}
+            成员编号 {member.userId.slice(0, 8)}　
             {member.active ? "在岗" : "已离岗"}
           </small>
           <h2>{member.characterName}</h2>
@@ -294,7 +294,7 @@ export function RosterDialog({
   const selected = board.members.find((member) => member.userId === selectedId);
   return (
     <PaperDialog
-      title={`危机排班 · ${active.length} 人在岗`}
+      title={`危机排班（${active.length} 人在岗）`}
       className="roster-dialog"
       onClose={onClose}
     >
@@ -302,7 +302,7 @@ export function RosterDialog({
       {joinInbox && (
         <section className="join-request-inbox" aria-label="待审批入店申请">
           <div className="join-inbox-heading">
-            <h2>入店申请 · {joinInbox.total} 条待审批</h2>
+            <h2>入店申请（{joinInbox.total} 条待审批）</h2>
             <button
               type="button"
               className="text-button"
@@ -357,7 +357,7 @@ export function RosterDialog({
           ))}
           {inactive.length > 0 && (
             <details className="inactive-members">
-              <summary>已离岗 · {inactive.length}</summary>
+              <summary>已离岗（{inactive.length}）</summary>
               {inactive.map((member) => (
                 <button
                   type="button"

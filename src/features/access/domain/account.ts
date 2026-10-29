@@ -35,8 +35,8 @@ const accessErrorMessages: Array<[string[], string]> = [
     ["identity_required", "account_disabled"],
     "身份未关联或已停用，请联系站长。",
   ],
-  [["campaign_role_required"], "你没有本次班次的操作权限。"],
-  [["campaign_not_active"], "班次已结束，不能继续修改。"],
+  [["campaign_role_required"], "你没有本房间的操作权限。"],
+  [["campaign_not_active"], "本次战役已结束，不能继续修改。"],
   [
     ["one_active_campaign_per_player"],
     "你已经参加了一个仍在营业的战役，不能重复入店。",

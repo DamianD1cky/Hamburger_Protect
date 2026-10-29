@@ -8,6 +8,7 @@ import {
   resourceGroups,
   resourceLabels,
 } from "../../features/campaign/domain/resources";
+import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { PaperDialog } from "../composer/PaperDialog";
 
 interface ResourceRowProps {
@@ -27,6 +28,7 @@ function ResourceRow({
   onBusy,
   onDone,
 }: ResourceRowProps) {
+  const imeGuard = useImeEnterGuard();
   const [name, setName] = useState(item?.name ?? "");
   const [quantity, setQuantity] = useState(item?.quantity ?? "");
   const [status, setStatus] = useState(item?.status ?? "ok");
@@ -63,6 +65,7 @@ function ResourceRow({
     <form
       className="resource-edit-row"
       onSubmit={save}
+      {...imeGuard}
       aria-label={item ? `编辑物资：${item.name}` : "新增物资"}
     >
       <fieldset className="editor-fields" disabled={busy}>

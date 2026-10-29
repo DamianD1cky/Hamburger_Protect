@@ -7,6 +7,7 @@ import type {
   NoteDraft,
   QuestDraft,
 } from "../../features/campaign/domain/types";
+import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { PaperDialog } from "./PaperDialog";
 
 export type ComposeKind = "note" | "quest";
@@ -54,6 +55,7 @@ export function ComposerDialog({
   const [assigneeName, setAssigneeName] = useState(quest?.assigneeName ?? "");
   const [due, setDue] = useState(quest?.due ?? "");
   const [color, setColor] = useState<NoteColor>(note?.color ?? "yellow");
+  const imeGuard = useImeEnterGuard();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -173,7 +175,7 @@ export function ComposerDialog({
               </button>
             </div>
           )}
-          <form onSubmit={submit}>
+          <form onSubmit={submit} {...imeGuard}>
             <fieldset className="editor-fields" disabled={submitting}>
               <label className="field">
                 <span>标题</span>

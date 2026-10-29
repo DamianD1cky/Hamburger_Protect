@@ -2,6 +2,7 @@ import { Send, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
 import type { VisitorMessage } from "../../features/campaign/domain/types";
+import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { PaperDialog } from "../composer/PaperDialog";
 
 export function VisitorMessagesDialog({
@@ -25,6 +26,7 @@ export function VisitorMessagesDialog({
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const imeGuard = useImeEnterGuard();
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -63,12 +65,12 @@ export function VisitorMessagesDialog({
 
   return (
     <PaperDialog
-      title={`访客留言 · ${messages.length} 条`}
+      title={`访客留言（${messages.length} 条）`}
       className="visitor-messages-dialog"
       onClose={onClose}
     >
       <div className="visitor-layout">
-      <form className="visitor-message-form" onSubmit={submit}>
+      <form className="visitor-message-form" onSubmit={submit} {...imeGuard}>
         <label className="field">
           <span>署名</span>
           <input

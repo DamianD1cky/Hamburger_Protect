@@ -36,6 +36,26 @@ export function NoteCard({
     originY: 0,
     moved: false,
   });
+  const escapeListener = useRef<((event: globalThis.KeyboardEvent) => void) | null>(
+    null,
+  );
+
+  // One cancel path for Escape / pointercancel / failed save: put the note
+  // back at its server coordinates and fully reset the drag state machine.
+  const cancelDrag = () => {
+    const element = elementRef.current;
+    if (element) {
+      element.style.left = note.x + "px";
+      element.style.top = note.y + "px";
+      element.style.zIndex = "";
+    }
+    dragRef.current.pointerId = -1;
+    dragRef.current.moved = false;
+    if (escapeListener.current) {
+      window.removeEventListener("keydown", escapeListener.current, true);
+      escapeListener.current = null;
+    }
+  };
 
   const handlePointerDown = (event: PointerEvent<HTMLElement>) => {
     if (
@@ -55,6 +75,14 @@ export function NoteCard({
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.style.zIndex = "20";
     event.preventDefault();
+    const onEscape = (keyEvent: globalThis.KeyboardEvent) => {
+      if (keyEvent.key !== "Escape") return;
+      keyEvent.preventDefault();
+      keyEvent.stopPropagation();
+      cancelDrag();
+    };
+    escapeListener.current = onEscape;
+    window.addEventListener("keydown", onEscape, true);
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
@@ -77,11 +105,18 @@ export function NoteCard({
     }
     event.currentTarget.style.zIndex = "";
     drag.pointerId = -1;
+    if (escapeListener.current) {
+      window.removeEventListener("keydown", escapeListener.current, true);
+      escapeListener.current = null;
+    }
 
     if (drag.moved) {
+      drag.moved = false;
       const x = Math.round(Number.parseFloat(event.currentTarget.style.left));
       const y = Math.round(Number.parseFloat(event.currentTarget.style.top));
-      void onMove(note.id, x, y);
+      // If the save fails, roll back to the server coordinates instead of
+      // leaving the note stranded at the dropped position.
+      void onMove(note.id, x, y).catch(() => cancelDrag());
     } else {
       onEdit(note, event.currentTarget);
     }
@@ -116,12 +151,7 @@ export function NoteCard({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={(event) => {
-        event.currentTarget.style.left = note.x + "px";
-        event.currentTarget.style.top = note.y + "px";
-        event.currentTarget.style.zIndex = "";
-        dragRef.current.pointerId = -1;
-      }}
+      onPointerCancel={() => cancelDrag()}
       onKeyDown={handleKeyDown}
     >
       <h3>{note.title}</h3>

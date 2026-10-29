@@ -117,7 +117,7 @@ export function BoardScene({
 
         <BoardClock />
 
-        <main className="board" aria-label={board.campaign.name + "战役公告板"}>
+        <main className="board" aria-label={board.campaign.name + " 公告板"}>
           {!hidden.has("inventory") && (
             <InventorySection
               title={title("inventory")}

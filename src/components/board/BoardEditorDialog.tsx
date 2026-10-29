@@ -8,6 +8,7 @@ import {
   burgerIndexInfo,
   burgerIndexSteps,
 } from "../../features/campaign/domain/burgerIndex";
+import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { PaperDialog } from "../composer/PaperDialog";
 
 export type BoardEditorKind = "checklist" | "index";
@@ -51,6 +52,7 @@ export function BoardEditorDialog({
     board.checklistCategories[0]?.name ?? "",
   );
   const [index, setIndex] = useState(board.campaign.burgerIndex);
+  const imeGuard = useImeEnterGuard();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -128,7 +130,7 @@ export function BoardEditorDialog({
         if (!busy) onClose();
       }}
     >
-      <form onSubmit={submit}>
+      <form onSubmit={submit} {...imeGuard}>
         <fieldset className="editor-fields" disabled={busy || !editable}>
           {kind === "index" ? (
             <>
@@ -159,7 +161,7 @@ export function BoardEditorDialog({
               </div>
               <p className="index-summary">
                 <strong>
-                  {info.label} · {info.service}
+                  {info.label}（{info.service}）
                 </strong>
                 <br />
                 {info.description}

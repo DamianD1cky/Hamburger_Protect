@@ -15,7 +15,7 @@ const entityLabels: Record<string, string> = {
   quest: "工作指示",
   resource: "物资与设施",
   checklist: "检查项",
-  campaign: "班次",
+  campaign: "战役",
   member: "成员",
   settings: "房间配置",
 };
@@ -69,7 +69,7 @@ export function activitySummary(event: BoardActivity) {
   const label = entityLabels[event.entityType] ?? "公告板";
   switch (event.eventType) {
     case "join_requested":
-      return `申请加入班次 · ${event.payload.job_title ?? ""}`;
+      return `申请加入班次（${event.payload.job_title ?? ""}）`;
     case "join_approved":
       return `批准了「${event.payload.character_name ?? "玩家"}」的入店申请`;
     case "join_rejected":
@@ -77,9 +77,9 @@ export function activitySummary(event: BoardActivity) {
     case "join_cancelled":
       return "撤回了入店申请";
     case "campaign_created":
-      return "创建了班次";
+      return "创建了战役";
     case "member_joined":
-      return `加入了班次${event.payload.job_title ? ` · ${event.payload.job_title}` : ""}`;
+      return `加入了班次${event.payload.job_title ? `（${event.payload.job_title}）` : ""}`;
     case "member_removed":
       return `将「${event.payload.character_name ?? "玩家"}」移出房间`;
     case "member_profile_updated":
@@ -91,9 +91,9 @@ export function activitySummary(event: BoardActivity) {
     case "settings_updated":
       return "更新了房间配置";
     case "campaign_archived":
-      return "归档了班次";
+      return "归档了战役";
     case "campaign_updated":
-      return title ? `将班次改名为「${title}」` : "更新了班次";
+      return title ? `将战役改名为「${title}」` : "更新了战役";
     case "burger_index_changed":
       return "调整了汉堡屋指数";
     case "note_moved":

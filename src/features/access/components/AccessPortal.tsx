@@ -19,6 +19,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { useImeEnterGuard } from "../../../hooks/useImeEnterGuard";
 import type { PublicCampaign } from "../../campaign/domain/types";
 import {
   getAccessErrorMessage,
@@ -97,6 +98,7 @@ export function AccessPortal({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const imeGuard = useImeEnterGuard();
   // Approval reminders live in a one-off popup, not inline in the forms:
   // it appears once when a non-approved GM signs in / registers, or when
   // an employee's join request lands in the pending state.
@@ -126,7 +128,7 @@ export function AccessPortal({
       shownNoticeKeys.current.add(key);
       setApprovalNotice({
         title: "店长账号需要站长审批",
-        body: "你已登录，但这个店长账号尚未通过站长审批，暂时不能创建班次或使用 GM 功能。请把下方页面中的账号名发给站长（不要发密码），批准后此页面会自动更新。",
+        body: "你已登录，但这个店长账号尚未通过站长审批，暂时不能创建战役或使用 GM 功能。请把下方页面中的账号名发给站长（不要发密码），批准后此页面会自动更新。",
       });
     } else if (view === "join-approval" && joinRequest) {
       if (joinRequest.status === "approved") return;
@@ -197,7 +199,7 @@ export function AccessPortal({
 
       <div className="access-side">
         <header className="access-brand">
-          <p className="access-kicker">汉○王员工专用 · 内部文件</p>
+          <p className="access-kicker">汉○王员工专用内部文件</p>
           <h1>
             危机营业
             <br />
@@ -216,7 +218,7 @@ export function AccessPortal({
           <section className="public-room-browser">
             <header>
               <div>
-                <small>无需班次码 · 只读访问</small>
+                <small>无需班次码，只读访问</small>
                 <h3 id="public-rooms-title">公开参观房间</h3>
               </div>
               <Eye aria-hidden="true" />
@@ -266,7 +268,7 @@ export function AccessPortal({
                   : view === "approval"
                     ? "GM 权限申请"
                     : view === "create"
-                      ? "建立本次夜班"
+                      ? "创建战役"
                       : view === "gm"
                         ? gmMode === "signup"
                           ? "申请店长账号"
@@ -303,7 +305,7 @@ export function AccessPortal({
           )}
 
           {view === "employee" && (
-            <form className="access-form" onSubmit={submitJoin}>
+            <form className="access-form" onSubmit={submitJoin} {...imeGuard}>
               <label>
                 <span>员工姓名 / 角色名</span>
                 <input
@@ -376,7 +378,7 @@ export function AccessPortal({
                 <dd>{joinRequest.campaignName}</dd>
                 <dt>角色与岗位</dt>
                 <dd>
-                  {joinRequest.characterName} · {joinRequest.jobTitle}
+                  {joinRequest.characterName}（{joinRequest.jobTitle}）
                 </dd>
                 <dt>审批状态</dt>
                 <dd>
@@ -424,7 +426,7 @@ export function AccessPortal({
           )}
 
           {view === "gm" && (
-            <form className="access-form" onSubmit={submitGm}>
+            <form className="access-form" onSubmit={submitGm} {...imeGuard}>
               <label>
                 <span>店长账号名</span>
                 <input
@@ -560,13 +562,13 @@ export function AccessPortal({
           )}
 
           {view === "create" && (
-            <form className="access-form" onSubmit={submitCampaign}>
+            <form className="access-form" onSubmit={submitCampaign} {...imeGuard}>
               <div className="manager-confirmed">
                 <BadgeCheck aria-hidden="true" />
                 <span>站长已批准 GM 权限：{session?.user?.displayName}</span>
               </div>
               <label>
-                <span>本次战役 / 夜班名称</span>
+                <span>战役名称</span>
                 <input
                   required
                   maxLength={80}

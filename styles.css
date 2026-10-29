@@ -1565,7 +1565,6 @@ button {
   margin-top: 24px;
   padding: 10px 14px;
   border: 1px solid rgba(255, 255, 255, 0.3);
-  border-left: 5px solid var(--red);
   background: rgba(20, 20, 18, 0.78);
   color: #fff;
   font-size: 14px;
@@ -1831,7 +1830,7 @@ button {
 .access-error {
   margin: 0;
   padding: 9px 11px;
-  border-left: 4px solid #b18b17;
+  border: 1px solid rgba(177, 139, 23, 0.55);
   background: rgba(245, 219, 77, 0.2);
   color: #554b34;
   font-size: 12px;
@@ -1840,7 +1839,7 @@ button {
 
 .access-error {
   margin-top: 14px;
-  border-left-color: #bd1c24;
+  border-color: rgba(189, 28, 36, 0.45);
   background: rgba(189, 28, 36, 0.1);
   color: #8c1a1f;
 }
@@ -1850,7 +1849,7 @@ button {
   align-items: center;
   gap: 8px;
   padding: 9px 11px;
-  border-left: 4px solid #258144;
+  border: 1px solid rgba(37, 129, 68, 0.45);
   background: rgba(37, 129, 68, 0.1);
   color: #346044;
   font-size: 12px;
@@ -2079,7 +2078,7 @@ button {
   gap: 12px;
   margin: 20px 26px;
   padding: 14px 16px;
-  border-left: 5px solid var(--red);
+  border: 1px solid rgba(214, 19, 31, 0.35);
   background: rgba(214, 19, 31, 0.08);
 }
 
@@ -3445,7 +3444,7 @@ textarea:focus-visible {
 .gm-application-notice {
   margin: 0;
   padding: 14px 16px;
-  border-left: 4px solid #b48a43;
+  border: 1px solid rgba(180, 138, 67, 0.5);
   background: #dfc89c38;
   color: #5b4530;
   font-size: 15px;
@@ -4682,7 +4681,6 @@ textarea:focus-visible {
 .public-room-dock {
   padding: 15px 17px 11px;
   border: 1px solid rgba(255, 255, 255, 0.34);
-  border-left: 5px solid var(--red);
   background: rgba(17, 18, 16, 0.84);
   box-shadow: 10px 14px 28px rgba(0, 0, 0, 0.32);
   color: #f7f2e7;
@@ -4724,7 +4722,7 @@ textarea:focus-visible {
   z-index: 170;
   display: grid;
   place-items: center;
-  padding: 18px;
+  padding: 26px;
   background: rgba(10, 10, 9, 0.68);
   animation: handbook-fade 180ms ease both;
 }
@@ -4783,4 +4781,84 @@ textarea:focus-visible {
   width: 40px;
   height: 40px;
   color: #f4d92c;
+}
+
+/* ============================================================
+   Refinement pass (borrowing desktop-agent-ui iron rules)
+   Scope: real-pixel UI chrome — dialogs, sign-in, status bar,
+   dock. The board world is scaled artwork and stays exempt
+   from the type/border rules below.
+   Type ladder: 12 aux / 14 body / 16 emphasis / 24 titles.
+   ============================================================ */
+.shop-status-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.shop-status-name .status-part {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shop-status-name .status-part + .status-part {
+  padding-left: 8px;
+  border-left: 0.5px solid rgba(255, 255, 255, 0.35);
+}
+.manual-file-number,
+.access-form label > small,
+.manual-rules,
+.public-room-browser header small { font-size: 12px; }
+.focus-dock button { font-size: 12px; }
+.paper-dialog h1,
+.handbook-dialog h2,
+.manual-heading h2,
+.approval-notice-dialog h2,
+.cloud-status-screen strong { font-size: 24px; }
+.paper-dialog .field > span,
+.paper-dialog .color-field legend,
+.paper-dialog .editor-help { font-size: 12px; }
+.paper-dialog .text-button,
+.paper-dialog .publish-button,
+.note-detail .detail-body { font-size: 14px; }
+.room-settings-section header h2 { font-size: 16px; }
+
+/* Concentric corners + hairline dividers inside dialogs */
+.focus-dock button { border-radius: 4px; }
+.paper-dialog .compose-type { border-radius: 4px; }
+.paper-dialog > .composer-header { border-bottom-width: 1px; }
+.paper-dialog-body .composer-actions { border-top-width: 1px; }
+.room-settings-section { border-top-width: 1px; }
+
+/* Stable scroll slots + soft edge fade on dialog scroll areas */
+.paper-dialog-body,
+.roster-member-list,
+.join-request-inbox,
+.visitor-message-list,
+.public-room-dock .public-room-list { scrollbar-gutter: stable; }
+.checklist-item-list,
+.roster-member-list,
+.join-request-inbox,
+.visitor-message-list,
+.public-room-dock .public-room-list {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 10px,
+    black calc(100% - 10px),
+    transparent 100%
+  );
+}
+
+/* Textareas grow with content, then scroll internally past the cap */
+.paper-dialog .field textarea,
+.access-form textarea,
+.visitor-message-form textarea {
+  field-sizing: content;
+  max-height: 230px;
+}
+
+@media (max-width: 560px) {
+  .access-alert { font-size: 12px; }
+  .approval-notice-overlay { padding: 26px; }
 }

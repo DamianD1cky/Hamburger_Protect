@@ -40,7 +40,7 @@ export function NotesDialog({
   };
   return (
     <PaperDialog
-      title={`全部便签 · ${notes.length} 条`}
+      title={`全部便签（${notes.length} 条）`}
       className="directory-dialog notes-dialog"
       onClose={onClose}
     >
