@@ -20,6 +20,11 @@ function describeError(error: unknown) {
   const parts: string[] = [];
   if (error instanceof Error) parts.push(error.message);
   else parts.push(String(error));
+  // Supabase Auth errors carry the stable machine code separately from the
+  // human message (e.g. code "user_already_exists" vs "User already
+  // registered"); both must participate or most mappings silently miss.
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === "string") parts.push(code);
   const body = (error as { body?: unknown } | null)?.body;
   if (body && typeof body === "object") {
     parts.push(JSON.stringify(body));
@@ -56,6 +61,7 @@ const accessErrorMessages: Array<[string[], string]> = [
       "user-already-exists",
       "user_already_exists",
       "already exists",
+      "already registered",
       "uniqueness",
     ],
     "该账号名已被占用，请换一个或直接登录。",
@@ -65,6 +71,7 @@ const accessErrorMessages: Array<[string[], string]> = [
       "invalid-email-password",
       "invalid_credentials",
       "invalid email or password",
+      "invalid login credentials",
       "incorrect password",
     ],
     "账号或密码不正确。",
