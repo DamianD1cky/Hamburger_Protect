@@ -4895,3 +4895,27 @@ textarea:focus-visible {
   .access-alert { font-size: 12px; }
   .approval-notice-overlay { padding: 26px; }
 }
+
+/* Account settings use the same paper sheet as the board dialogs. */
+.account-settings-entry, .account-recovery { margin-top: 14px; }
+.account-settings-entry { display: flex; align-items: center; gap: 6px; }
+.account-settings-entry svg { width: 16px; height: 16px; }
+.account-password-input { position: relative; }
+.account-password-input input { padding-right: 48px; }
+.account-password-input button {
+  position: absolute; right: 0; top: 0; width: 44px; height: 46px;
+  display: grid; place-items: center; border: 0;
+  background: transparent; color: #60574c; cursor: pointer;
+}
+.account-password-input svg { width: 19px; height: 19px; }
+.account-settings-dialog { width: min(560px, 100%); }
+.account-settings-dialog .access-form { margin-top: 16px; }
+.account-settings-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid #b2a895; }
+.account-settings-section h2 { margin: 0; font-size: 16px; }
+.account-settings-section p, .account-settings-hint, .account-settings-dialog small {
+  font-size: 13px; color: #655d52; line-height: 1.65;
+}
+.account-settings-success { color: #346044; font-size: 14px; line-height: 1.6; }
+
+.account-settings-feedback { position: sticky; top: 0; z-index: 1; background: #f4f1e5; padding: 2px 0; }
+.account-settings-feedback p { margin: 4px 0; }

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "../../../lib/supabase/client";
+import { getAccessErrorMessage } from "../domain/account";
 import type { AppSession } from "../domain/types";
 import {
   clearSupabaseAppSession,
@@ -7,6 +8,7 @@ import {
   prepareSupabaseSession,
 } from "../data/supabaseSession";
 export function useAuthSession() {
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
   const [state, setState] = useState<{
     session: AppSession | null;
     loading: boolean;
@@ -33,14 +35,17 @@ export function useAuthSession() {
         if (!disposed && ticket === version)
           setState({ session, loading: false, error: "" });
       } catch (error) {
-        if (!disposed && ticket === version)
+        if (!disposed && ticket === version) {
+          clearSupabaseAppSession();
           setState({
             session: null,
             loading: false,
-            error: error instanceof Error ? error.message : "身份恢复失败",
+            error: getAccessErrorMessage(error),
           });
+        }
       }
     }
+    refreshRef.current = load;
     const {
       data: { subscription },
     } = client.auth.onAuthStateChange((_event, next) => {
@@ -53,12 +58,19 @@ export function useAuthSession() {
         if (!disposed) void load();
       });
     });
+    const refreshProfile = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const timer = window.setInterval(refreshProfile, 30_000);
+    window.addEventListener("focus", refreshProfile);
     void load();
     return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshProfile);
       disposed = true;
       version++;
       subscription.unsubscribe();
     };
   }, []);
-  return state;
+  return { ...state, refresh: () => refreshRef.current() };
 }

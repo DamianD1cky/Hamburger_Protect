@@ -94,6 +94,21 @@ npx supabase db query --linked --file supabase/tests/public_visits_smoke.sql
 
 部署前运行 `npm run check:database`，必须覆盖两个方向：已有 GM 在另一场战役获批为玩家，以及已有玩家获批 GM 后创建另一场战役。前端不保存全局「当前身份」，只从 `campaign_members` 读取活跃战役列表，并由用户进入具体战役时选择对应成员关系。
 
+### 9. 账号管理加固（2026-10-29）
+
+`20261029040000_account_management.sql` 新增仅本人可调用的昵称修改 RPC，并把 Auth 封禁状态和匿名标记加入 `private.current_actor_id()`。它保留现有账号 ID、GM 审批、成员关系和历史内容。昵称修改不能修改 Auth ID、停用状态或角色。
+
+发布顺序：运行 `npm run check:accounts`、`npm run check:database`、`npm run check:migration` 和 `npm run build`；部署增量 migration；运行 `npx supabase db query --linked --file supabase/tests/account_management_smoke.sql`；发布前端。浏览器合同回归使用 `npm run check:access-ui`，依赖运行中的 `supabase-preview` 与 Chrome；`HP_PREVIEW_URL` / `CHROME_PATH` 可覆盖环境。测试明确使用 Auth/RPC 夹具，不能替代云端真实密码验证和 SMTP 验收。
+
+Auth 云配置需要逐项与生产核对，不能把本地 `site_url` 覆盖到生产：
+
+- `external_anonymous_users_enabled=false`，对应本地 `auth.enable_anonymous_sign_ins=false`。2026-10-29 本次只读核查发现生产仍为开启状态。
+- `password_min_length=15`，对应本地 `auth.minimum_password_length=15`。只影响新密码，原密码仍可登录；应与新版前端同时发布。生产核查时仍为 8。
+- `security_update_password_require_current_password=true`：使用 Auth 管理配置启用原密码验证；改密代码传递 `current_password`，并额外用不持久化的 SDK 会话验证旧密码。
+- **不要误用** `auth.email.secure_password_change`：当前 CLI 2.122.0 将它映射为 `security_update_password_require_reauthentication`，会让超过 24 小时的会话需要邮箱 nonce；虚拟邮箱无法接收。官方 CLI 页面对此字段的说明与安装版本存在差异，以上以安装版本映射及 Auth 服务源代码为准。
+
+人工找回：先通过用户在申请/游玩之前已有的联系渠道核验身份，再核对 Auth ID 与 profile；使用服务端 `auth.admin.updateUserById(authUserId, { password: generatedTemporaryPassword })`，将临时密码通过已核验渠道单独交接，要求用户登录后自行改密。只在受保护环境运行 Admin API，不向前端提供 service-role key，不记录明文密码，不凭公开角色名、班次码或新建账号替换原账号归属。当前前端不支持自行绑定真实邮箱，因为直接替换 Auth email 会破坏现有账号名登录映射。
+
 ## 深度交互
 
 初始方案未假设旧密码可迁移；实际执行已保留 24 个来源 bcrypt 密码，仍不承诺开放写入后的即时回退。匿名身份在新平台仍依赖浏览器会话，长期角色找回机制需要单独设计。生产执行必须同时具备来源和目标授权连接；只有前端 URL 和 publishable key，仍不足以导入历史数据。

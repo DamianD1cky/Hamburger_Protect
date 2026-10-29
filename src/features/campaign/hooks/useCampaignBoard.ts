@@ -53,6 +53,8 @@ export function useCampaignBoard(
 
   const commit = async (operation: () => Promise<CampaignBoard>) => {
     const next = await operation();
+    if (cloudEnabled && getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId)
+      throw new Error("登录账号已变更，请重新进入战役。");
     queryClient.setQueryData(boardKey, next);
     return next;
   };

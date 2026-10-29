@@ -4,7 +4,7 @@ import {
   prepareSupabaseSession,
   requireSupabaseSession,
 } from "./supabaseSession";
-import { usernameToEmail } from "../domain/account";
+import { usernameToEmail, validateNewPassword, validateDisplayName } from "../domain/account";
 import type {
   GmAccess,
   CampaignJoinRequest,
@@ -114,12 +114,14 @@ export async function registerAccount(input: {
   password: string;
   displayName: string;
 }) {
+  validateNewPassword(input.password, input.password);
+  const displayName = validateDisplayName(input.displayName);
   const { data, error } = await requireSupabase().auth.signUp({
     email: usernameToEmail(input.username),
     password: input.password,
     options: {
       data: {
-        displayName: input.displayName.trim(),
+        displayName,
         gmUsername: input.username.trim().toLowerCase(),
       },
     },
@@ -175,7 +177,7 @@ export async function getOwnJoinRequest(): Promise<CampaignJoinRequest | null> {
     .from("campaign_join_requests")
     .select("*")
     .eq("user_id", session.user.id)
-    .neq("status", "cancelled")
+    .in("status", ["pending", "rejected"])
     .order("requested_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(1)
@@ -272,7 +274,8 @@ export async function deleteVisitorMessage(
   });
 }
 export async function signOut() {
-  const { error } = await requireSupabase().auth.signOut();
-  if (error) throw error;
   clearSupabaseAppSession();
+  const { error } = await requireSupabase().auth.signOut({ scope: "local" });
+  // The SDK clears the local session even when remote revocation fails.
+  if (error) throw error;
 }

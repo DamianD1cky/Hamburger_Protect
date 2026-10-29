@@ -1,59 +1,45 @@
 import type { Session } from "@supabase/supabase-js";
 import type { AppSession } from "../domain/types";
 import { requireSupabase, rpc } from "../../../lib/supabase/client";
+import { createSessionStore } from "../domain/sessionStore";
+import { clearLocalAuthStorage } from "../../../lib/supabase/client";
 interface Profile {
   id: string;
   display_name: string;
   disabled: boolean;
 }
-let current: AppSession | null = null;
-let pending: { id: string; promise: Promise<AppSession> } | null = null;
+const store = createSessionStore<AppSession>();
 export function getSupabaseAppSession() {
-  return current;
+  return store.peek();
 }
 export function clearSupabaseAppSession() {
-  current = null;
-  pending = null;
+  store.clear();
 }
-export async function prepareSupabaseSession(
-  session: Session,
-): Promise<AppSession> {
-  if (current?.user.authUserId === session.user.id) return current;
-  if (pending?.id === session.user.id) return pending.promise;
-  const promise = (async () => {
-    const client = requireSupabase();
-    const { data: existing, error } = await client
-      .from("profiles")
-      .select("id,display_name,disabled")
-      .eq("auth_user_id", session.user.id)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    let profile = existing as Profile | null;
-    if (!profile) profile = await rpc<Profile>("ensure_actor");
-    if (!profile || profile.disabled)
-      throw new Error("账号已停用，请联系站长。");
-    const next: AppSession = {
+export async function prepareSupabaseSession(session: Session): Promise<AppSession> {
+  if (session.user.is_anonymous) {
+    store.clear();
+    throw new Error("ANONYMOUS_IDENTITY_DISABLED");
+  }
+  return store.load(`${session.user.id}:${session.access_token}`, async () => {
+    // ensure_actor checks disabled status server-side, even when RLS hides
+    // the profile. A deleted/banned profile cannot revive from cached data.
+    const profile = await rpc<Profile>("ensure_actor");
+    if (!profile?.id || profile.disabled) throw new Error("ACCOUNT_DISABLED");
+    const { data, error } = await requireSupabase().auth.getSession();
+    if (error) throw error;
+    if (data.session?.access_token !== session.access_token)
+      throw new Error("SESSION_CHANGED");
+    return {
       user: {
         id: profile.id,
         authUserId: session.user.id,
         displayName: profile.display_name,
-        isAnonymous: Boolean(session.user.is_anonymous),
+        isAnonymous: false,
         email: session.user.email,
         metadata: session.user.user_metadata,
       },
     };
-    const { data: latest } = await client.auth.getSession();
-    if (latest.session?.user.id !== session.user.id)
-      throw new Error("会话已变更，请刷新。");
-    current = next;
-    return next;
-  })();
-  pending = { id: session.user.id, promise };
-  try {
-    return await promise;
-  } finally {
-    if (pending?.promise === promise) pending = null;
-  }
+  });
 }
 export async function requireSupabaseSession() {
   const { data, error } = await requireSupabase().auth.getSession();
@@ -66,10 +52,9 @@ export async function requireSupabaseSession() {
  * accounts and characters are not deleted.
  */
 export async function clearStuckIdentities() {
-  try {
-    await requireSupabase().auth.signOut();
-  } catch {
-    // Local state is cleared below regardless of the network result.
-  }
+  // This is explicitly a local recovery action. Do not wait for a failing
+  // network, revoke other devices, or clear unrelated application storage.
+  requireSupabase().auth.stopAutoRefresh();
+  clearLocalAuthStorage();
   clearSupabaseAppSession();
 }

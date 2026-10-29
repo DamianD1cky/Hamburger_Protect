@@ -20,6 +20,16 @@
 - 只有获批 GM 能发布任务、修改检查项内容并审核工作报告；玩家可以编辑物资和更新检查状态。
 - 战役结束后生成只读归档；包含玩家提交报告的完整快照仅本战役获批 GM 可读。
 
+## 账号设置与找回
+
+登录后可打开「账号设置」修改昵称、验证当前密码后更新密码，或退出其他设备。账号昵称与各战役角色名独立保存；普通「退出账号」只退出当前设备。
+
+新注册和修改密码采用至少 15 个字符的长口令；支持空格，按 Supabase bcrypt 的限制拒绝超过 72 个 UTF-8 字节的输入。已有账号仍可使用原密码登录。注册时需要确认密码，所有密码输入均支持显示 / 隐藏和密码管理器自动填充。
+
+账号资料最多缓存 30 秒，页面回到前台和轮询时会重新核对。数据库直接检查 profile 停用状态、Auth 封禁状态及匿名身份，权限不依赖客户端缓存。退出其他设备会撤销 refresh token，已经签发的 access token 在有效期结束前仍可能可用。
+
+当前账号使用 `账号名@gm.local` 虚拟邮箱，不能接收重置邮件。忘记密码应联系站长，通过原先已有的联系渠道核验账号归属后，由站长使用 Supabase Admin API 重置密码；不能仅凭同名角色或班次码认领账号。自助邮件找回需要另行接入真实邮箱验证与 SMTP，当前不提供假邮件找回入口。
+
 ## 术语约定
 
 同一个对象在不同语境下用不同的词，三者不混用：
@@ -144,6 +154,7 @@ supabase/                        生产数据库迁移、测试与 Edge Function
 
 ```bash
 npm run check
+npm run check:accounts
 npm run check:database
 npm run check:migration
 npm run build
@@ -180,6 +191,7 @@ VITE_GM_ACCOUNT_DOMAIN=gm.local
 
 ```bash
 npm run check
+npm run check:accounts
 npm run check:database
 npm run check:migration
 npm run build

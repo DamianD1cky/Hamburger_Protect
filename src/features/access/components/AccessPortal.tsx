@@ -9,6 +9,7 @@ import {
   LogOut,
   MessageSquare,
   Plus,
+  Settings,
   ShieldAlert,
   Store,
   UserPlus,
@@ -16,11 +17,15 @@ import {
   Wrench,
 } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useEffect,
   useRef,
   useState,
   type FormEvent,
 } from "react";
+import { PasswordField } from "./PasswordField";
+import { validateNewPassword } from "../domain/account";
 import { useImeEnterGuard } from "../../../hooks/useImeEnterGuard";
 import type { PublicCampaign } from "../../campaign/domain/types";
 import {
@@ -30,6 +35,10 @@ import {
   type CampaignJoinRequest,
   type ActiveCampaignAccess,
 } from "../data/campaignAccess";
+
+const AccountSettingsDialog = lazy(() => import("./AccountSettingsDialog").then(
+  (module) => ({ default: module.AccountSettingsDialog }),
+));
 
 const employeePositions = ["厨师", "维修师", "服务员", "顾客"] as const;
 
@@ -62,6 +71,7 @@ interface AccessPortalProps {
   onApplyGm: () => Promise<void>;
   onCreateCampaign: (name: string, characterName: string) => Promise<void>;
   onSignOut: () => Promise<void>;
+  onAccountUpdated: () => Promise<void>;
   onJoinCampaign: (input: {
     joinCode: string;
     characterName: string;
@@ -89,6 +99,7 @@ export function AccessPortal({
   onApplyGm,
   onCreateCampaign,
   onSignOut,
+  onAccountUpdated,
   onJoinCampaign,
 }: AccessPortalProps) {
   const imeGuard = useImeEnterGuard();
@@ -96,6 +107,9 @@ export function AccessPortal({
   const [accountTab, setAccountTab] = useState<"employee" | "gm">("employee");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const busyRef = useRef(false);
   const [nickname, setNickname] = useState("");
   const [characterName, setCharacterName] = useState(
     session?.user?.displayName ?? "",
@@ -107,7 +121,6 @@ export function AccessPortal({
   const [gmCharacterName, setGmCharacterName] = useState(
     session?.user?.displayName ?? "",
   );
-  const [pendingVisitId, setPendingVisitId] = useState("");
   // Accounts with campaigns land on the campaign list only; starting a
   // new campaign is an explicit step away from that list.
   const [startNew, setStartNew] = useState(false);
@@ -131,20 +144,6 @@ export function AccessPortal({
     setCharacterName((current) => current || session.user.displayName);
     setGmCharacterName((current) => current || session.user.displayName);
   }, [session?.user]);
-
-  // Once a join request is approved, fall back to the campaign list,
-  // where the newly joined campaign now appears.
-  useEffect(() => {
-    if (joinRequest?.status === "approved") setStartNew(false);
-  }, [joinRequest?.status]);
-
-  // A public room picked before signing in opens right afterwards.
-  useEffect(() => {
-    if (!pendingVisitId || !session?.user) return;
-    const target = pendingVisitId;
-    setPendingVisitId("");
-    onVisitPublicCampaign(target);
-  }, [pendingVisitId, session?.user]);
 
   // Approval reminders are one-off popups, shown once per status.
   useEffect(() => {
@@ -174,6 +173,8 @@ export function AccessPortal({
   }, [session?.user, joinRequest, gmAccess]);
 
   const run = async (operation: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError("");
     try {
@@ -182,6 +183,7 @@ export function AccessPortal({
       // Never log the raw error object; only mapped messages reach the user.
       setError(getAccessErrorMessage(operationError));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -190,6 +192,7 @@ export function AccessPortal({
     event.preventDefault();
     void run(async () => {
       if (signedOutMode === "signup") {
+        validateNewPassword(password, confirmPassword);
         await onRegisterAccount({
           username,
           password,
@@ -218,7 +221,7 @@ export function AccessPortal({
       onVisitPublicCampaign(campaignId);
       return;
     }
-    setPendingVisitId(campaignId);
+    onVisitPublicCampaign(campaignId);
     setNotice({
       title: "参观房间需要先登录账号",
       body: "登录或注册一个账号后即可参观。完成后会自动进入你选择的房间。",
@@ -232,6 +235,9 @@ export function AccessPortal({
   const activePlayerCampaign = activeCampaigns.find(
     (campaign) => campaign.role === "player",
   );
+  useEffect(() => {
+    if (activePlayerCampaign) setStartNew(false);
+  }, [activePlayerCampaign?.campaignId]);
   const showCampaignHome = Boolean(
     session && activeCampaigns.length > 0 && !startNew,
   );
@@ -431,26 +437,17 @@ export function AccessPortal({
                     />
                   </label>
                 )}
-                <label>
-                  <span>密码</span>
-                  <div className="access-input-icon">
-                    <KeyRound aria-hidden="true" />
-                    <input
-                      required
-                      type="password"
-                      minLength={GM_PASSWORD_MIN_LENGTH}
-                      maxLength={50}
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      placeholder={"至少 " + GM_PASSWORD_MIN_LENGTH + " 位"}
-                      autoComplete={
-                        signedOutMode === "signup"
-                          ? "new-password"
-                          : "current-password"
-                      }
-                    />
-                  </div>
-                </label>
+                <PasswordField label="密码" required value={password}
+                  minLength={signedOutMode === "signup" ? GM_PASSWORD_MIN_LENGTH : undefined}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete={signedOutMode === "signup" ? "new-password" : "current-password"} />
+                {signedOutMode === "signup" && (
+                  <>
+                    <PasswordField label="确认密码" required value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
+                    <small>新密码至少 15 个字符，最多 72 个 UTF-8 字节。建议使用密码管理器保存。</small>
+                  </>
+                )}
                 <button className="access-submit" type="submit" disabled={busy}>
                   {busy
                     ? signedOutMode === "signup"
@@ -462,6 +459,10 @@ export function AccessPortal({
                   {!busy && <ArrowRight aria-hidden="true" />}
                 </button>
               </form>
+              <button type="button" className="access-signout account-recovery" onClick={() => setNotice({
+                title: "忘记密码",
+                body: "当前账号没有绑定可收信邮箱，暂不支持邮件自助找回。请联系站长，提供账号名及原战役信息；站长需通过此前已有的联系渠道核实本人后重置密码。不要发送旧密码，也不要仅凭角色同名认领账号。",
+              })}>忘记密码？</button>
             </>
           ) : (
             <>
@@ -474,12 +475,16 @@ export function AccessPortal({
                 <button
                   type="button"
                   className="access-signout"
-                  onClick={() => void onSignOut()}
+                  disabled={busy}
+                  onClick={() => void run(onSignOut)}
                 >
                   <LogOut aria-hidden="true" />
                   退出账号
                 </button>
               </div>
+
+              <button type="button" className="access-signout account-settings-entry"
+                onClick={() => setSettingsOpen(true)}><Settings aria-hidden="true" />账号设置</button>
 
               {showCampaignHome ? (
                 <>
@@ -750,6 +755,12 @@ export function AccessPortal({
         </div>
       </main>
 
+      {settingsOpen && session && (
+        <Suspense fallback={<p className="toast is-visible" role="status">正在打开账号设置</p>}>
+          <AccountSettingsDialog session={session}
+            onClose={() => setSettingsOpen(false)} onUpdated={onAccountUpdated} />
+        </Suspense>
+      )}
       {notice && (
         <div
           className="approval-notice-overlay"

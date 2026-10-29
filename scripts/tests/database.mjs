@@ -52,7 +52,7 @@ async function denied(
 try {
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
  create schema auth;
- create table auth.users(id uuid primary key,email text,is_anonymous boolean default false,raw_user_meta_data jsonb default '{}');
+ create table auth.users(id uuid primary key,email text,is_anonymous boolean default false,banned_until timestamptz,raw_user_meta_data jsonb default '{}');
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
  create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
  create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]); create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text); alter table storage.objects enable row level security;
@@ -138,6 +138,10 @@ try {
       "utf8",
     ),
   );
+
+  await db.exec(await readFile(new URL(
+    "../../supabase/migrations/20261029040000_account_management.sql", import.meta.url,
+  ), "utf8"));
 
   await db.exec("begin;set local role anon");
   check(
@@ -904,6 +908,33 @@ try {
     "campaign memberships retain both roles without changing the account",
   );
 
+  // Account settings are self-only and independent of campaign profiles.
+  await asUser(7, () => db.query("select public.update_account_profile('  新账号昵称  ')"));
+  const updatedAccount = await first("select display_name,disabled from public.profiles where id=$1", [member7.id]);
+  check(updatedAccount.display_name === '新账号昵称' && !updatedAccount.disabled,
+    "nickname is trimmed without changing account status");
+  check((await first("select display_name,status from public.gm_access where user_id=$1", [member7.id])).status === 'approved',
+    "editing nickname cannot change GM approval");
+  check((await first("select character_name from public.campaign_members where user_id=$1 and campaign_id=$2", [member7.id, other.id])).character_name === '账号玩家',
+    "account nickname does not overwrite campaign character name");
+  await denied(7, "select public.update_account_profile('   ')", [], /INVALID_DISPLAY_NAME/);
+  await denied(7, "select public.update_account_profile(repeat('名',33))", [], /INVALID_DISPLAY_NAME/);
+  await denied(7, "update public.profiles set disabled=false where id=$1", [actors[3]], /permission denied/);
+  await assert.rejects(asAnon(() => db.query("select public.update_account_profile('冒名')")), /permission denied/);
+  assertions++;
+  await db.query("update auth.users set banned_until=now()+interval '1 hour' where id=$1", [id(7)]);
+  await denied(7, "select public.update_account_profile('封禁绕过')", [], /IDENTITY_REQUIRED/);
+  await denied(7, "select public.ensure_actor()", [], /ACCOUNT_DISABLED/);
+  check((await asUser(7, () => db.query("select * from public.campaigns"))).rows.length === 0,
+    "Auth ban removes business read permissions with an existing JWT");
+  await db.query("update auth.users set banned_until=null where id=$1", [id(7)]);
+  check((await asUser(7, () => first("select private.current_actor_id() id"))).id === member7.id,
+    "unbanning restores the same account and memberships");
+  // Legacy binding must not revive the retired anonymous authorization path.
+  check((await asUser(91, () => first("select private.current_actor_id() id"), true)).id === null,
+    "bound legacy anonymous profile still has no business identity");
+  await denied(91, "select public.request_gm_access()", [], /IDENTITY_REQUIRED/);
+
   // Anonymous identities are retired: they cannot create a profile at all.
   await db.query("insert into auth.users(id,is_anonymous) values($1,true)", [
     id(8),
@@ -937,6 +968,10 @@ try {
     ).auth_user_id === null,
     "auth deletion unlinks and preserves historical business identity",
   );
+  await db.exec(await readFile(new URL(
+    "../../supabase/tests/account_management_smoke.sql", import.meta.url,
+  ), "utf8"));
+  console.log("Account management deployment smoke passed locally (rolled back).");
   console.log(
     `${assertions} database assertions passed (authorization, state transitions, archives, identity and bigint).`,
   );

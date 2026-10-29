@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import {
   ArrowLeft,
   BookOpen,
@@ -26,6 +26,7 @@ import type {
 import { AccessPortal } from "../features/access/components/AccessPortal";
 import {
   applyForGm,
+  getAccessErrorMessage,
   createCampaign,
   cancelCampaignJoin,
   getCampaignJoinInbox,
@@ -146,6 +147,21 @@ function CloudCampaignApp() {
   const queryClient = useQueryClient();
   const auth = useAuthSession();
   const session = auth.session;
+  const lastAccount = useRef(session?.user.authUserId);
+  useEffect(() => {
+    if (lastAccount.current !== session?.user.authUserId) {
+      const isPreviousAccountQuery = (query: Query) => {
+        if (["service-status", "public-campaigns"].includes(String(query.queryKey[0]))) return false;
+        // Preserve new-account requests which may already be in flight.
+        return !session || !query.queryKey.some((part) =>
+          part === session.user.id || part === session.user.authUserId,
+        );
+      };
+      void queryClient.cancelQueries({ predicate: isPreviousAccountQuery });
+      queryClient.removeQueries({ predicate: isPreviousAccountQuery });
+      lastAccount.current = session?.user.authUserId;
+    }
+  }, [session?.user.id, session?.user.authUserId, queryClient]);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [publicCampaignId, setPublicCampaignId] = useState(
     () => new URLSearchParams(window.location.search).get("visit") ?? "",
@@ -165,6 +181,7 @@ function CloudCampaignApp() {
       "campaign-board",
       "join-request",
       "join-inbox",
+      "visitor-messages",
     ]) {
       queryClient.removeQueries({ queryKey: [key], type: "inactive" });
     }
@@ -288,6 +305,7 @@ function CloudCampaignApp() {
   if (selectedCampaignId && session?.user) {
     return (
       <CampaignBoardWorkspace
+        key={`${session.user.authUserId}:${selectedCampaignId}`}
         campaignId={selectedCampaignId}
         onExit={async () => setSelectedCampaignId("")}
       />
@@ -296,6 +314,7 @@ function CloudCampaignApp() {
 
   return (
     <AccessPortal
+      key={session?.user.authUserId ?? "signed-out"}
       session={session}
       legacyCutoff={legacyCutoff}
       gmAccess={gmAccessQuery.data ?? null}
@@ -313,13 +332,9 @@ function CloudCampaignApp() {
         await gmAccessQuery.refetch();
       }}
       accessError={
-        joinRequestQuery.error instanceof Error
-          ? joinRequestQuery.error.message
-          : gmAccessQuery.error instanceof Error
-            ? gmAccessQuery.error.message
-            : accessQuery.error instanceof Error
-              ? accessQuery.error.message
-              : ""
+        joinRequestQuery.error || gmAccessQuery.error || accessQuery.error
+          ? getAccessErrorMessage(joinRequestQuery.error ?? gmAccessQuery.error ?? accessQuery.error)
+          : ""
       }
       publicCampaigns={publicCampaignsQuery.data ?? []}
       publicCampaignsLoading={publicCampaignsQuery.isLoading}
@@ -338,6 +353,10 @@ function CloudCampaignApp() {
       }}
       onApplyGm={async () => {
         await applyForGm();
+        await gmAccessQuery.refetch();
+      }}
+      onAccountUpdated={async () => {
+        await auth.refresh();
         await gmAccessQuery.refetch();
       }}
       onSignOut={handleSignOut}
@@ -428,7 +447,7 @@ function CampaignBoardWorkspace({
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const [visitorMessagesOpen, setVisitorMessagesOpen] = useState(false);
   const visitorMessages = useQuery({
-    queryKey: ["visitor-messages", campaignId],
+    queryKey: ["visitor-messages", campaignId, campaign.board?.viewer.id],
     queryFn: () => getVisitorMessages(campaignId),
     enabled:
       !demo &&
