@@ -4342,11 +4342,21 @@ textarea:focus-visible {
 /* --- Roster: members | detail | join inbox, side by side --- */
 .roster-shell.has-inbox {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(290px, 0.9fr);
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 20px;
   align-items: start;
 }
-.roster-layout { margin-top: 0; gap: 18px; }
+/* Members + profile are the main content (left, wide); the join inbox is
+   a sidebar (right, fixed width). Placement is explicit because the
+   inbox comes first in the DOM and would otherwise take the wide
+   first column, squeezing the member profile into the narrow one. */
+.roster-shell.has-inbox .roster-layout { grid-column: 1; }
+.roster-shell.has-inbox .join-request-inbox { grid-column: 2; }
+.roster-layout {
+  grid-template-columns: 208px minmax(0, 1fr);
+  margin-top: 0;
+  gap: 18px;
+}
 .join-request-inbox {
   max-height: min(560px, calc(100dvh - 230px));
   margin-bottom: 0;
@@ -4527,7 +4537,7 @@ textarea:focus-visible {
   }
   .section-settings-list { grid-template-columns: minmax(0, 1fr); }
   .roster-shell.has-inbox { display: flex; flex-direction: column; }
-  .roster-layout { order: 1; }
+  .roster-layout { order: 1; grid-template-columns: minmax(0, 1fr); }
   .join-request-inbox {
     order: 2;
     max-height: none;
