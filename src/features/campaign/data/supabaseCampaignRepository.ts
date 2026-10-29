@@ -446,6 +446,14 @@ class SupabaseCampaignRepository implements CampaignRepository {
     draft: CampaignSettingsDraft,
   ) {
     const board = await this.getBoard(campaignId);
+    const name = draft.name.trim();
+    if (!name || name.length > 80) throw new Error("战役名称需要 1–80 个字符");
+    if (name !== board.campaign.name) {
+      await rpc("rename_campaign", {
+        p_campaign_id: campaignId,
+        p_name: name,
+      });
+    }
     await this.persistSettings(campaignId, board, {
       sectionTitles: draft.sectionTitles,
       hiddenSections: draft.hiddenSections,

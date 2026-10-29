@@ -92,6 +92,8 @@ export function activitySummary(event: BoardActivity) {
       return "更新了房间配置";
     case "campaign_archived":
       return "归档了班次";
+    case "campaign_updated":
+      return title ? `将班次改名为「${title}」` : "更新了班次";
     case "burger_index_changed":
       return "调整了汉堡屋指数";
     case "note_moved":

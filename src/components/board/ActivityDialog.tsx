@@ -60,9 +60,6 @@ export function ActivityDialog({
       className="directory-dialog activity-dialog"
       onClose={onClose}
     >
-      <p className="editor-help">
-        按时间从新到旧记录每位员工的便签、物资、检查、工作指示和指数变更。点开可查看具体内容。
-      </p>
       <div className="activity-directory">
         {!events.length && (
           <p className="editor-help">

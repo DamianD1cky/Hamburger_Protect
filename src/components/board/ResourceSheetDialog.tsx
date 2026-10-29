@@ -171,18 +171,12 @@ export function ResourceSheetDialog({
   return (
     <PaperDialog
       title={sheet.title}
-      kicker="物资便签"
       className="resource-dialog"
       onClose={() => {
         if (!busyCount) onClose();
       }}
     >
       <div className={`resource-sheet-body sheet-${sheet.color}`}>
-        <p className="editor-help">
-          {canEdit
-            ? "所有在岗员工都可以登记名称、数量和状态，修改后保存条目。"
-            : "当前物资清单为只读。"}
-        </p>
         {!items.length && !adding && (
           <p className="sheet-empty">
             便签还是空白的

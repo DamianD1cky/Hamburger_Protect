@@ -59,7 +59,6 @@ export function HandbookDialog({ open, onClose }: HandbookDialogProps) {
       >
         <header>
           <div>
-            <small>内部文件 · 员工培训部编制</small>
             <h2 id="handbook-title">危机营业速查手册</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="关闭员工手册" title="关闭">

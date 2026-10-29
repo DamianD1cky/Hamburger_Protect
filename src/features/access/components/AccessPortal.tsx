@@ -155,7 +155,8 @@ export function AccessPortal({
     try {
       await operation();
     } catch (operationError) {
-      console.error("[access]", operationError);
+      // Never log the raw error object: auth failures can carry request
+      // metadata. The user only ever sees the mapped, generic message.
       setError(getAccessErrorMessage(operationError));
     } finally {
       setBusy(false);
@@ -259,7 +260,6 @@ export function AccessPortal({
         <div className="manual-sheet">
           <div className="manual-heading">
             <div>
-              <small>危机应对与持续营业指南</small>
               <h2>
                 {view === "join-approval"
                   ? "入店申请"

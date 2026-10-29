@@ -4,13 +4,11 @@ import { X } from "lucide-react";
 /** Native modal keeps focus inside and remains scrollable above the phone keyboard. */
 export function PaperDialog({
   title,
-  kicker = "危机营业公告板",
   children,
   onClose,
   className = "",
 }: {
   title: string;
-  kicker?: string;
   children: ReactNode;
   onClose: () => void;
   className?: string;
@@ -50,7 +48,6 @@ export function PaperDialog({
     >
       <header className="composer-header">
         <div>
-          <span className="composer-kicker">{kicker}</span>
           <h1>{title}</h1>
         </div>
         <button

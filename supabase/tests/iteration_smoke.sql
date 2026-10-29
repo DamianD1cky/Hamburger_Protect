@@ -21,7 +21,7 @@ begin
   when raise_exception then
     if sqlerrm in (
       'GM_REQUIRED', 'CAMPAIGN_ROLE_REQUIRED', 'INVALID_CAMPAIGN_SETTINGS',
-      'PLAYER_MEMBER_REQUIRED', 'MEMBER_NOT_ACTIVE'
+      'INVALID_CAMPAIGN_NAME', 'PLAYER_MEMBER_REQUIRED', 'MEMBER_NOT_ACTIVE'
     ) then return; end if;
     raise;
   end;
@@ -131,6 +131,20 @@ select pg_temp.expect_denied(format(
   '00000000-0000-4000-8000-000000000099/background.webp'
 ));
 
+select public.rename_campaign(
+  (select value from iteration_state where key = 'campaign'), '今晚的新名字'
+);
+select pg_temp.assert_true(
+  exists(select 1 from public.campaigns
+         where id = (select value from iteration_state where key = 'campaign')
+           and name = '今晚的新名字'),
+  'gm can rename the campaign'
+);
+select pg_temp.expect_denied(format(
+  'select public.rename_campaign(%L,%L)',
+  (select value from iteration_state where key = 'campaign'), '   '
+));
+
 select set_config(
   'request.jwt.claim.sub', 'e2de0000-0000-4000-8000-000000000002', true
 ), set_config(
@@ -142,6 +156,10 @@ select public.update_member_profile(
   (select value from iteration_state where key = 'campaign'),
   '自由角色改名', '摄影记者', '更新后的资料'
 );
+select pg_temp.expect_denied(format(
+  'select public.rename_campaign(%L,%L)',
+  (select value from iteration_state where key = 'campaign'), '玩家改名'
+));
 insert into iteration_state
 select 'quest', id from (
   select null::uuid id

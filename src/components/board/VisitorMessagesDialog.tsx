@@ -64,13 +64,9 @@ export function VisitorMessagesDialog({
   return (
     <PaperDialog
       title={`访客留言 · ${messages.length} 条`}
-      kicker="公开参观区"
       className="visitor-messages-dialog"
       onClose={onClose}
     >
-      <p className="editor-help">
-        留言与内部工作便签分开保存。访客只能新增留言，不能修改公告板内容。
-      </p>
       <div className="visitor-layout">
       <form className="visitor-message-form" onSubmit={submit}>
         <label className="field">

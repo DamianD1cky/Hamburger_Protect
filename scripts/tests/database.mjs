@@ -102,6 +102,15 @@ try {
       "utf8",
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/20261029000000_campaign_rename.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
 
   await db.exec("begin;set local role anon");
   check(
@@ -410,6 +419,22 @@ try {
     configured.board.settings.section_titles.tasks === "今晚任务" &&
       configured.board.settings.hidden_sections.includes("activity"),
     "room titles and hidden sections are shared",
+  );
+  await asUser(1, () =>
+    db.query("select public.rename_campaign($1,$2)", [c.id, "新店名测试"]),
+  );
+  check(
+    (await asUser(3, () =>
+      first("select public.get_campaign_board($1) board", [c.id]),
+    )).board.name === "新店名测试",
+    "gm can rename the campaign for everyone",
+  );
+  await denied(3, "select public.rename_campaign($1,$2)", [c.id, "玩家改名"]);
+  await denied(
+    1,
+    "select public.rename_campaign($1,$2)",
+    [c.id, "   "],
+    /INVALID_CAMPAIGN_NAME/,
   );
   check(
     (await asAnon(() => first("select public.list_public_campaigns() rooms")))

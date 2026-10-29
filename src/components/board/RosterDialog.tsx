@@ -311,9 +311,6 @@ export function RosterDialog({
               刷新申请
             </button>
           </div>
-          <p className="editor-help">
-            先联系玩家核对身份，再批准加入。班次码只能提交申请，批准前无法访问公告板。
-          </p>
           {inboxError && (
             <p className="access-error" role="alert">
               申请读取失败，请刷新后重试。

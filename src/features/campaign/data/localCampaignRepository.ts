@@ -504,6 +504,7 @@ class LocalCampaignRepository implements CampaignRepository {
     draft: CampaignSettingsDraft,
   ): Promise<CampaignBoard> {
     return this.manage((board) => {
+      board.campaign.name = draft.name.trim();
       board.settings.sectionTitles = draft.sectionTitles;
       board.settings.hiddenSections = draft.hiddenSections;
     });

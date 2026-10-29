@@ -10,15 +10,9 @@
     <meta name="color-scheme" content="light" />
     <link rel="preconnect" href="https://fontsapi.zeoseven.com" crossorigin />
     <link rel="dns-prefetch" href="https://fontsapi.zeoseven.com" />
-    <link
-      rel="preload"
-      as="style"
-      href="https://fontsapi.zeoseven.com/292/main/result.css"
-      onload="this.onload=null;this.rel='stylesheet'"
-    />
-    <noscript>
-      <link rel="stylesheet" href="https://fontsapi.zeoseven.com/292/main/result.css" />
-    </noscript>
+    <!-- Plain stylesheet (no inline onload handler) so a strict CSP can
+         forbid inline scripts/handlers entirely. -->
+    <link rel="stylesheet" href="https://fontsapi.zeoseven.com/292/main/result.css" />
     <title>汉○王 · 危机营业公告板</title>
     <link rel="icon" href="./assets/stickers/br.webp" />
     <link rel="stylesheet" href="./styles.css" />

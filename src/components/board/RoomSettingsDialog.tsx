@@ -38,6 +38,7 @@ export function RoomSettingsDialog({
   onSetPublic: (isPublic: boolean) => Promise<unknown>;
   onOpenRoster: () => void;
 }) {
+  const [campaignName, setCampaignName] = useState(board.campaign.name);
   const [titles, setTitles] = useState(() => ({
     ...defaultSectionTitles,
     ...board.settings.sectionTitles,
@@ -85,10 +86,20 @@ export function RoomSettingsDialog({
       className="room-settings-dialog"
       onClose={onClose}
     >
-      <p className="editor-help room-settings-help">
-        标题、显隐与图片是本房间的共享配置。隐藏区块保留全部数据，可随时恢复。
-      </p>
       <div className="room-settings-grid">
+      <section className="campaign-name-setting">
+        <label className="field">
+          <span>战役名称</span>
+          <input
+            value={campaignName}
+            maxLength={80}
+            required
+            disabled={!editable || Boolean(busy)}
+            onChange={(event) => setCampaignName(event.target.value)}
+            aria-label="战役名称"
+          />
+        </label>
+      </section>
       <section className="public-access-setting">
         <div>
           <Globe2 aria-hidden="true" />
@@ -153,7 +164,7 @@ export function RoomSettingsDialog({
       <section className="room-settings-section board-sections-setting">
         <header>
           <div>
-            <small>显示文字与可见区域</small>
+            <small>隐藏不删除数据</small>
             <h2>公告板区块</h2>
           </div>
           <button
@@ -302,11 +313,13 @@ export function RoomSettingsDialog({
           disabled={
             !editable ||
             Boolean(busy) ||
+            !campaignName.trim() ||
             campaignSections.some((section) => !titles[section.id].trim())
           }
           onClick={() =>
             void run("save", async () => {
               await onSave({
+                name: campaignName.trim(),
                 sectionTitles: Object.fromEntries(
                   campaignSections
                     .filter(

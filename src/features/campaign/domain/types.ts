@@ -165,6 +165,7 @@ export interface MemberProfileDraft {
 }
 
 export interface CampaignSettingsDraft {
+  name: string;
   sectionTitles: Partial<Record<CampaignSectionKey, string>>;
   hiddenSections: CampaignSectionKey[];
 }

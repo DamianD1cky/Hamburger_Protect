@@ -1104,14 +1104,6 @@ button {
   border-bottom: 2px solid rgba(54, 46, 34, 0.16);
 }
 
-.composer-kicker {
-  display: block;
-  margin-bottom: 4px;
-  color: #a3312e;
-  font-size: 13px;
-  font-weight: 700;
-}
-
 .composer h1 {
   margin: 0;
   font-family: var(--hand-font);
@@ -4293,11 +4285,11 @@ textarea:focus-visible {
 .composer-dialog .color-field { margin-top: 12px; }
 
 /* --- Room settings: controls left, board sections right --- */
-.room-settings-help { margin-top: 0; }
 .room-settings-grid {
   display: grid;
   grid-template-columns: minmax(270px, 0.82fr) minmax(0, 1.18fr);
   grid-template-areas:
+    "name sections"
     "public sections"
     "roster sections"
     "media sections";
@@ -4305,6 +4297,8 @@ textarea:focus-visible {
   align-items: start;
   margin-top: 8px;
 }
+.campaign-name-setting { grid-area: name; }
+.campaign-name-setting .field { margin-top: 0; }
 .room-settings-grid .public-access-setting {
   grid-area: public;
   grid-template-columns: minmax(0, 1fr);
@@ -4536,7 +4530,7 @@ textarea:focus-visible {
   /* Every multi-column layout collapses to a single column */
   .room-settings-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "public" "roster" "sections" "media";
+    grid-template-areas: "name" "public" "roster" "sections" "media";
   }
   .section-settings-list { grid-template-columns: minmax(0, 1fr); }
   .roster-shell.has-inbox { display: flex; flex-direction: column; }

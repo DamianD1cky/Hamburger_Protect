@@ -408,7 +408,6 @@ export function MemoSection({
           </span>
         ))}
         {!board.activities.length && <span>等待员工更新公告板</span>}
-        <small>点开查看操作流水 →</small>
       </button>
     </section>
   );
