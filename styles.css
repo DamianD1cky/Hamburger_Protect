@@ -4618,3 +4618,127 @@ textarea:focus-visible {
   .media-setting-row .text-button,
   .media-setting-row .file-button { width: auto; }
 }
+
+/* ============================================================
+   Sign-in page: public rooms live outside the report sheet,
+   and approval reminders are a popup (2026-10-29)
+   The left column (brand + public rooms) is a flex column with
+   the brand on top and the public-room dock pinned to the
+   bottom, so the two can never overlap at any window height.
+   ============================================================ */
+.access-side {
+  position: absolute;
+  z-index: 4;
+  top: 9%;
+  bottom: 5%;
+  left: max(42px, 7%);
+  display: flex;
+  width: min(520px, 42vw);
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 22px;
+}
+.access-side .access-brand {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+}
+.public-room-dock {
+  padding: 15px 17px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-left: 5px solid var(--red);
+  background: rgba(17, 18, 16, 0.84);
+  box-shadow: 10px 14px 28px rgba(0, 0, 0, 0.32);
+  color: #f7f2e7;
+  animation: access-brand-in 620ms 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.public-room-dock .public-room-browser {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.public-room-dock .public-room-browser header small { color: #f4d92c; }
+.public-room-dock .public-room-browser header h3 { color: #fff; }
+.public-room-dock .public-room-browser header svg { color: rgba(255, 255, 255, 0.72); }
+.public-room-dock .public-room-browser > p {
+  color: rgba(247, 242, 231, 0.72);
+}
+.public-room-dock .public-room-list {
+  max-height: clamp(62px, 19vh, 178px);
+  margin-top: 8px;
+  overflow-y: auto;
+  border-top-color: rgba(255, 255, 255, 0.24);
+  scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+  scrollbar-width: thin;
+}
+.public-room-dock .public-room-list > button {
+  border-bottom-color: rgba(255, 255, 255, 0.18);
+  color: #f7f2e7;
+}
+.public-room-dock .public-room-list > button:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.public-room-dock .public-room-list button small,
+.public-room-dock .public-room-message-count { color: rgba(247, 242, 231, 0.66); }
+
+/* Approval reminder popup */
+.approval-notice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 170;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(10, 10, 9, 0.68);
+  animation: handbook-fade 180ms ease both;
+}
+.approval-notice-dialog {
+  display: grid;
+  width: min(470px, 100%);
+  gap: 12px;
+  padding: 26px;
+  border: 3px solid #29251e;
+  border-radius: 6px;
+  background: #f4f1e5;
+  box-shadow: 14px 18px 0 rgba(0, 0, 0, 0.34);
+  color: #29251f;
+  animation: handbook-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.approval-notice-dialog > svg {
+  width: 34px;
+  height: 34px;
+  color: var(--red);
+}
+.approval-notice-dialog h2 {
+  margin: 0;
+  font-family: var(--hand-font);
+  font-size: 28px;
+  line-height: 1.15;
+}
+.approval-notice-dialog p {
+  margin: 0;
+  color: #5d5546;
+  font-size: 15px;
+  line-height: 1.7;
+}
+.approval-notice-dialog .publish-button { justify-content: center; }
+
+/* Stacked sign-in (tablets, phones, short windows): the left column
+   becomes a normal block above the sheet — brand, then public rooms,
+   then the form — and the page scrolls as one column. */
+@media (max-width: 1024px), (max-height: 700px) {
+  .access-side {
+    position: relative;
+    top: auto;
+    bottom: auto;
+    left: auto;
+    display: block;
+    width: min(640px, 100%);
+    margin: 0 auto 20px;
+  }
+  .public-room-dock { margin-top: 18px; }
+  .public-room-dock .public-room-list { max-height: 190px; }
+  .approval-notice-overlay { padding: 14px; }
+  .approval-notice-dialog { padding: 22px 20px; }
+}

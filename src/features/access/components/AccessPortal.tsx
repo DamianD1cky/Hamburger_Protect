@@ -12,7 +12,13 @@ import {
   UserRound,
   Wrench,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import type { PublicCampaign } from "../../campaign/domain/types";
 import {
   getAccessErrorMessage,
@@ -91,6 +97,14 @@ export function AccessPortal({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Approval reminders live in a one-off popup, not inline in the forms:
+  // it appears once when a non-approved GM signs in / registers, or when
+  // an employee's join request lands in the pending state.
+  const [approvalNotice, setApprovalNotice] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
+  const shownNoticeKeys = useRef(new Set<string>());
 
   useEffect(() => {
     if (!regularUser) return;
@@ -103,6 +117,37 @@ export function AccessPortal({
     if (joinRequest && mode === "employee") return "join-approval";
     return mode;
   }, [mode, regularUser, gmAccess?.status, joinRequest]);
+
+  useEffect(() => {
+    if (view === "approval") {
+      const status = gmAccess?.status ?? "unknown";
+      const key = `gm:${session?.user?.id ?? ""}:${status}`;
+      if (shownNoticeKeys.current.has(key)) return;
+      shownNoticeKeys.current.add(key);
+      setApprovalNotice({
+        title: "店长账号需要站长审批",
+        body: "你已登录，但这个店长账号尚未通过站长审批，暂时不能创建班次或使用 GM 功能。请把下方页面中的账号名发给站长（不要发密码），批准后此页面会自动更新。",
+      });
+    } else if (view === "join-approval" && joinRequest) {
+      if (joinRequest.status === "approved") return;
+      const key = `join:${joinRequest.id}:${joinRequest.status}`;
+      if (shownNoticeKeys.current.has(key)) return;
+      shownNoticeKeys.current.add(key);
+      setApprovalNotice({
+        title: "入店申请需要 GM 审批",
+        body:
+          joinRequest.status === "rejected"
+            ? "你的入店申请未通过。请先联系 GM 核对身份与班次码，确认后再重新提交。"
+            : "你的入店申请已提交。批准前无法访问公告板，请先联系 GM 核对身份，并保留当前浏览器身份不要退出；批准后会自动进入公告板。",
+      });
+    }
+  }, [
+    view,
+    gmAccess?.status,
+    joinRequest?.id,
+    joinRequest?.status,
+    session?.user?.id,
+  ]);
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
@@ -149,21 +194,60 @@ export function AccessPortal({
       <div className="access-scene" aria-hidden="true" />
       <div className="access-shade" aria-hidden="true" />
 
-      <header className="access-brand">
-        <p className="access-kicker">汉○王员工专用 · 内部文件</p>
-        <h1>
-          危机营业
-          <br />
-          签到处
-        </h1>
-        <p className="access-decree">
-          顾客至上，品质为王，<strong>永不停止营业。</strong>
-        </p>
-        <div className="access-alert">
-          <ShieldAlert aria-hidden="true" />
-          <span>救援尚未抵达。请保持岗位意识。</span>
-        </div>
-      </header>
+      <div className="access-side">
+        <header className="access-brand">
+          <p className="access-kicker">汉○王员工专用 · 内部文件</p>
+          <h1>
+            危机营业
+            <br />
+            签到处
+          </h1>
+          <p className="access-decree">
+            顾客至上，品质为王，<strong>永不停止营业。</strong>
+          </p>
+          <div className="access-alert">
+            <ShieldAlert aria-hidden="true" />
+            <span>救援尚未抵达。请保持岗位意识。</span>
+          </div>
+        </header>
+
+        <aside className="public-room-dock" aria-labelledby="public-rooms-title">
+          <section className="public-room-browser">
+            <header>
+              <div>
+                <small>无需班次码 · 只读访问</small>
+                <h3 id="public-rooms-title">公开参观房间</h3>
+              </div>
+              <Eye aria-hidden="true" />
+            </header>
+            {publicCampaignsLoading ? (
+              <p>正在查看公开房间…</p>
+            ) : publicCampaigns.length ? (
+              <div className="public-room-list">
+                {publicCampaigns.map((campaign) => (
+                  <button
+                    type="button"
+                    key={campaign.id}
+                    onClick={() => onVisitPublicCampaign(campaign.id)}
+                  >
+                    <span>
+                      <strong>{campaign.name}</strong>
+                      <small>汉堡屋指数 {campaign.burgerIndex}</small>
+                    </span>
+                    <span className="public-room-message-count">
+                      <MessageSquare aria-hidden="true" />
+                      {campaign.messageCount}
+                    </span>
+                    <ArrowRight aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p>当前没有开放参观的房间。</p>
+            )}
+          </section>
+        </aside>
+      </div>
 
       <main className="access-manual" aria-label="危机营业员工报到">
         <div className="manual-spine" aria-hidden="true">
@@ -220,9 +304,6 @@ export function AccessPortal({
 
           {view === "employee" && (
             <form className="access-form" onSubmit={submitJoin}>
-              <p className="gm-application-notice">
-                班次码用于申请加入。请先与 GM 确认身份，批准后才能进入公告板。
-              </p>
               <label>
                 <span>员工姓名 / 角色名</span>
                 <input
@@ -254,7 +335,7 @@ export function AccessPortal({
                 <span>角色资料（房间成员可见，可选）</span>
                 <textarea
                   maxLength={2000}
-                  rows={4}
+                  rows={3}
                   value={profileText}
                   onChange={(event) => setProfileText(event.target.value)}
                   placeholder="背景、能力、随身物品或需要队友知道的信息"
@@ -290,10 +371,6 @@ export function AccessPortal({
 
           {view === "join-approval" && joinRequest && (
             <div className="access-form gm-approval" aria-live="polite">
-              <p className="gm-application-notice">
-                入店申请已提交给本班次
-                GM。等待期间请保留当前浏览器身份，批准后会自动进入公告板。
-              </p>
               <dl>
                 <dt>申请班次</dt>
                 <dd>{joinRequest.campaignName}</dd>
@@ -348,11 +425,6 @@ export function AccessPortal({
 
           {view === "gm" && (
             <form className="access-form" onSubmit={submitGm}>
-              <p className="gm-application-notice">
-                GM
-                需联系站长申请。注册后请提供账号名，审批通过后才能创建班次和使用
-                GM 功能。
-              </p>
               <label>
                 <span>店长账号名</span>
                 <input
@@ -442,9 +514,6 @@ export function AccessPortal({
 
           {view === "approval" && (
             <div className="access-form gm-approval" aria-live="polite">
-              <p className="gm-application-notice">
-                GM 需联系站长申请。请向站长提供下方账号名，无需提供密码。
-              </p>
               <dl>
                 <dt>申请账号</dt>
                 <dd>
@@ -535,41 +604,6 @@ export function AccessPortal({
             </p>
           )}
 
-          <section className="public-room-browser" aria-labelledby="public-rooms-title">
-            <header>
-              <div>
-                <small>无需班次码 · 只读访问</small>
-                <h3 id="public-rooms-title">公开参观房间</h3>
-              </div>
-              <Eye aria-hidden="true" />
-            </header>
-            {publicCampaignsLoading ? (
-              <p>正在查看公开房间…</p>
-            ) : publicCampaigns.length ? (
-              <div className="public-room-list">
-                {publicCampaigns.map((campaign) => (
-                  <button
-                    type="button"
-                    key={campaign.id}
-                    onClick={() => onVisitPublicCampaign(campaign.id)}
-                  >
-                    <span>
-                      <strong>{campaign.name}</strong>
-                      <small>汉堡屋指数 {campaign.burgerIndex}</small>
-                    </span>
-                    <span className="public-room-message-count">
-                      <MessageSquare aria-hidden="true" />
-                      {campaign.messageCount}
-                    </span>
-                    <ArrowRight aria-hidden="true" />
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p>当前没有开放参观的房间。</p>
-            )}
-          </section>
-
           <footer className="manual-rules">
             <span>
               <ChefHat aria-hidden="true" />
@@ -586,6 +620,34 @@ export function AccessPortal({
           </footer>
         </div>
       </main>
+
+      {approvalNotice && (
+        <div
+          className="approval-notice-overlay"
+          role="presentation"
+          onMouseDown={() => setApprovalNotice(null)}
+        >
+          <section
+            className="approval-notice-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="approval-notice-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <ShieldAlert aria-hidden="true" />
+            <h2 id="approval-notice-title">{approvalNotice.title}</h2>
+            <p>{approvalNotice.body}</p>
+            <button
+              type="button"
+              className="publish-button"
+              autoFocus
+              onClick={() => setApprovalNotice(null)}
+            >
+              我知道了
+            </button>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
