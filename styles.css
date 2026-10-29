@@ -4715,6 +4715,34 @@ textarea:focus-visible {
 .public-room-dock .public-room-list button small,
 .public-room-dock .public-room-message-count { color: rgba(247, 242, 231, 0.66); }
 
+.account-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 10px 12px;
+  border: 1px solid rgba(37, 129, 68, 0.45);
+  background: rgba(37, 129, 68, 0.1);
+  color: #346044;
+  font-size: 14px;
+  font-weight: 700;
+}
+.account-summary > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.account-summary svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.account-summary .access-signout {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+.account-summary .access-signout svg { width: 15px; height: 15px; }
+
 /* Approval reminder popup */
 .approval-notice-overlay {
   position: fixed;

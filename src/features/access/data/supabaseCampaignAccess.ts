@@ -77,16 +77,16 @@ export async function getActiveCampaign(): Promise<ActiveCampaignAccess | null> 
     jobTitle: row.job_title,
   };
 }
-export async function getGmAccess(): Promise<GmAccess> {
-  const r = await rpc<{
-    user_id: string;
-    account_name: string;
-    display_name: string;
-    status: GmAccess["status"];
-    requested_at: string;
-    reviewed_at: string | null;
-    review_note: string;
-  }>("request_gm_access");
+interface GmAccessRow {
+  user_id: string;
+  account_name: string;
+  display_name: string;
+  status: GmAccess["status"];
+  requested_at: string;
+  reviewed_at: string | null;
+  review_note: string;
+}
+function toGmAccess(r: GmAccessRow): GmAccess {
   return {
     userId: r.user_id,
     accountName: r.account_name,
@@ -97,7 +97,16 @@ export async function getGmAccess(): Promise<GmAccess> {
     reviewNote: r.review_note,
   };
 }
-export async function registerGm(input: {
+/** Read-only GM status; reading it never creates an application. */
+export async function getGmAccess(): Promise<GmAccess | null> {
+  const r = await rpc<GmAccessRow | null>("get_gm_access");
+  return r ? toGmAccess(r) : null;
+}
+/** Explicitly apply for the GM capability on this account. */
+export async function applyForGm(): Promise<GmAccess> {
+  return toGmAccess(await rpc<GmAccessRow>("request_gm_access"));
+}
+export async function registerAccount(input: {
   username: string;
   password: string;
   displayName: string;
@@ -107,7 +116,7 @@ export async function registerGm(input: {
     password: input.password,
     options: {
       data: {
-        displayName: input.displayName.trim() || "值班店长",
+        displayName: input.displayName.trim(),
         gmUsername: input.username.trim().toLowerCase(),
       },
     },
@@ -116,7 +125,10 @@ export async function registerGm(input: {
   if (!data.session) throw new Error("账号需激活，请联系站长检查注册配置。");
   return prepareSupabaseSession(data.session);
 }
-export async function signInGm(input: { username: string; password: string }) {
+export async function signInAccount(input: {
+  username: string;
+  password: string;
+}) {
   const { data, error } = await requireSupabase().auth.signInWithPassword({
     email: usernameToEmail(input.username),
     password: input.password,
@@ -135,52 +147,13 @@ export async function createCampaign(input: {
     p_job_title: "店长",
   });
 }
-/**
- * Employee registration only creates the anonymous employee identity
- * (a name, nothing else). Joining a campaign with its per-campaign
- * character name, job title and profile happens separately afterwards.
- */
-export async function registerEmployee(displayName: string) {
-  const client = requireSupabase();
-  let {
-    data: { session },
-  } = await client.auth.getSession();
-  if (!session) {
-    const result = await client.auth.signInAnonymously({
-      options: { data: { displayName: displayName.trim() } },
-    });
-    if (result.error) throw result.error;
-    session = result.data.session;
-  }
-  if (!session) throw new Error("AUTH_REQUIRED");
-  if (!session.user.is_anonymous) throw new Error("PLAYER_ACCOUNT_REQUIRED");
-  await prepareSupabaseSession(session);
-}
 export async function joinCampaign(input: {
   joinCode: string;
   characterName: string;
   jobTitle: string;
   profileText: string;
 }) {
-  const client = requireSupabase();
-  let {
-    data: { session },
-  } = await client.auth.getSession();
-  if (!session) {
-    const r = await client.auth.signInAnonymously({
-      options: {
-        data: {
-          displayName: input.characterName.trim(),
-          employeePosition: input.jobTitle,
-          profileText: input.profileText,
-        },
-      },
-    });
-    if (r.error) throw r.error;
-    session = r.data.session;
-  }
-  if (!session?.user.is_anonymous) throw new Error("PLAYER_ACCOUNT_REQUIRED");
-  await prepareSupabaseSession(session);
+  await requireSupabaseSession();
   if (await getActiveCampaign())
     throw new Error("ONE_ACTIVE_CAMPAIGN_PER_PLAYER");
   await rpc("request_campaign_join", {
@@ -192,7 +165,6 @@ export async function joinCampaign(input: {
 }
 export async function getOwnJoinRequest(): Promise<CampaignJoinRequest | null> {
   const session = await requireSupabaseSession();
-  if (!session.user.isAnonymous) return null;
   const { data, error } = await requireSupabase()
     .from("campaign_join_requests")
     .select("*")
@@ -277,19 +249,7 @@ export async function submitVisitorMessage(input: {
   displayName: string;
   body: string;
 }) {
-  const client = requireSupabase();
-  let {
-    data: { session },
-  } = await client.auth.getSession();
-  if (!session) {
-    const result = await client.auth.signInAnonymously({
-      options: { data: { displayName: input.displayName.trim() } },
-    });
-    if (result.error) throw result.error;
-    session = result.data.session;
-  }
-  if (!session) throw new Error("AUTH_REQUIRED");
-  await prepareSupabaseSession(session);
+  await requireSupabaseSession();
   await rpc("submit_visitor_message", {
     p_campaign_id: input.campaignId,
     p_display_name: input.displayName.trim(),

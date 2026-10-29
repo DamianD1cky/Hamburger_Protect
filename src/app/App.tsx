@@ -26,20 +26,20 @@ import type {
 } from "../components/composer/ComposerDialog";
 import { AccessPortal } from "../features/access/components/AccessPortal";
 import {
+  applyForGm,
   createCampaign,
   cancelCampaignJoin,
   getCampaignJoinInbox,
   getVisitorMessages,
   getOwnJoinRequest,
   deleteVisitorMessage,
+  registerAccount,
   reviewCampaignJoin,
   getActiveCampaign,
   getGmAccess,
   joinCampaign,
   listPublicCampaigns,
-  registerEmployee,
-  registerGm,
-  signInGm,
+  signInAccount,
   signOut,
   submitVisitorMessage,
 } from "../features/access/data/campaignAccess";
@@ -171,17 +171,17 @@ function CloudCampaignApp() {
     }
   }, [queryClient, session?.user.id, session?.user.authUserId]);
 
-  const regularUser = Boolean(session?.user && !session.user.isAnonymous);
+  // Every signed-in account has a read-only GM status (null until the
+  // account explicitly applies); accounts of any kind can be employees.
   const gmAccessQuery = useQuery({
     queryKey: ["gm-access", session?.user?.id ?? "signed-out"],
     queryFn: getGmAccess,
-    enabled: regularUser,
+    enabled: Boolean(session?.user),
     staleTime: 5_000,
-    refetchInterval: regularUser ? 5_000 : false,
+    refetchInterval: session?.user ? 5_000 : false,
     refetchIntervalInBackground: false,
     retry: 1,
   });
-  const approved = gmAccessQuery.data?.status === "approved";
   const publicCampaignsQuery = useQuery({
     queryKey: ["public-campaigns"],
     queryFn: listPublicCampaigns,
@@ -194,21 +194,31 @@ function CloudCampaignApp() {
   const accessQuery = useQuery({
     queryKey: ["active-campaign", session?.user?.id ?? "signed-out"],
     queryFn: getActiveCampaign,
-    enabled: Boolean(session?.user) && (!regularUser || approved),
+    enabled: Boolean(session?.user),
     staleTime: 5_000,
-    refetchInterval: !regularUser ? 5_000 : false,
+    refetchInterval: 5_000,
     refetchIntervalInBackground: false,
     retry: 1,
   });
   const joinRequestQuery = useQuery({
     queryKey: ["join-request", session?.user?.id ?? "signed-out"],
     queryFn: getOwnJoinRequest,
-    enabled: Boolean(session?.user?.isAnonymous) && !accessQuery.data,
+    enabled: Boolean(session?.user) && !accessQuery.data,
     staleTime: 5_000,
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
     retry: 1,
   });
+
+  // Anonymous identities are retired: any surviving anonymous session is
+  // signed out on sight and the visitor starts over with an account.
+  const [legacyCutoff, setLegacyCutoff] = useState(false);
+  const anonymousSession = Boolean(session?.user?.isAnonymous);
+  useEffect(() => {
+    if (!anonymousSession) return;
+    setLegacyCutoff(true);
+    void handleSignOut();
+  }, [anonymousSession]);
 
   const refreshAccess = async () => {
     await queryClient.invalidateQueries({ queryKey: ["active-campaign"] });
@@ -227,6 +237,7 @@ function CloudCampaignApp() {
   if (auth.loading) return <CloudStatus message="正在恢复登录身份" />;
   if (auth.error)
     return <CloudStatus message={auth.error} retry error resetIdentity />;
+  if (anonymousSession) return <CloudStatus message="正在退出旧身份" />;
 
   // Visiting a public campaign requires a registered identity first:
   // without a session the portal stays up (registration), and this branch
@@ -246,22 +257,14 @@ function CloudCampaignApp() {
     );
   }
 
-  if (regularUser && gmAccessQuery.isLoading) {
-    return <CloudStatus message="正在核对 GM 审批状态" />;
-  }
-
   if (
-    session?.user?.isAnonymous &&
-    (accessQuery.isLoading || joinRequestQuery.isLoading)
+    session?.user &&
+    (gmAccessQuery.isLoading || accessQuery.isLoading || joinRequestQuery.isLoading)
   ) {
-    return <CloudStatus message="正在核对入店申请" />;
+    return <CloudStatus message="正在核对账号与排班" />;
   }
 
-  if (regularUser && approved && accessQuery.isLoading) {
-    return <CloudStatus message="正在核对本次排班" />;
-  }
-
-  if (accessQuery.data?.status === "active" && (!regularUser || approved)) {
+  if (accessQuery.data?.status === "active") {
     return (
       <CampaignBoardWorkspace
         campaignId={accessQuery.data.campaignId}
@@ -273,6 +276,7 @@ function CloudCampaignApp() {
   return (
     <AccessPortal
       session={session}
+      legacyCutoff={legacyCutoff}
       gmAccess={gmAccessQuery.data ?? null}
       joinRequest={joinRequestQuery.data ?? null}
       onRefreshJoinRequest={refreshAccess}
@@ -301,14 +305,15 @@ function CloudCampaignApp() {
         window.history.pushState(null, "", url);
         setPublicCampaignId(campaignId);
       }}
-      onRegisterEmployee={async (displayName) => {
-        await registerEmployee(displayName);
+      onSignInAccount={async (input) => {
+        await signInAccount(input);
       }}
-      onSignInGm={async (input) => {
-        await signInGm(input);
+      onRegisterAccount={async (input) => {
+        await registerAccount(input);
       }}
-      onRegisterGm={async (input) => {
-        await registerGm(input);
+      onApplyGm={async () => {
+        await applyForGm();
+        await gmAccessQuery.refetch();
       }}
       onSignOut={handleSignOut}
       onCreateCampaign={async (name, characterName) => {

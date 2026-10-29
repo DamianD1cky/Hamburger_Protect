@@ -5,6 +5,7 @@ import {
   ChefHat,
   Eye,
   KeyRound,
+  LogOut,
   MessageSquare,
   ShieldAlert,
   Store,
@@ -14,7 +15,6 @@ import {
 } from "lucide-react";
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -30,11 +30,9 @@ import {
 
 const employeePositions = ["厨师", "维修师", "服务员", "顾客"] as const;
 
-type PortalMode = "employee" | "gm";
-type GmMode = "signin" | "signup";
-
 interface AccessPortalProps {
   session: AppSession | null;
+  legacyCutoff?: boolean;
   gmAccess: GmAccess | null;
   joinRequest: CampaignJoinRequest | null;
   onRefreshJoinRequest: () => Promise<void>;
@@ -44,15 +42,15 @@ interface AccessPortalProps {
   publicCampaigns: PublicCampaign[];
   publicCampaignsLoading: boolean;
   onVisitPublicCampaign: (campaignId: string) => void;
-  onSignInGm: (input: { username: string; password: string }) => Promise<void>;
-  onRegisterGm: (input: {
+  onSignInAccount: (input: { username: string; password: string }) => Promise<void>;
+  onRegisterAccount: (input: {
     username: string;
     password: string;
     displayName: string;
   }) => Promise<void>;
+  onApplyGm: () => Promise<void>;
   onCreateCampaign: (name: string, characterName: string) => Promise<void>;
   onSignOut: () => Promise<void>;
-  onRegisterEmployee: (displayName: string) => Promise<void>;
   onJoinCampaign: (input: {
     joinCode: string;
     characterName: string;
@@ -63,6 +61,7 @@ interface AccessPortalProps {
 
 export function AccessPortal({
   session,
+  legacyCutoff = false,
   gmAccess,
   joinRequest,
   onRefreshJoinRequest,
@@ -72,65 +71,52 @@ export function AccessPortal({
   publicCampaigns,
   publicCampaignsLoading,
   onVisitPublicCampaign,
-  onSignInGm,
-  onRegisterGm,
+  onSignInAccount,
+  onRegisterAccount,
+  onApplyGm,
   onCreateCampaign,
   onSignOut,
-  onRegisterEmployee,
   onJoinCampaign,
 }: AccessPortalProps) {
-  const regularUser = Boolean(session?.user && !session.user.isAnonymous);
-  const [mode, setMode] = useState<PortalMode>(regularUser ? "gm" : "employee");
-  const [gmMode, setGmMode] = useState<GmMode>("signin");
-  const [gmUsername, setGmUsername] = useState("");
-  const [gmPassword, setGmPassword] = useState("");
-  const [gmName, setGmName] = useState("");
-  const [employeeName, setEmployeeName] = useState(
-    session?.user?.displayName ?? "",
-  );
-  const [pendingVisitId, setPendingVisitId] = useState("");
-  const [campaignName, setCampaignName] = useState("汉○王夜班危机营业");
+  const imeGuard = useImeEnterGuard();
+  const [signedOutMode, setSignedOutMode] = useState<"signin" | "signup">("signin");
+  const [accountTab, setAccountTab] = useState<"employee" | "gm">("employee");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [nickname, setNickname] = useState("");
   const [characterName, setCharacterName] = useState(
     session?.user?.displayName ?? "",
   );
+  const [jobTitle, setJobTitle] = useState("服务员");
+  const [profileText, setProfileText] = useState("");
   const [joinCode, setJoinCode] = useState("");
-  const [jobTitle, setJobTitle] = useState(() => {
-    const stored = session?.user?.metadata?.employeePosition;
-    return typeof stored === "string" && stored.trim() ? stored : "服务员";
-  });
-  const [profileText, setProfileText] = useState(() => {
-    const stored = session?.user?.metadata?.profileText;
-    return typeof stored === "string" ? stored : "";
-  });
+  const [campaignName, setCampaignName] = useState("汉○王夜班危机营业");
+  const [gmCharacterName, setGmCharacterName] = useState(
+    session?.user?.displayName ?? "",
+  );
+  const [pendingVisitId, setPendingVisitId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const imeGuard = useImeEnterGuard();
-  // Approval reminders live in a one-off popup, not inline in the forms:
-  // it appears once when a non-approved GM signs in / registers, or when
-  // an employee's join request lands in the pending state.
-  const [approvalNotice, setApprovalNotice] = useState<{
-    title: string;
-    body: string;
-  } | null>(null);
+  const [notice, setNotice] = useState<{ title: string; body: string } | null>(
+    null,
+  );
   const shownNoticeKeys = useRef(new Set<string>());
 
   useEffect(() => {
-    if (!regularUser) return;
-    setGmName((current) => current || session?.user?.displayName || "");
-  }, [regularUser, session?.user?.displayName]);
+    if (!legacyCutoff) return;
+    setNotice({
+      title: "旧匿名身份已停用",
+      body: "之前无需注册的匿名身份已全部停用，旧记录不会带入新账号。请注册一个账号名 + 密码的账号重新开始；想回到原来的战役，用班次码重新提交入店申请即可。",
+    });
+  }, [legacyCutoff]);
 
-  const registeredEmployee = Boolean(session?.user?.isAnonymous);
-  const view = useMemo(() => {
-    if (regularUser)
-      return gmAccess?.status === "approved" ? "create" : "approval";
-    if (joinRequest && mode === "employee") return "join-approval";
-    // Employee sign-in is two separate steps: register an identity first,
-    // then join a campaign with that campaign's character details.
-    if (mode === "employee") return registeredEmployee ? "join" : "employee";
-    return mode;
-  }, [mode, regularUser, gmAccess?.status, joinRequest, registeredEmployee]);
+  useEffect(() => {
+    if (!session?.user) return;
+    setCharacterName((current) => current || session.user.displayName);
+    setGmCharacterName((current) => current || session.user.displayName);
+  }, [session?.user]);
 
-  // A public room picked before registering opens right after registration.
+  // A public room picked before signing in opens right afterwards.
   useEffect(() => {
     if (!pendingVisitId || !session?.user) return;
     const target = pendingVisitId;
@@ -138,49 +124,32 @@ export function AccessPortal({
     onVisitPublicCampaign(target);
   }, [pendingVisitId, session?.user]);
 
-  const visitPublicCampaign = (campaignId: string) => {
-    if (session?.user) {
-      onVisitPublicCampaign(campaignId);
-      return;
-    }
-    setPendingVisitId(campaignId);
-    setMode("employee");
-    setApprovalNotice({
-      title: "参观房间需要先注册员工",
-      body: "注册只需填写员工姓名，不需要岗位和角色资料。注册完成后会自动进入你选择的房间。",
-    });
-  };
-
+  // Approval reminders are one-off popups, shown once per status.
   useEffect(() => {
-    if (view === "approval") {
-      const status = gmAccess?.status ?? "unknown";
-      const key = `gm:${session?.user?.id ?? ""}:${status}`;
-      if (shownNoticeKeys.current.has(key)) return;
-      shownNoticeKeys.current.add(key);
-      setApprovalNotice({
-        title: "店长账号需要站长审批",
-        body: "你已登录，但这个店长账号尚未通过站长审批，暂时不能创建战役或使用 GM 功能。请把下方页面中的账号名发给站长（不要发密码），批准后此页面会自动更新。",
-      });
-    } else if (view === "join-approval" && joinRequest) {
-      if (joinRequest.status === "approved") return;
+    if (!session?.user) return;
+    if (joinRequest && joinRequest.status !== "approved") {
       const key = `join:${joinRequest.id}:${joinRequest.status}`;
       if (shownNoticeKeys.current.has(key)) return;
       shownNoticeKeys.current.add(key);
-      setApprovalNotice({
+      setNotice({
         title: "入店申请需要 GM 审批",
         body:
           joinRequest.status === "rejected"
             ? "你的入店申请未通过。请先联系 GM 核对身份与班次码，确认后再重新提交。"
-            : "你的入店申请已提交。批准前无法访问公告板，请先联系 GM 核对身份，并保留当前浏览器身份不要退出；批准后会自动进入公告板。",
+            : "你的入店申请已提交。批准前无法访问公告板，请先联系 GM 核对身份；批准后会自动进入公告板。",
+      });
+      return;
+    }
+    if (gmAccess && gmAccess.status !== "approved") {
+      const key = `gm:${gmAccess.userId}:${gmAccess.status}`;
+      if (shownNoticeKeys.current.has(key)) return;
+      shownNoticeKeys.current.add(key);
+      setNotice({
+        title: "GM 申请需要站长审批",
+        body: "你的 GM 申请尚未通过站长审批，暂时不能创建战役或使用 GM 功能。请把账号名发给站长（不要发密码），批准后即可创建战役。",
       });
     }
-  }, [
-    view,
-    gmAccess?.status,
-    joinRequest?.id,
-    joinRequest?.status,
-    session?.user?.id,
-  ]);
+  }, [session?.user, joinRequest, gmAccess]);
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
@@ -188,39 +157,25 @@ export function AccessPortal({
     try {
       await operation();
     } catch (operationError) {
-      // Never log the raw error object: auth failures can carry request
-      // metadata. The user only ever sees the mapped, generic message.
+      // Never log the raw error object; only mapped messages reach the user.
       setError(getAccessErrorMessage(operationError));
     } finally {
       setBusy(false);
     }
   };
 
-  const submitGm = (event: FormEvent) => {
+  const submitAccount = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      if (gmMode === "signup") {
-        await onRegisterGm({
-          username: gmUsername,
-          password: gmPassword,
-          displayName: gmName,
+      if (signedOutMode === "signup") {
+        await onRegisterAccount({
+          username,
+          password,
+          displayName: nickname,
         });
       } else {
-        await onSignInGm({ username: gmUsername, password: gmPassword });
+        await onSignInAccount({ username, password });
       }
-    });
-  };
-
-  const submitCampaign = (event: FormEvent) => {
-    event.preventDefault();
-    void run(() => onCreateCampaign(campaignName, gmName));
-  };
-
-  const submitRegister = (event: FormEvent) => {
-    event.preventDefault();
-    void run(async () => {
-      await onRegisterEmployee(employeeName.trim());
-      setCharacterName(employeeName.trim());
     });
   };
 
@@ -230,6 +185,39 @@ export function AccessPortal({
       onJoinCampaign({ joinCode, characterName, jobTitle, profileText }),
     );
   };
+
+  const submitCampaign = (event: FormEvent) => {
+    event.preventDefault();
+    void run(() => onCreateCampaign(campaignName, gmCharacterName));
+  };
+
+  const visitPublicCampaign = (campaignId: string) => {
+    if (session?.user) {
+      onVisitPublicCampaign(campaignId);
+      return;
+    }
+    setPendingVisitId(campaignId);
+    setNotice({
+      title: "参观房间需要先登录账号",
+      body: "登录或注册一个账号后即可参观。完成后会自动进入你选择的房间。",
+    });
+  };
+
+  const accountName =
+    gmAccess?.accountName.replace(/@.*$/, "") ??
+    session?.user?.email?.replace(/@.*$/, "") ??
+    "";
+  const heading = !session
+    ? signedOutMode === "signup"
+      ? "注册账号"
+      : "账号登录"
+    : joinRequest
+      ? "入店申请"
+      : accountTab === "gm"
+        ? gmAccess?.status === "approved"
+          ? "创建战役"
+          : "申请成为 GM"
+        : "加入战役";
 
   return (
     <div className="access-screen">
@@ -301,376 +289,331 @@ export function AccessPortal({
         <div className="manual-sheet">
           <div className="manual-heading">
             <div>
-              <h2>
-                {view === "join-approval"
-                  ? "入店申请"
-                  : view === "approval"
-                    ? "GM 权限申请"
-                    : view === "create"
-                      ? "创建战役"
-                      : view === "gm"
-                        ? gmMode === "signup"
-                          ? "申请店长账号"
-                          : "店长账号登录"
-                        : view === "join"
-                          ? "加入战役"
-                          : "注册员工"}
-              </h2>
+              <h2>{heading}</h2>
             </div>
             <span className="manual-file-number">BK-ZM-09</span>
           </div>
 
-          {!regularUser && (
-            <div className="access-tabs" role="tablist" aria-label="报到身份">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === "employee"}
-                className={mode === "employee" ? "is-active" : ""}
-                onClick={() => setMode("employee")}
-              >
-                <UserRound aria-hidden="true" />
-                员工 / 顾客
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === "gm"}
-                className={mode === "gm" ? "is-active" : ""}
-                onClick={() => setMode("gm")}
-              >
-                <KeyRound aria-hidden="true" />
-                GM / 店长
-              </button>
-            </div>
-          )}
-
-          {view === "employee" && (
-            <form className="access-form" onSubmit={submitRegister} {...imeGuard}>
-              <label>
-                <span>员工姓名</span>
-                <input
-                  required
-                  maxLength={40}
-                  value={employeeName}
-                  onChange={(event) => setEmployeeName(event.target.value)}
-                  placeholder="例：倒霉的晚班阿强"
-                  autoComplete="nickname"
-                  autoFocus
-                />
-              </label>
-              <button className="access-submit" type="submit" disabled={busy}>
-                {busy ? "正在注册" : "注册员工"}
-                {!busy && <UserPlus aria-hidden="true" />}
-              </button>
-            </form>
-          )}
-
-          {view === "join" && (
-            <form className="access-form" onSubmit={submitJoin} {...imeGuard}>
-              <div className="manager-confirmed">
-                <BadgeCheck aria-hidden="true" />
-                <span>已注册员工：{session?.user?.displayName}</span>
-              </div>
-              <label>
-                <span>本场角色名</span>
-                <input
-                  required
-                  maxLength={40}
-                  value={characterName}
-                  onChange={(event) => setCharacterName(event.target.value)}
-                  placeholder="例：倒霉的晚班阿强"
-                  autoComplete="nickname"
-                />
-              </label>
-              <label>
-                <span>岗位 / 身份称呼</span>
-                <input
-                  required
-                  maxLength={40}
-                  list="employee-position-presets"
-                  value={jobTitle}
-                  onChange={(event) => setJobTitle(event.target.value)}
-                  placeholder="例：厨师、保安、流浪记者"
-                />
-                <datalist id="employee-position-presets">
-                  {employeePositions.map((position) => (
-                    <option key={position} value={position} />
-                  ))}
-                </datalist>
-              </label>
-              <label>
-                <span>角色资料（房间成员可见，可选）</span>
-                <textarea
-                  maxLength={2000}
-                  rows={3}
-                  value={profileText}
-                  onChange={(event) => setProfileText(event.target.value)}
-                  placeholder="背景、能力、随身物品或需要队友知道的信息"
-                />
-              </label>
-              <label>
-                <span>6 位班次码</span>
-                <input
-                  required
-                  className="join-code-input"
-                  minLength={6}
-                  maxLength={6}
-                  pattern="[A-Za-z0-9]{6}"
-                  value={joinCode}
-                  onChange={(event) =>
-                    setJoinCode(
-                      event.target.value
-                        .replace(/[^a-z0-9]/gi, "")
-                        .toUpperCase(),
-                    )
-                  }
-                  placeholder="A1B2C3"
-                  autoCapitalize="characters"
-                  autoComplete="off"
-                />
-              </label>
-              <button className="access-submit" type="submit" disabled={busy}>
-                {busy ? "正在提交入店申请" : "申请加入班次"}
-                {!busy && <ArrowRight aria-hidden="true" />}
-              </button>
-              <button
-                className="access-signout"
-                type="button"
-                onClick={() => void onSignOut()}
-              >
-                退出当前员工身份
-              </button>
-            </form>
-          )}
-
-          {view === "join-approval" && joinRequest && (
-            <div className="access-form gm-approval" aria-live="polite">
-              <dl>
-                <dt>申请班次</dt>
-                <dd>{joinRequest.campaignName}</dd>
-                <dt>角色与岗位</dt>
-                <dd>
-                  {joinRequest.characterName}（{joinRequest.jobTitle}）
-                </dd>
-                <dt>审批状态</dt>
-                <dd>
-                  {joinRequest.status === "pending"
-                    ? "等待 GM 审批"
-                    : joinRequest.status === "approved"
-                      ? "GM 已批准，正在核对排班"
-                      : "入店申请未通过"}
-                </dd>
-              </dl>
-              {joinRequest.status === "rejected" && (
-                <p>请联系 GM 核对申请。同一账号重复提交不会重置审批结果。</p>
-              )}
-              {joinRequest.reviewNote && (
-                <p>GM 备注：{joinRequest.reviewNote}</p>
-              )}
-              <button
-                className="access-submit"
-                type="button"
-                disabled={busy}
-                onClick={() => void run(onRefreshJoinRequest)}
-              >
-                {busy ? "正在查询" : "刷新入店审批结果"}
-              </button>
-              {joinRequest.status === "pending" && (
+          {!session ? (
+            <>
+              <div className="access-tabs" role="tablist" aria-label="账号">
                 <button
-                  className="access-signout"
                   type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(() => onCancelJoinRequest(joinRequest.id))
-                  }
+                  role="tab"
+                  aria-selected={signedOutMode === "signin"}
+                  className={signedOutMode === "signin" ? "is-active" : ""}
+                  onClick={() => {
+                    setSignedOutMode("signin");
+                    setError("");
+                  }}
                 >
-                  撤回入店申请
-                </button>
-              )}
-              <button
-                className="access-signout"
-                type="button"
-                onClick={() => void onSignOut()}
-              >
-                退出当前身份
-              </button>
-            </div>
-          )}
-
-          {view === "gm" && (
-            <form className="access-form" onSubmit={submitGm} {...imeGuard}>
-              <label>
-                <span>店长账号名</span>
-                <input
-                  required
-                  minLength={3}
-                  maxLength={20}
-                  pattern={"[a-z0-9_\\-]{3,20}"}
-                  value={gmUsername}
-                  onChange={(event) =>
-                    setGmUsername(
-                      event.target.value.toLowerCase().replace(/\s+/g, ""),
-                    )
-                  }
-                  placeholder="manager_zhou"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                />
-                <small className="access-field-hint">
-                  3–20 位小写字母、数字、下划线或短横线
-                </small>
-              </label>
-
-              {gmMode === "signup" && (
-                <label>
-                  <span>店长称呼</span>
-                  <input
-                    required
-                    maxLength={32}
-                    value={gmName}
-                    onChange={(event) => setGmName(event.target.value)}
-                    placeholder="例：临时代理店长老周"
-                    autoComplete="name"
-                  />
-                </label>
-              )}
-
-              <label>
-                <span>密码</span>
-                <div className="access-input-icon">
                   <KeyRound aria-hidden="true" />
+                  登录
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={signedOutMode === "signup"}
+                  className={signedOutMode === "signup" ? "is-active" : ""}
+                  onClick={() => {
+                    setSignedOutMode("signup");
+                    setError("");
+                  }}
+                >
+                  <UserPlus aria-hidden="true" />
+                  注册
+                </button>
+              </div>
+              <form className="access-form" onSubmit={submitAccount} {...imeGuard}>
+                <label>
+                  <span>账号名</span>
                   <input
                     required
-                    type="password"
-                    minLength={GM_PASSWORD_MIN_LENGTH}
-                    maxLength={50}
-                    value={gmPassword}
-                    onChange={(event) => setGmPassword(event.target.value)}
-                    placeholder={"至少 " + GM_PASSWORD_MIN_LENGTH + " 位"}
-                    autoComplete={
-                      gmMode === "signup" ? "new-password" : "current-password"
+                    minLength={3}
+                    maxLength={20}
+                    pattern={"[a-z0-9_\\-]{3,20}"}
+                    value={username}
+                    onChange={(event) =>
+                      setUsername(
+                        event.target.value.toLowerCase().replace(/\s+/g, ""),
+                      )
                     }
+                    placeholder="manager_zhou"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    spellCheck={false}
                   />
-                </div>
-              </label>
-
-              <button className="access-submit" type="submit" disabled={busy}>
-                {busy
-                  ? gmMode === "signup"
-                    ? "正在提交申请"
-                    : "正在核对店长身份"
-                  : gmMode === "signup"
-                    ? "注册并申请 GM 权限"
-                    : "进入店长后台"}
-                {!busy &&
-                  (gmMode === "signup" ? (
-                    <UserPlus aria-hidden="true" />
-                  ) : (
-                    <ArrowRight aria-hidden="true" />
-                  ))}
-              </button>
-
-              <button
-                className="access-switch"
-                type="button"
-                onClick={() => {
-                  setGmMode(gmMode === "signup" ? "signin" : "signup");
-                  setError("");
-                }}
-              >
-                {gmMode === "signup"
-                  ? "已有店长账号？改为登录"
-                  : "还没有店长账号？联系站长申请"}
-              </button>
-            </form>
-          )}
-
-          {view === "approval" && (
-            <div className="access-form gm-approval" aria-live="polite">
-              <dl>
-                <dt>申请账号</dt>
-                <dd>
-                  {gmAccess?.accountName.replace(/@gm\.local$/, "") ??
-                    String(
-                      session?.user?.metadata?.gmUsername ??
-                        session?.user?.email ??
-                        "",
-                    )}
-                </dd>
-                <dt>审批状态</dt>
-                <dd>
-                  {gmAccess?.status === "pending"
-                    ? "等待站长审批"
-                    : gmAccess?.status === "rejected"
-                      ? "申请未通过"
-                      : gmAccess?.status === "revoked"
-                        ? "GM 权限已撤销"
-                        : "审批状态读取失败"}
-                </dd>
-              </dl>
-              <p>
-                {gmAccess?.status === "pending"
-                  ? "站长批准后，此页面会自动更新。"
-                  : "如需开通权限，请联系站长确认。"}
-              </p>
-              {gmAccess?.reviewNote && <p>站长备注：{gmAccess.reviewNote}</p>}
-              <button
-                className="access-submit"
-                type="button"
-                disabled={busy}
-                onClick={() => void run(onRefreshGmAccess)}
-              >
-                {busy ? "正在查询" : "刷新审批结果"}
-              </button>
-              <button
-                className="access-signout"
-                type="button"
-                onClick={() => void onSignOut()}
-              >
-                退出店长账号
-              </button>
-            </div>
-          )}
-
-          {view === "create" && (
-            <form className="access-form" onSubmit={submitCampaign} {...imeGuard}>
-              <div className="manager-confirmed">
-                <BadgeCheck aria-hidden="true" />
-                <span>站长已批准 GM 权限：{session?.user?.displayName}</span>
+                  <small>3–20 位小写字母、数字、下划线或短横线</small>
+                </label>
+                {signedOutMode === "signup" && (
+                  <label>
+                    <span>昵称</span>
+                    <input
+                      required
+                      maxLength={32}
+                      value={nickname}
+                      onChange={(event) => setNickname(event.target.value)}
+                      placeholder="例：晚班阿强"
+                      autoComplete="name"
+                    />
+                  </label>
+                )}
+                <label>
+                  <span>密码</span>
+                  <div className="access-input-icon">
+                    <KeyRound aria-hidden="true" />
+                    <input
+                      required
+                      type="password"
+                      minLength={GM_PASSWORD_MIN_LENGTH}
+                      maxLength={50}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder={"至少 " + GM_PASSWORD_MIN_LENGTH + " 位"}
+                      autoComplete={
+                        signedOutMode === "signup"
+                          ? "new-password"
+                          : "current-password"
+                      }
+                    />
+                  </div>
+                </label>
+                <button className="access-submit" type="submit" disabled={busy}>
+                  {busy
+                    ? signedOutMode === "signup"
+                      ? "正在注册"
+                      : "正在登录"
+                    : signedOutMode === "signup"
+                      ? "注册账号"
+                      : "登录"}
+                  {!busy && <ArrowRight aria-hidden="true" />}
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <div className="account-summary">
+                <span>
+                  <BadgeCheck aria-hidden="true" />
+                  {session.user.displayName}
+                  {accountName ? `（${accountName}）` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="access-signout"
+                  onClick={() => void onSignOut()}
+                >
+                  <LogOut aria-hidden="true" />
+                  退出账号
+                </button>
               </div>
-              <label>
-                <span>战役名称</span>
-                <input
-                  required
-                  maxLength={80}
-                  value={campaignName}
-                  onChange={(event) => setCampaignName(event.target.value)}
-                />
-              </label>
-              <label>
-                <span>店长角色名</span>
-                <input
-                  required
-                  maxLength={40}
-                  value={gmName}
-                  onChange={(event) => setGmName(event.target.value)}
-                  placeholder="例：临时代理店长老周"
-                />
-              </label>
-              <button className="access-submit" type="submit" disabled={busy}>
-                {busy ? "正在张贴营业公告" : "创建战役并开始营业"}
-                {!busy && <Store aria-hidden="true" />}
-              </button>
-              <button
-                className="access-signout"
-                type="button"
-                onClick={() => void onSignOut()}
-              >
-                退出店长账号
-              </button>
-            </form>
+
+              {!joinRequest && (
+                <div className="access-tabs" role="tablist" aria-label="游玩方式">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={accountTab === "employee"}
+                    className={accountTab === "employee" ? "is-active" : ""}
+                    onClick={() => setAccountTab("employee")}
+                  >
+                    <UserRound aria-hidden="true" />
+                    员工
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={accountTab === "gm"}
+                    className={accountTab === "gm" ? "is-active" : ""}
+                    onClick={() => setAccountTab("gm")}
+                  >
+                    <Store aria-hidden="true" />
+                    GM / 店长
+                  </button>
+                </div>
+              )}
+
+              {joinRequest ? (
+                <div className="access-form gm-approval" aria-live="polite">
+                  <dl>
+                    <dt>申请班次</dt>
+                    <dd>{joinRequest.campaignName}</dd>
+                    <dt>角色与岗位</dt>
+                    <dd>
+                      {joinRequest.characterName}（{joinRequest.jobTitle}）
+                    </dd>
+                    <dt>审批状态</dt>
+                    <dd>
+                      {joinRequest.status === "pending"
+                        ? "等待 GM 审批"
+                        : joinRequest.status === "approved"
+                          ? "GM 已批准，正在核对排班"
+                          : "入店申请未通过"}
+                    </dd>
+                  </dl>
+                  {joinRequest.status === "rejected" && (
+                    <p>请联系 GM 核对申请。同一账号重复提交不会重置审批结果。</p>
+                  )}
+                  {joinRequest.reviewNote && (
+                    <p>GM 备注：{joinRequest.reviewNote}</p>
+                  )}
+                  <button
+                    className="access-submit"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void run(onRefreshJoinRequest)}
+                  >
+                    {busy ? "正在查询" : "刷新入店审批结果"}
+                  </button>
+                  {joinRequest.status === "pending" && (
+                    <button
+                      className="access-signout"
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(() => onCancelJoinRequest(joinRequest.id))
+                      }
+                    >
+                      撤回入店申请
+                    </button>
+                  )}
+                </div>
+              ) : accountTab === "employee" ? (
+                <form className="access-form" onSubmit={submitJoin} {...imeGuard}>
+                  <label>
+                    <span>本场角色名</span>
+                    <input
+                      required
+                      maxLength={40}
+                      value={characterName}
+                      onChange={(event) => setCharacterName(event.target.value)}
+                      placeholder="例：倒霉的晚班阿强"
+                      autoComplete="nickname"
+                    />
+                  </label>
+                  <label>
+                    <span>岗位 / 身份称呼</span>
+                    <input
+                      required
+                      maxLength={40}
+                      list="employee-position-presets"
+                      value={jobTitle}
+                      onChange={(event) => setJobTitle(event.target.value)}
+                      placeholder="例：厨师、保安、流浪记者"
+                    />
+                    <datalist id="employee-position-presets">
+                      {employeePositions.map((position) => (
+                        <option key={position} value={position} />
+                      ))}
+                    </datalist>
+                  </label>
+                  <label>
+                    <span>角色资料（房间成员可见，可选）</span>
+                    <textarea
+                      maxLength={2000}
+                      rows={3}
+                      value={profileText}
+                      onChange={(event) => setProfileText(event.target.value)}
+                      placeholder="背景、能力、随身物品或需要队友知道的信息"
+                    />
+                  </label>
+                  <label>
+                    <span>6 位班次码</span>
+                    <input
+                      required
+                      className="join-code-input"
+                      minLength={6}
+                      maxLength={6}
+                      pattern="[A-Za-z0-9]{6}"
+                      value={joinCode}
+                      onChange={(event) =>
+                        setJoinCode(
+                          event.target.value
+                            .replace(/[^a-z0-9]/gi, "")
+                            .toUpperCase(),
+                        )
+                      }
+                      placeholder="A1B2C3"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                    />
+                  </label>
+                  <button className="access-submit" type="submit" disabled={busy}>
+                    {busy ? "正在提交入店申请" : "申请加入班次"}
+                    {!busy && <ArrowRight aria-hidden="true" />}
+                  </button>
+                </form>
+              ) : gmAccess?.status === "approved" ? (
+                <form className="access-form" onSubmit={submitCampaign} {...imeGuard}>
+                  <label>
+                    <span>战役名称</span>
+                    <input
+                      required
+                      maxLength={80}
+                      value={campaignName}
+                      onChange={(event) => setCampaignName(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>店长角色名</span>
+                    <input
+                      required
+                      maxLength={40}
+                      value={gmCharacterName}
+                      onChange={(event) => setGmCharacterName(event.target.value)}
+                      placeholder="例：临时代理店长老周"
+                    />
+                  </label>
+                  <button className="access-submit" type="submit" disabled={busy}>
+                    {busy ? "正在张贴营业公告" : "创建战役并开始营业"}
+                    {!busy && <Store aria-hidden="true" />}
+                  </button>
+                </form>
+              ) : gmAccess ? (
+                <div className="access-form gm-approval" aria-live="polite">
+                  <dl>
+                    <dt>申请账号</dt>
+                    <dd>{accountName}</dd>
+                    <dt>审批状态</dt>
+                    <dd>
+                      {gmAccess.status === "pending"
+                        ? "等待站长审批"
+                        : gmAccess.status === "rejected"
+                          ? "申请未通过"
+                          : gmAccess.status === "revoked"
+                            ? "GM 权限已撤销"
+                            : "审批状态读取失败"}
+                    </dd>
+                  </dl>
+                  <p>
+                    {gmAccess.status === "pending"
+                      ? "站长批准后即可创建战役。"
+                      : "如需开通权限，请联系站长确认。"}
+                  </p>
+                  {gmAccess.reviewNote && <p>站长备注：{gmAccess.reviewNote}</p>}
+                  <button
+                    className="access-submit"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void run(onRefreshGmAccess)}
+                  >
+                    {busy ? "正在查询" : "刷新审批结果"}
+                  </button>
+                </div>
+              ) : (
+                <div className="access-form">
+                  <button
+                    className="access-submit"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void run(onApplyGm)}
+                  >
+                    {busy ? "正在提交申请" : "申请成为 GM"}
+                    {!busy && <UserPlus aria-hidden="true" />}
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           {(error || accessError) && (
@@ -696,11 +639,11 @@ export function AccessPortal({
         </div>
       </main>
 
-      {approvalNotice && (
+      {notice && (
         <div
           className="approval-notice-overlay"
           role="presentation"
-          onMouseDown={() => setApprovalNotice(null)}
+          onMouseDown={() => setNotice(null)}
         >
           <section
             className="approval-notice-dialog"
@@ -710,13 +653,13 @@ export function AccessPortal({
             onMouseDown={(event) => event.stopPropagation()}
           >
             <ShieldAlert aria-hidden="true" />
-            <h2 id="approval-notice-title">{approvalNotice.title}</h2>
-            <p>{approvalNotice.body}</p>
+            <h2 id="approval-notice-title">{notice.title}</h2>
+            <p>{notice.body}</p>
             <button
               type="button"
               className="publish-button"
               autoFocus
-              onClick={() => setApprovalNotice(null)}
+              onClick={() => setNotice(null)}
             >
               我知道了
             </button>

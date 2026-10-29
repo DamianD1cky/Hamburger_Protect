@@ -31,26 +31,24 @@ export async function prepareSupabaseSession(
     if (error) throw new Error(error.message);
     let profile = existing as Profile | null;
     const storedLegacy = nhost?.getUserSession();
-    if (!profile && storedLegacy && nhost) {
-      if (storedLegacy.user?.isAnonymous) {
-        // A legacy anonymous player is migrated onto this session — but
-        // only onto an anonymous one, never onto a GM account.
-        if (!session.user.is_anonymous)
-          throw new Error("请先恢复旧玩家身份，或联系站长处理账号关联。");
-        const legacy = await nhost.refreshSession(0);
-        if (!legacy) throw new Error("旧身份已失效，请联系站长恢复角色。");
-        const result = await client.functions.invoke("migrate-identity", {
-          body: { legacyAccessToken: legacy.accessToken },
-        });
-        if (result.error)
-          throw new Error("旧角色恢复失败，请重试或联系站长；不要重新创建角色。");
-      } else if (!session.user.is_anonymous) {
-        // A legacy GM identity cannot be auto-bound, and that only matters
-        // for GM sign-ins. It must never block a fresh anonymous employee
-        // or visitor session that merely shares the same browser: those
-        // fall through and get their own actor from ensure_actor below.
-        throw new Error("旧 GM 账号需要站长绑定，请使用迁移后的 GM 账号登录。");
-      }
+    if (
+      !profile &&
+      storedLegacy &&
+      nhost &&
+      storedLegacy.user?.isAnonymous &&
+      session.user.is_anonymous
+    ) {
+      // The only legacy migration left: an old anonymous player session is
+      // carried onto an anonymous Supabase session. Password accounts
+      // always fall through to ensure_actor and get their own profile;
+      // stale legacy sessions in the same browser must never block them.
+      const legacy = await nhost.refreshSession(0);
+      if (!legacy) throw new Error("旧身份已失效，请联系站长恢复角色。");
+      const result = await client.functions.invoke("migrate-identity", {
+        body: { legacyAccessToken: legacy.accessToken },
+      });
+      if (result.error)
+        throw new Error("旧角色恢复失败，请重试或联系站长；不要重新创建角色。");
     }
     if (!profile) profile = await rpc<Profile>("ensure_actor");
     if (!profile || profile.disabled)

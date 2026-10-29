@@ -9,7 +9,7 @@ function check(value, message) {
   assertions++;
 }
 const first = async (sql, args = []) => (await db.query(sql, args)).rows[0];
-async function asUser(n, fn, anonymous = n > 2) {
+async function asUser(n, fn, anonymous = false) {
   await db.exec("begin");
   try {
     await db.query(
@@ -111,6 +111,24 @@ try {
       "utf8",
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/20261029010000_unified_accounts.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/20261029020000_anonymous_cutoff.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
 
   await db.exec("begin;set local role anon");
   check(
@@ -124,7 +142,7 @@ try {
   for (let n = 1; n <= 6; n++) {
     await db.query(
       "insert into auth.users(id,email,is_anonymous) values($1,$2,$3)",
-      [id(n), `${n}@gm.local`, n > 2],
+      [id(n), `${n}@gm.local`, false],
     );
     await asUser(n, () => db.query("select public.ensure_actor()"));
   }
@@ -499,7 +517,7 @@ try {
   );
   check(
     visitorMessage.display_name === "路过顾客",
-    "authenticated anonymous visitor can leave a message",
+    "registered visitor can leave a message",
   );
   await denied(
     6,
@@ -726,14 +744,88 @@ try {
     ).id === legacy,
     "binding idempotent",
   );
+  await db.query("insert into auth.users(id,is_anonymous) values($1,true)", [
+    id(92),
+  ]);
+  await db.query(
+    "insert into public.profiles(id,account_kind,auth_user_id) values($1,'player',$2)",
+    [id(93), id(92)],
+  );
   await assert.rejects(
     db.query("select public.complete_identity_migration($1,$2)", [
       legacy,
-      id(6),
+      id(92),
     ]),
     /IDENTITY_ALREADY_LINKED/,
   );
   assertions++;
+  // Unified accounts: a password account is a member first. It can play as
+  // an employee, merely reading GM status creates no application, and the
+  // same account can then apply for the GM capability.
+  await db.query(
+    "insert into auth.users(id,email,is_anonymous) values($1,'7@gm.local',false)",
+    [id(7)],
+  );
+  const member7 = await asUser(
+    7,
+    () => first("select * from public.ensure_actor()"),
+    false,
+  );
+  check(
+    member7.account_kind === "member",
+    "password account gets a member profile",
+  );
+  const gmStatus7 = await asUser(
+    7,
+    () => first("select * from public.get_gm_access()"),
+    false,
+  );
+  check(
+    !gmStatus7 || gmStatus7.user_id === null,
+    "reading GM status does not create an application",
+  );
+  const r7 = await asUser(
+    7,
+    () =>
+      first("select * from public.request_campaign_join($1,'账号玩家','厨师','账号资料')", [
+        other.join_code,
+      ]),
+    false,
+  );
+  await asUser(2, () =>
+    db.query("select public.review_campaign_join($1,true,'')", [r7.id]),
+  );
+  check(
+    (
+      await asUser(
+        7,
+        () => first("select public.get_campaign_board($1) board", [other.id]),
+        false,
+      )
+    ).board.members.some((member) => member.user_id === member7.id),
+    "password account can join a campaign as a player",
+  );
+  check(
+    (
+      await asUser(
+        7,
+        () => first("select * from public.request_gm_access()"),
+        false,
+      )
+    ).status === "pending",
+    "the same account can apply for the GM capability",
+  );
+
+  // Anonymous identities are retired: they cannot create a profile at all.
+  await db.query("insert into auth.users(id,is_anonymous) values($1,true)", [
+    id(8),
+  ]);
+  await assert.rejects(
+    asUser(8, () => db.query("select public.ensure_actor()"), true),
+    /ANONYMOUS_IDENTITY_DISABLED/,
+  );
+  assertions++;
+
   // Bigint pagination deliberately exercises values beyond Number.MAX_SAFE_INTEGER.
   await db.query(
     "insert into public.event_log(id,campaign_id,event_type,entity_type,payload) overriding system value values(9007199254740993,$1,'test','campaign','{}')",
