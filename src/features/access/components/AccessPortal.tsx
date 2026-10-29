@@ -52,6 +52,7 @@ interface AccessPortalProps {
   }) => Promise<void>;
   onCreateCampaign: (name: string, characterName: string) => Promise<void>;
   onSignOut: () => Promise<void>;
+  onRegisterEmployee: (displayName: string) => Promise<void>;
   onJoinCampaign: (input: {
     joinCode: string;
     characterName: string;
@@ -75,6 +76,7 @@ export function AccessPortal({
   onRegisterGm,
   onCreateCampaign,
   onSignOut,
+  onRegisterEmployee,
   onJoinCampaign,
 }: AccessPortalProps) {
   const regularUser = Boolean(session?.user && !session.user.isAnonymous);
@@ -83,6 +85,10 @@ export function AccessPortal({
   const [gmUsername, setGmUsername] = useState("");
   const [gmPassword, setGmPassword] = useState("");
   const [gmName, setGmName] = useState("");
+  const [employeeName, setEmployeeName] = useState(
+    session?.user?.displayName ?? "",
+  );
+  const [pendingVisitId, setPendingVisitId] = useState("");
   const [campaignName, setCampaignName] = useState("汉○王夜班危机营业");
   const [characterName, setCharacterName] = useState(
     session?.user?.displayName ?? "",
@@ -113,12 +119,37 @@ export function AccessPortal({
     setGmName((current) => current || session?.user?.displayName || "");
   }, [regularUser, session?.user?.displayName]);
 
+  const registeredEmployee = Boolean(session?.user?.isAnonymous);
   const view = useMemo(() => {
     if (regularUser)
       return gmAccess?.status === "approved" ? "create" : "approval";
     if (joinRequest && mode === "employee") return "join-approval";
+    // Employee sign-in is two separate steps: register an identity first,
+    // then join a campaign with that campaign's character details.
+    if (mode === "employee") return registeredEmployee ? "join" : "employee";
     return mode;
-  }, [mode, regularUser, gmAccess?.status, joinRequest]);
+  }, [mode, regularUser, gmAccess?.status, joinRequest, registeredEmployee]);
+
+  // A public room picked before registering opens right after registration.
+  useEffect(() => {
+    if (!pendingVisitId || !session?.user) return;
+    const target = pendingVisitId;
+    setPendingVisitId("");
+    onVisitPublicCampaign(target);
+  }, [pendingVisitId, session?.user]);
+
+  const visitPublicCampaign = (campaignId: string) => {
+    if (session?.user) {
+      onVisitPublicCampaign(campaignId);
+      return;
+    }
+    setPendingVisitId(campaignId);
+    setMode("employee");
+    setApprovalNotice({
+      title: "参观房间需要先注册员工",
+      body: "注册只需填写员工姓名，不需要岗位和角色资料。注册完成后会自动进入你选择的房间。",
+    });
+  };
 
   useEffect(() => {
     if (view === "approval") {
@@ -185,6 +216,14 @@ export function AccessPortal({
     void run(() => onCreateCampaign(campaignName, gmName));
   };
 
+  const submitRegister = (event: FormEvent) => {
+    event.preventDefault();
+    void run(async () => {
+      await onRegisterEmployee(employeeName.trim());
+      setCharacterName(employeeName.trim());
+    });
+  };
+
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
     void run(() =>
@@ -231,7 +270,7 @@ export function AccessPortal({
                   <button
                     type="button"
                     key={campaign.id}
-                    onClick={() => onVisitPublicCampaign(campaign.id)}
+                    onClick={() => visitPublicCampaign(campaign.id)}
                   >
                     <span>
                       <strong>{campaign.name}</strong>
@@ -273,7 +312,9 @@ export function AccessPortal({
                         ? gmMode === "signup"
                           ? "申请店长账号"
                           : "店长账号登录"
-                        : "员工报到单"}
+                        : view === "join"
+                          ? "加入战役"
+                          : "注册员工"}
               </h2>
             </div>
             <span className="manual-file-number">BK-ZM-09</span>
@@ -305,9 +346,34 @@ export function AccessPortal({
           )}
 
           {view === "employee" && (
-            <form className="access-form" onSubmit={submitJoin} {...imeGuard}>
+            <form className="access-form" onSubmit={submitRegister} {...imeGuard}>
               <label>
-                <span>员工姓名 / 角色名</span>
+                <span>员工姓名</span>
+                <input
+                  required
+                  maxLength={40}
+                  value={employeeName}
+                  onChange={(event) => setEmployeeName(event.target.value)}
+                  placeholder="例：倒霉的晚班阿强"
+                  autoComplete="nickname"
+                  autoFocus
+                />
+              </label>
+              <button className="access-submit" type="submit" disabled={busy}>
+                {busy ? "正在注册" : "注册员工"}
+                {!busy && <UserPlus aria-hidden="true" />}
+              </button>
+            </form>
+          )}
+
+          {view === "join" && (
+            <form className="access-form" onSubmit={submitJoin} {...imeGuard}>
+              <div className="manager-confirmed">
+                <BadgeCheck aria-hidden="true" />
+                <span>已注册员工：{session?.user?.displayName}</span>
+              </div>
+              <label>
+                <span>本场角色名</span>
                 <input
                   required
                   maxLength={40}
@@ -367,6 +433,13 @@ export function AccessPortal({
               <button className="access-submit" type="submit" disabled={busy}>
                 {busy ? "正在提交入店申请" : "申请加入班次"}
                 {!busy && <ArrowRight aria-hidden="true" />}
+              </button>
+              <button
+                className="access-signout"
+                type="button"
+                onClick={() => void onSignOut()}
+              >
+                退出当前员工身份
               </button>
             </form>
           )}

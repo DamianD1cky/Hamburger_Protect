@@ -135,6 +135,27 @@ export async function createCampaign(input: {
     p_job_title: "店长",
   });
 }
+/**
+ * Employee registration only creates the anonymous employee identity
+ * (a name, nothing else). Joining a campaign with its per-campaign
+ * character name, job title and profile happens separately afterwards.
+ */
+export async function registerEmployee(displayName: string) {
+  const client = requireSupabase();
+  let {
+    data: { session },
+  } = await client.auth.getSession();
+  if (!session) {
+    const result = await client.auth.signInAnonymously({
+      options: { data: { displayName: displayName.trim() } },
+    });
+    if (result.error) throw result.error;
+    session = result.data.session;
+  }
+  if (!session) throw new Error("AUTH_REQUIRED");
+  if (!session.user.is_anonymous) throw new Error("PLAYER_ACCOUNT_REQUIRED");
+  await prepareSupabaseSession(session);
+}
 export async function joinCampaign(input: {
   joinCode: string;
   characterName: string;

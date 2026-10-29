@@ -37,6 +37,7 @@ import {
   getGmAccess,
   joinCampaign,
   listPublicCampaigns,
+  registerEmployee,
   registerGm,
   signInGm,
   signOut,
@@ -227,7 +228,10 @@ function CloudCampaignApp() {
   if (auth.error)
     return <CloudStatus message={auth.error} retry error resetIdentity />;
 
-  if (publicCampaignId) {
+  // Visiting a public campaign requires a registered identity first:
+  // without a session the portal stays up (registration), and this branch
+  // takes over automatically once the visitor registers.
+  if (publicCampaignId && session?.user) {
     return (
       <CampaignBoardWorkspace
         campaignId={publicCampaignId}
@@ -296,6 +300,9 @@ function CloudCampaignApp() {
         url.searchParams.set("visit", campaignId);
         window.history.pushState(null, "", url);
         setPublicCampaignId(campaignId);
+      }}
+      onRegisterEmployee={async (displayName) => {
+        await registerEmployee(displayName);
       }}
       onSignInGm={async (input) => {
         await signInGm(input);

@@ -323,6 +323,19 @@ export async function createCampaign(input: {
   );
 }
 
+export async function registerEmployee(displayName: string) {
+  const client = requireClient();
+  const existing = client.getUserSession();
+  if (!existing?.user) {
+    const response = await client.auth.signInAnonymous({
+      displayName: displayName.trim(),
+      locale: "zh",
+    });
+    if (!response.body.session) throw new Error("匿名员工签到失败");
+  } else if (!existing.user.isAnonymous) {
+    throw new Error("玩家入口需要匿名员工会话，请先退出店长账号。");
+  }
+}
 export async function joinCampaign(input: {
   joinCode: string;
   characterName: string;

@@ -22,6 +22,8 @@ export const signInGm =
   backend === "supabase" ? next.signInGm : legacy.signInGm;
 export const createCampaign =
   backend === "supabase" ? next.createCampaign : legacy.createCampaign;
+export const registerEmployee =
+  backend === "supabase" ? next.registerEmployee : legacy.registerEmployee;
 export const joinCampaign =
   backend === "supabase" ? next.joinCampaign : legacy.joinCampaign;
 export const getOwnJoinRequest =
