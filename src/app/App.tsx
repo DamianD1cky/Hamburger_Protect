@@ -6,6 +6,7 @@ import {
   MessageSquare,
   RefreshCw,
   Settings,
+  ShieldAlert,
   UserPlus,
 } from "lucide-react";
 import {
@@ -41,6 +42,7 @@ import {
   signOut,
   submitVisitorMessage,
 } from "../features/access/data/campaignAccess";
+import { clearStuckIdentities } from "../features/access/data/supabaseSession";
 import { useAuthSession } from "../features/access/hooks/useAuthSession";
 import { defaultBoard } from "../features/campaign/domain/defaults";
 import type {
@@ -135,7 +137,7 @@ function SupabaseEntry() {
   });
   if (status.isLoading) return <CloudStatus message="正在连接公告板" />;
   if (status.error)
-    return <CloudStatus message="暂时无法连接公告板，请稍后重试" retry />;
+    return <CloudStatus message="暂时无法连接公告板，请稍后重试" retry error />;
   if (status.data !== "ready")
     return <CloudStatus message="公告板正在迁移，请稍候。完成后会自动进入。" />;
   return <CloudCampaignApp />;
@@ -222,7 +224,8 @@ function CloudCampaignApp() {
   };
 
   if (auth.loading) return <CloudStatus message="正在恢复登录身份" />;
-  if (auth.error) return <CloudStatus message={auth.error} retry />;
+  if (auth.error)
+    return <CloudStatus message={auth.error} retry error resetIdentity />;
 
   if (publicCampaignId) {
     return (
@@ -321,19 +324,42 @@ function CloudCampaignApp() {
 function CloudStatus({
   message,
   retry = false,
+  error = false,
+  resetIdentity = false,
 }: {
   message: string;
   retry?: boolean;
+  error?: boolean;
+  resetIdentity?: boolean;
 }) {
+  // Error states are terminal, not loading: no spinner (it reads as an
+  // endless hang), and identity errors get an escape hatch that clears
+  // the stuck local sessions instead of reloading into the same failure.
   return (
     <div className="cloud-status-screen">
       <div className="backdrop" aria-hidden="true" />
-      <span className="verification-spinner" aria-hidden="true" />
+      {error ? (
+        <ShieldAlert className="cloud-status-icon" aria-hidden="true" />
+      ) : (
+        <span className="verification-spinner" aria-hidden="true" />
+      )}
       <strong>{message}</strong>
       <small>请勿擅自离岗</small>
       {retry && (
         <button type="button" onClick={() => window.location.reload()}>
           重试
+        </button>
+      )}
+      {resetIdentity && (
+        <button
+          type="button"
+          onClick={() => {
+            void clearStuckIdentities().finally(() =>
+              window.location.reload(),
+            );
+          }}
+        >
+          清除浏览器中的旧身份并重新开始
         </button>
       )}
     </div>
