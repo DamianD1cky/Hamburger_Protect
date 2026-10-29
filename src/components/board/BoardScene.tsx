@@ -75,14 +75,35 @@ export function BoardScene({
   const hidden = new Set(board.settings.hiddenSections);
   const title = (key: Parameters<typeof sectionTitle>[0]) =>
     sectionTitle(key, board.settings.sectionTitles);
+  const sceneSrc = board.settings.backgroundUrl ?? sceneUrl;
+  const fallBackToDefaultScene = (event: {
+    currentTarget: HTMLImageElement;
+  }) => {
+    if (event.currentTarget.src !== sceneUrl) {
+      event.currentTarget.src = sceneUrl;
+    }
+  };
 
   return (
     <div className="viewport">
+      {/* Full-bleed fill: the scaled world is sized to keep the board fully
+          visible, which can leave margins around the scene on extreme
+          window shapes. This blurred copy of the same scene always covers
+          the whole viewport, so the page backdrop can never show through. */}
+      <img
+        className="scene-fill"
+        src={sceneSrc}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        decoding="async"
+        onError={fallBackToDefaultScene}
+      />
       <div className="world" ref={worldRef}>
         <picture className="scene-picture">
           <img
             className="scene"
-            src={board.settings.backgroundUrl ?? sceneUrl}
+            src={sceneSrc}
             width="2496"
             height="1664"
             alt=""
@@ -90,11 +111,7 @@ export function BoardScene({
             draggable={false}
             decoding="async"
             fetchPriority="high"
-            onError={(event) => {
-              if (event.currentTarget.src !== sceneUrl) {
-                event.currentTarget.src = sceneUrl;
-              }
-            }}
+            onError={fallBackToDefaultScene}
           />
         </picture>
 

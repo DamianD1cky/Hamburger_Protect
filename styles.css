@@ -6,9 +6,6 @@
   --green: #12963e;
   --blue: #0860b2;
   --paper: #f4f3e7;
-  --tile-wall:
-    linear-gradient(90deg, #69716a33 1px, transparent 1px),
-    linear-gradient(#69716a33 1px, transparent 1px);
 
   --app-font: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", serif;
   --ui-font: var(--app-font);
@@ -61,16 +58,40 @@ button {
 
 .backdrop {
   z-index: -2;
-  background-color: #d6d6c6;
-  background-image: var(--tile-wall);
-  background-size: 96px 72px;
+  /* Last-resort filler behind everything: a blurred scene photo stretched
+     edge-to-edge, never a flat colour or tile pattern, so no window size
+     can reveal an empty margin around the board. */
+  background-color: #171717;
+  background-image: url("assets/scene-blur.jpg");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .backdrop::after {
   position: absolute;
   inset: 0;
   content: "";
-  background: linear-gradient(180deg, #c6d4c322, #495a4944);
+  background: linear-gradient(180deg, rgba(10, 12, 10, 0.08), rgba(10, 12, 10, 0.28));
+}
+
+/* Blurred copy of the room scene that always fills the whole viewport.
+   The world itself is scaled to keep the board fully visible ("contain"),
+   so on wide/short or narrow/tall windows the sharp scene would leave
+   margins; this layer fills them with the same image, softly blurred so
+   the seam reads as depth of field rather than a second picture. */
+.scene-fill {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: blur(22px) saturate(1.05) brightness(0.92);
+  transform: scale(1.08);
+  user-select: none;
+  pointer-events: none;
 }
 
 .viewport {
@@ -85,6 +106,7 @@ button {
 
 .world {
   position: absolute;
+  z-index: 1;
   width: 2496px;
   height: 1664px;
   transform-origin: 0 0;
