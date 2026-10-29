@@ -76,7 +76,6 @@ GM 申请只在账号主动点击申请时建立，默认 `pending`；只读查�
 - Vite + React + TypeScript
 - TanStack Query
 - Supabase Auth、PostgreSQL、受控 RPC、RLS 与私有 Storage（生产后端）
-- Nhost / Hasura 接入保留至迁移与观察完成
 - TanStack Query 每 5 秒轮询公告板
 - Vercel
 
@@ -87,20 +86,11 @@ npm install
 npm run dev
 ```
 
-默认访问 <http://127.0.0.1:5173>。本地未配置后端时使用浏览器演示仓储；也可以明确配置 `VITE_BACKEND=local`。线上必须明确选择后端或提供云端配置，否则显示配置错误。选择云端后，连接或认证失败不会回退到本地数据。
+默认访问 <http://127.0.0.1:5173>。本地未配置后端时使用浏览器演示仓储；也可以明确配置 `VITE_BACKEND=local`。生产环境使用 `VITE_BACKEND=supabase`，连接或认证失败不会回退到本地数据。
 
-## Nhost 兼容配置
+## Nhost 历史基线
 
-Nhost 仅用于迁移观察期和旧会话恢复。需要验证旧接入时，在本地填写公开客户端配置：
-
-```bash
-VITE_NHOST_SUBDOMAIN=your-project-subdomain
-VITE_NHOST_REGION=your-project-region
-```
-
-不要将 `HASURA_GRAPHQL_ADMIN_SECRET`、PAT 或其他管理密钥放入前端环境变量。
-
-## Nhost 后端
+Nhost 业务数据已经冻结，目录仅保留迁移审计、恢复基准与 Hasura metadata，不进入前端运行时：
 
 ```text
 nhost/
@@ -141,10 +131,9 @@ src/
 ├── components/handbook/         员工手册速查
 ├── features/access/             登录、建局、加入战役
 ├── features/campaign/domain/    战役领域类型与状态机
-├── features/campaign/data/      本地、Nhost、Supabase 数据仓储
+├── features/campaign/data/      本地与 Supabase 数据仓储
 ├── features/campaign/hooks/     React 数据接口
 ├── hooks/                       纯视图交互 Hook
-├── lib/nhost/                   Nhost 兼容客户端
 └── lib/supabase/                Supabase 客户端
 nhost/                           旧数据库迁移、配置与 Hasura metadata
 supabase/                        生产数据库迁移、测试与 Edge Functions
@@ -162,7 +151,7 @@ npm run check:secrets
 
 ## 开源仓库的密钥保护
 
-仅将 `VITE_NHOST_SUBDOMAIN` 和 `VITE_NHOST_REGION` 这类公开服务标识放入前端配置。管理密钥、JWT 私钥、个人访问令牌和密码保存在本地忽略文件或云平台的 Secret 配置中；`VITE_` 前缀的变量会进入公开网页，不能存放凭据。
+前端只配置 Supabase URL、publishable key 等公开标识。管理密钥、JWT 私钥、个人访问令牌和密码保存在本地忽略文件或云平台的 Secret 配置中；`VITE_` 前缀的变量会进入公开网页，不能存放凭据。
 
 本地安装 Gitleaks 后，运行 `npm run setup:security` 启用提交前与推送前检查，运行 `npm run check:secrets` 扫描全部 Git 历史。每个新克隆都需要执行一次设置。GitHub Actions 会扫描提交历史和公开文件，输出中的凭据全部脱敏。
 
@@ -173,7 +162,7 @@ npm run check:secrets
 
 ## Supabase 接入与迁移
 
-Supabase 已承接生产读写，历史数据和 GM 身份已迁移，Nhost 业务数据冻结保留为恢复基准。生产环境使用 `VITE_BACKEND=supabase`；不要将生产环境切回 Nhost，除非已完成新数据的反向恢复。
+Supabase 已承接生产读写，历史数据和 GM 身份已迁移。前端运行时只支持 Supabase；冻结的 Nhost 业务数据保留为迁移审计与恢复基准，不能直接承接当前业务写入。
 
 Supabase 前端公开配置：
 

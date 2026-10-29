@@ -1,5 +1,4 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { nhost } from "../../../lib/nhost/client";
 import { backend } from "../../../lib/backend";
 import { getSupabaseAppSession } from "../../access/data/supabaseSession";
 import {
@@ -8,7 +7,6 @@ import {
   supabaseCampaignRepository,
 } from "../data/supabaseCampaignRepository";
 import { localCampaignRepository } from "../data/localCampaignRepository";
-import { nhostCampaignRepository } from "../data/nhostCampaignRepository";
 import { cloneDefaultBoard, defaultBoard } from "../domain/defaults";
 import type {
   CampaignBoard,
@@ -27,29 +25,22 @@ export function useCampaignBoard(
   publicView = false,
 ) {
   const queryClient = useQueryClient();
-  const session =
-    backend === "supabase" ? getSupabaseAppSession() : nhost?.getUserSession();
+  const session = getSupabaseAppSession();
   const cloudEnabled = backend !== "local";
   const repository = cloudEnabled
-    ? backend === "supabase"
-      ? supabaseCampaignRepository
-      : nhostCampaignRepository
+    ? supabaseCampaignRepository
     : localCampaignRepository;
   const boardKey = [
     "campaign-board",
     backend,
-    publicView
-      ? "public"
-      : session?.user && "authUserId" in session.user
-        ? session.user.authUserId
-        : session?.user?.id,
+    publicView ? "public" : session?.user.authUserId,
     publicView ? "visitor" : (session?.user?.id ?? "demo"),
     requestedCampaignId,
   ] as const;
   const query = useQuery({
     queryKey: boardKey,
     queryFn: () =>
-      publicView && backend === "supabase"
+      publicView && cloudEnabled
         ? getPublicCampaignBoard(requestedCampaignId)
         : repository.getBoard(requestedCampaignId),
     placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
@@ -70,10 +61,9 @@ export function useCampaignBoard(
     board,
     error: query.error,
     refetch: query.refetch,
-    dataSource: backend,
     isLoading: query.isLoading,
     getActivities: (beforeId?: string) =>
-      publicView && backend === "supabase"
+      publicView && cloudEnabled
         ? getPublicActivities(campaignId, beforeId)
         : repository.getActivities(campaignId, beforeId),
     saveResource: (draft: ResourceDraft, id?: string) =>

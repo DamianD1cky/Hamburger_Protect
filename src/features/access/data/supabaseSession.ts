@@ -1,7 +1,6 @@
 import type { Session } from "@supabase/supabase-js";
 import type { AppSession } from "../domain/types";
 import { requireSupabase, rpc } from "../../../lib/supabase/client";
-import { nhost } from "../../../lib/nhost/client";
 interface Profile {
   id: string;
   display_name: string;
@@ -30,26 +29,6 @@ export async function prepareSupabaseSession(
       .maybeSingle();
     if (error) throw new Error(error.message);
     let profile = existing as Profile | null;
-    const storedLegacy = nhost?.getUserSession();
-    if (
-      !profile &&
-      storedLegacy &&
-      nhost &&
-      storedLegacy.user?.isAnonymous &&
-      session.user.is_anonymous
-    ) {
-      // The only legacy migration left: an old anonymous player session is
-      // carried onto an anonymous Supabase session. Password accounts
-      // always fall through to ensure_actor and get their own profile;
-      // stale legacy sessions in the same browser must never block them.
-      const legacy = await nhost.refreshSession(0);
-      if (!legacy) throw new Error("旧身份已失效，请联系站长恢复角色。");
-      const result = await client.functions.invoke("migrate-identity", {
-        body: { legacyAccessToken: legacy.accessToken },
-      });
-      if (result.error)
-        throw new Error("旧角色恢复失败，请重试或联系站长；不要重新创建角色。");
-    }
     if (!profile) profile = await rpc<Profile>("ensure_actor");
     if (!profile || profile.disabled)
       throw new Error("账号已停用，请联系站长。");
@@ -83,9 +62,8 @@ export async function requireSupabaseSession() {
   return prepareSupabaseSession(data.session);
 }
 /**
- * Escape hatch for a browser stuck on an unusable identity (e.g. a stale
- * legacy GM session): drops every local session so the sign-in page can
- * start over. Server-side accounts and characters are not deleted.
+ * Escape hatch for a browser stuck on an unusable local session. Server-side
+ * accounts and characters are not deleted.
  */
 export async function clearStuckIdentities() {
   try {
@@ -93,19 +71,5 @@ export async function clearStuckIdentities() {
   } catch {
     // Local state is cleared below regardless of the network result.
   }
-  try {
-    nhost?.clearSession();
-  } catch {
-    // No legacy session to clear.
-  }
   clearSupabaseAppSession();
-}
-export async function restoreLegacyPlayer() {
-  if (!nhost?.getUserSession()?.user?.isAnonymous) return;
-  const client = requireSupabase();
-  const { data } = await client.auth.getSession();
-  if (!data.session) {
-    const result = await client.auth.signInAnonymously();
-    if (result.error) throw result.error;
-  }
 }

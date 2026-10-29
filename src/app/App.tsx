@@ -16,7 +16,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type MouseEvent,
 } from "react";
 import type { BoardEditorKind } from "../components/board/BoardEditorDialog";
 import { FocusDock } from "../components/board/FocusDock";
@@ -48,7 +47,6 @@ import { useAuthSession } from "../features/access/hooks/useAuthSession";
 import { defaultBoard } from "../features/campaign/domain/defaults";
 import type {
   ComposerTarget,
-  EmployeePosition,
   Quest,
   QuestStatus,
 } from "../features/campaign/domain/types";
@@ -124,7 +122,7 @@ export function App() {
       <CampaignBoardWorkspace campaignId={defaultBoard.campaign.id} demo />
     );
   }
-  return backend === "supabase" ? <SupabaseEntry /> : <CloudCampaignApp />;
+  return <SupabaseEntry />;
 }
 
 function SupabaseEntry() {
@@ -371,7 +369,7 @@ function CloudStatus({
             );
           }}
         >
-          清除浏览器中的旧身份并重新开始
+          清除浏览器登录状态并重新开始
         </button>
       )}
     </div>

@@ -5,7 +5,7 @@ import type {
 export interface AppSession {
   user: {
     id: string;
-    authUserId?: string;
+    authUserId: string;
     displayName: string;
     isAnonymous: boolean;
     email?: string | null;
