@@ -4350,8 +4350,11 @@ textarea:focus-visible {
    a sidebar (right, fixed width). Placement is explicit because the
    inbox comes first in the DOM and would otherwise take the wide
    first column, squeezing the member profile into the narrow one. */
-.roster-shell.has-inbox .roster-layout { grid-column: 1; }
-.roster-shell.has-inbox .join-request-inbox { grid-column: 2; }
+/* Both columns must also be pinned to row 1: with column-only placement,
+   grid auto-flow puts the (DOM-first) inbox on row 1 and then drops the
+   member area to row 2, leaving a blank block above the members. */
+.roster-shell.has-inbox .roster-layout { grid-column: 1; grid-row: 1; }
+.roster-shell.has-inbox .join-request-inbox { grid-column: 2; grid-row: 1; }
 .roster-layout {
   grid-template-columns: 208px minmax(0, 1fr);
   margin-top: 0;
