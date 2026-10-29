@@ -1,3 +1,4 @@
+import { Pencil, Plus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type {
   CampaignBoard,
@@ -30,9 +31,19 @@ export function BoardEditorDialog({
   onSetIndex: (value: number) => Promise<unknown>;
 }) {
   const items = board.checklist;
+  // "Edit" and "create" are separate modes with separate drafts: picking an
+  // item only ever happens in edit mode, and the text field there always
+  // belongs to the picked item. In create mode the fields start empty and
+  // saving always creates a new item.
+  const [mode, setMode] = useState<"edit" | "create">(
+    items.length ? "edit" : "create",
+  );
   const [id, setId] = useState(items[0]?.id ?? "");
   const [name, setName] = useState(items[0]?.label ?? "");
   const [categoryId, setCategoryId] = useState(items[0]?.categoryId ?? "");
+  const [catMode, setCatMode] = useState<"edit" | "create">(
+    board.checklistCategories.length ? "edit" : "create",
+  );
   const [managedCategoryId, setManagedCategoryId] = useState(
     board.checklistCategories[0]?.id ?? "",
   );
@@ -54,6 +65,35 @@ export function BoardEditorDialog({
     setConfirmDelete(false);
     setError("");
   };
+  const switchMode = (next: "edit" | "create") => {
+    setConfirmDelete(false);
+    setError("");
+    if (next === "create") {
+      setMode("create");
+      setId("");
+      setName("");
+      setCategoryId("");
+    } else if (items.length) {
+      setMode("edit");
+      select(id || items[0].id);
+    }
+  };
+  const switchCatMode = (next: "edit" | "create") => {
+    setError("");
+    if (next === "create") {
+      setCatMode("create");
+      setManagedCategoryId("");
+      setCategoryName("");
+    } else if (board.checklistCategories.length) {
+      setCatMode("edit");
+      const target =
+        board.checklistCategories.find(
+          (category) => category.id === managedCategoryId,
+        ) ?? board.checklistCategories[0];
+      setManagedCategoryId(target.id);
+      setCategoryName(target.name);
+    }
+  };
   const run = async (operation: () => Promise<unknown>) => {
     if (!editable || busy) return;
     setBusy(true);
@@ -74,7 +114,7 @@ export function BoardEditorDialog({
       void run(() =>
         onSaveChecklist(
           { label: name.trim(), categoryId: categoryId || null },
-          id || undefined,
+          mode === "edit" ? id || undefined : undefined,
         ),
       );
   };
@@ -135,17 +175,58 @@ export function BoardEditorDialog({
           ) : (
             <div className="checklist-columns">
               <div className="checklist-main">
-              <label className="field">
-                <span>选择条目</span>
-                <select value={id} onChange={(e) => select(e.target.value)}>
+              <div
+                className="compose-type checklist-mode"
+                role="tablist"
+                aria-label="检查项操作"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "edit"}
+                  className={mode === "edit" ? "is-active" : ""}
+                  disabled={!items.length}
+                  onClick={() => switchMode("edit")}
+                >
+                  <Pencil aria-hidden="true" />
+                  修改条目
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "create"}
+                  className={mode === "create" ? "is-active" : ""}
+                  onClick={() => switchMode("create")}
+                >
+                  <Plus aria-hidden="true" />
+                  新增条目
+                </button>
+              </div>
+              {mode === "edit" && (
+                <div
+                  className="checklist-item-list"
+                  role="listbox"
+                  aria-label="选择要修改的条目"
+                >
                   {items.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={id === item.id}
+                      key={item.id}
+                      className={id === item.id ? "is-selected" : ""}
+                      onClick={() => select(item.id)}
+                    >
+                      <span>{item.label}</span>
+                      <small>
+                        {board.checklistCategories.find(
+                          (category) => category.id === item.categoryId,
+                        )?.name ?? "未分类"}
+                      </small>
+                    </button>
                   ))}
-                  <option value="">＋ 新增检查项</option>
-                </select>
-              </label>
+                </div>
+              )}
               <label className="field">
                 <span>检查内容</span>
                 <textarea
@@ -155,6 +236,7 @@ export function BoardEditorDialog({
                   onChange={(e) => setName(e.target.value)}
                   maxLength={160}
                   required
+                  autoFocus={mode === "create"}
                 />
               </label>
               <label className="field">
@@ -173,28 +255,56 @@ export function BoardEditorDialog({
               </label>
               </div>
               <div className="category-manager">
-                <label className="field">
-                  <span>分类管理</span>
-                  <select
-                    value={managedCategoryId}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setManagedCategoryId(value);
-                      setCategoryName(
-                        board.checklistCategories.find(
-                          (category) => category.id === value,
-                        )?.name ?? "",
-                      );
-                    }}
+                <div
+                  className="compose-type checklist-mode"
+                  role="tablist"
+                  aria-label="分类操作"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={catMode === "edit"}
+                    className={catMode === "edit" ? "is-active" : ""}
+                    disabled={!board.checklistCategories.length}
+                    onClick={() => switchCatMode("edit")}
                   >
-                    {board.checklistCategories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                    <option value="">＋ 新建分类</option>
-                  </select>
-                </label>
+                    <Pencil aria-hidden="true" />
+                    修改分类
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={catMode === "create"}
+                    className={catMode === "create" ? "is-active" : ""}
+                    onClick={() => switchCatMode("create")}
+                  >
+                    <Plus aria-hidden="true" />
+                    新建分类
+                  </button>
+                </div>
+                {catMode === "edit" && (
+                  <label className="field">
+                    <span>选择分类</span>
+                    <select
+                      value={managedCategoryId}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setManagedCategoryId(value);
+                        setCategoryName(
+                          board.checklistCategories.find(
+                            (category) => category.id === value,
+                          )?.name ?? "",
+                        );
+                      }}
+                    >
+                      {board.checklistCategories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <label className="field">
                   <span>分类名称</span>
                   <input
@@ -205,7 +315,7 @@ export function BoardEditorDialog({
                   />
                 </label>
                 <div className="category-actions">
-                  {managedCategoryId && (
+                  {catMode === "edit" && managedCategoryId && (
                     <button
                       className="text-button danger-button"
                       type="button"
@@ -224,12 +334,14 @@ export function BoardEditorDialog({
                       void run(() =>
                         onSaveCategory(
                           categoryName.trim(),
-                          managedCategoryId || undefined,
+                          catMode === "edit"
+                            ? managedCategoryId || undefined
+                            : undefined,
                         ),
                       )
                     }
                   >
-                    {managedCategoryId ? "保存分类" : "新增分类"}
+                    {catMode === "edit" ? "保存分类" : "新增分类"}
                   </button>
                 </div>
                 <p className="editor-help">
@@ -245,7 +357,7 @@ export function BoardEditorDialog({
           </p>
         )}
         <footer className="composer-actions">
-          {kind === "checklist" && id && editable && (
+          {kind === "checklist" && mode === "edit" && id && editable && (
             <button
               className="text-button danger-button"
               type="button"
@@ -272,7 +384,13 @@ export function BoardEditorDialog({
             type="submit"
             disabled={busy || !editable}
           >
-            {busy ? "保存中…" : "保存"}
+            {busy
+              ? "保存中…"
+              : kind === "checklist"
+                ? mode === "create"
+                  ? "新增条目"
+                  : "保存修改"
+                : "保存"}
           </button>
         </footer>
       </form>

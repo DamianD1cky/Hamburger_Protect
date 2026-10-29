@@ -4391,6 +4391,47 @@ textarea:focus-visible {
   align-items: start;
 }
 .checklist-main .field:first-child { margin-top: 0; }
+.checklist-mode { margin: 0 0 12px; }
+.checklist-mode button { min-height: 38px; font-size: 14px; }
+.checklist-mode svg { width: 16px; height: 16px; }
+.checklist-item-list {
+  display: grid;
+  gap: 6px;
+  max-height: 148px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.checklist-item-list > button {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid #93897b;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.45);
+  color: #332e27;
+  text-align: left;
+  cursor: pointer;
+}
+.checklist-item-list > button:hover { background: rgba(255, 255, 255, 0.75); }
+.checklist-item-list > button.is-selected {
+  border-color: #29251e;
+  background: #ded3b9;
+  box-shadow: inset 0 0 0 1px #29251e;
+}
+.checklist-item-list > button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.checklist-item-list > button small {
+  flex: 0 0 auto;
+  color: #726858;
+  font-size: 12px;
+}
 .category-manager {
   margin-top: 0;
   padding: 0 0 0 18px;
