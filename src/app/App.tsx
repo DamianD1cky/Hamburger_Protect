@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   BookOpen,
   Copy,
-  LogOut,
   MessageSquare,
   RefreshCw,
   Settings,
@@ -34,7 +34,7 @@ import {
   deleteVisitorMessage,
   registerAccount,
   reviewCampaignJoin,
-  getActiveCampaign,
+  getActiveCampaigns,
   getGmAccess,
   joinCampaign,
   listPublicCampaigns,
@@ -146,6 +146,7 @@ function CloudCampaignApp() {
   const queryClient = useQueryClient();
   const auth = useAuthSession();
   const session = auth.session;
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [publicCampaignId, setPublicCampaignId] = useState(
     () => new URLSearchParams(window.location.search).get("visit") ?? "",
   );
@@ -160,7 +161,7 @@ function CloudCampaignApp() {
   useEffect(() => {
     for (const key of [
       "gm-access",
-      "active-campaign",
+      "active-campaigns",
       "campaign-board",
       "join-request",
       "join-inbox",
@@ -190,23 +191,42 @@ function CloudCampaignApp() {
   });
 
   const accessQuery = useQuery({
-    queryKey: ["active-campaign", session?.user?.id ?? "signed-out"],
-    queryFn: getActiveCampaign,
+    queryKey: ["active-campaigns", session?.user?.id ?? "signed-out"],
+    queryFn: getActiveCampaigns,
     enabled: Boolean(session?.user),
     staleTime: 5_000,
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
     retry: 1,
   });
+  const activeCampaigns = accessQuery.data ?? [];
+  const activePlayerCampaign = activeCampaigns.find(
+    (campaign) => campaign.role === "player",
+  );
   const joinRequestQuery = useQuery({
     queryKey: ["join-request", session?.user?.id ?? "signed-out"],
     queryFn: getOwnJoinRequest,
-    enabled: Boolean(session?.user) && !accessQuery.data,
+    enabled: Boolean(session?.user) && !activePlayerCampaign,
     staleTime: 5_000,
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
     retry: 1,
   });
+
+  useEffect(() => {
+    setSelectedCampaignId("");
+  }, [session?.user.authUserId]);
+  useEffect(() => {
+    if (
+      selectedCampaignId &&
+      accessQuery.isSuccess &&
+      !activeCampaigns.some(
+        (campaign) => campaign.campaignId === selectedCampaignId,
+      )
+    ) {
+      setSelectedCampaignId("");
+    }
+  }, [accessQuery.isSuccess, activeCampaigns, selectedCampaignId]);
 
   // Anonymous identities are retired: any surviving anonymous session is
   // signed out on sight and the visitor starts over with an account.
@@ -219,14 +239,15 @@ function CloudCampaignApp() {
   }, [anonymousSession]);
 
   const refreshAccess = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["active-campaign"] });
+    await queryClient.invalidateQueries({ queryKey: ["active-campaigns"] });
     await queryClient.invalidateQueries({ queryKey: ["join-request"] });
   };
 
   const handleSignOut = async () => {
     await signOut();
+    setSelectedCampaignId("");
     queryClient.removeQueries({ queryKey: ["gm-access"] });
-    queryClient.removeQueries({ queryKey: ["active-campaign"] });
+    queryClient.removeQueries({ queryKey: ["active-campaigns"] });
     queryClient.removeQueries({ queryKey: ["campaign-board"] });
     queryClient.removeQueries({ queryKey: ["join-request"] });
     queryClient.removeQueries({ queryKey: ["join-inbox"] });
@@ -257,16 +278,18 @@ function CloudCampaignApp() {
 
   if (
     session?.user &&
-    (gmAccessQuery.isLoading || accessQuery.isLoading || joinRequestQuery.isLoading)
+    (gmAccessQuery.isLoading ||
+      accessQuery.isLoading ||
+      joinRequestQuery.isLoading)
   ) {
     return <CloudStatus message="正在核对账号与排班" />;
   }
 
-  if (accessQuery.data?.status === "active") {
+  if (selectedCampaignId && session?.user) {
     return (
       <CampaignBoardWorkspace
-        campaignId={accessQuery.data.campaignId}
-        onExit={handleSignOut}
+        campaignId={selectedCampaignId}
+        onExit={async () => setSelectedCampaignId("")}
       />
     );
   }
@@ -276,7 +299,11 @@ function CloudCampaignApp() {
       session={session}
       legacyCutoff={legacyCutoff}
       gmAccess={gmAccessQuery.data ?? null}
-      joinRequest={joinRequestQuery.data ?? null}
+      activeCampaigns={activeCampaigns}
+      joinRequest={
+        activePlayerCampaign ? null : (joinRequestQuery.data ?? null)
+      }
+      onEnterCampaign={setSelectedCampaignId}
       onRefreshJoinRequest={refreshAccess}
       onCancelJoinRequest={async (id) => {
         await cancelCampaignJoin(id);
@@ -364,9 +391,7 @@ function CloudStatus({
         <button
           type="button"
           onClick={() => {
-            void clearStuckIdentities().finally(() =>
-              window.location.reload(),
-            );
+            void clearStuckIdentities().finally(() => window.location.reload());
           }}
         >
           清除浏览器登录状态并重新开始
@@ -598,9 +623,9 @@ function CampaignBoardWorkspace({
           <RefreshCw aria-hidden="true" />
           重新读取
         </button>
-        {publicView && onExit && (
+        {onExit && (
           <button type="button" onClick={() => void onExit()}>
-            返回签到处
+            {publicView ? "返回签到处" : "返回账号与战役"}
           </button>
         )}
       </div>
@@ -612,10 +637,9 @@ function CampaignBoardWorkspace({
   }
 
   const board = campaign.board;
-  const roleLabel =
-    publicView
-      ? "访客 / 只读参观"
-      : board.viewer.role === "gm"
+  const roleLabel = publicView
+    ? "访客 / 只读参观"
+    : board.viewer.role === "gm"
       ? "GM / 值班店长"
       : board.viewer.role === "player"
         ? board.viewer.jobTitle
@@ -743,10 +767,10 @@ function CampaignBoardWorkspace({
           <button
             type="button"
             onClick={() => void onExit()}
-            aria-label="退出本次值班"
-            title="退出"
+            aria-label={publicView ? "返回签到处" : "返回账号与战役"}
+            title={publicView ? "返回签到处" : "返回账号与战役"}
           >
-            <LogOut aria-hidden="true" />
+            <ArrowLeft aria-hidden="true" />
           </button>
         )}
       </div>

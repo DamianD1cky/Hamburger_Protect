@@ -42,14 +42,14 @@ const accessErrorMessages: Array<[string[], string]> = [
     "你已经参加了一个仍在营业的战役，不能重复入店。",
   ],
   [
+    ["already_campaign_member", "campaign_role_conflict"],
+    "你已经在这个战役中担任其他角色，不能再次申请加入。",
+  ],
+  [
     ["join_request_pending"],
     "你已有待审批的入店申请，请先等待结果或撤回申请。",
   ],
   [["join_request_already_reviewed"], "申请状态已变更，请刷新后查看结果。"],
-  [
-    ["player_account_required"],
-    "玩家入店申请需要匿名员工身份，请先退出店长账号。",
-  ],
   [["campaign_not_found"], "班次码无效，或该战役已经打烊。"],
   [
     [

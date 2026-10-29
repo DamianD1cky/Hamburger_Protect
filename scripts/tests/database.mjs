@@ -129,6 +129,15 @@ try {
       "utf8",
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/20261029030000_campaign_roles.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
 
   await db.exec("begin;set local role anon");
   check(
@@ -177,6 +186,45 @@ try {
   );
   const other = await asUser(2, () =>
     first("select * from public.create_campaign('店二','GM二','店长')"),
+  );
+  await denied(
+    1,
+    "select public.request_campaign_join($1,'自我降级','服务员')",
+    [c.join_code],
+    /ALREADY_CAMPAIGN_MEMBER/,
+  );
+  const gmAsPlayerRequest = await asUser(1, () =>
+    first(
+      "select * from public.request_campaign_join($1,'跨店支援','服务员')",
+      [other.join_code],
+    ),
+  );
+  await asUser(2, () =>
+    db.query("select public.review_campaign_join($1,true,'')", [
+      gmAsPlayerRequest.id,
+    ]),
+  );
+  const mixedRoles = await first(
+    `select
+       count(*)::integer membership_count,
+       count(*) filter (where role = 'gm')::integer gm_count,
+       count(*) filter (where role = 'player')::integer player_count
+     from public.campaign_members where user_id=$1 and active`,
+    [actors[1]],
+  );
+  check(
+    mixedRoles.membership_count === 2 &&
+      mixedRoles.gm_count === 1 &&
+      mixedRoles.player_count === 1,
+    "approved GM can play as an employee in another active campaign",
+  );
+  check(
+    (
+      await asUser(1, () =>
+        first("select public.get_campaign_board($1) board", [other.id]),
+      )
+    ).board !== null,
+    "mixed-role account can open its employee campaign",
   );
   // Until approved, even a player knowing the campaign ID cannot read the board.
   check(
@@ -814,6 +862,46 @@ try {
       )
     ).status === "pending",
     "the same account can apply for the GM capability",
+  );
+  await db.query(
+    "update public.gm_access set status='approved' where user_id=$1",
+    [member7.id],
+  );
+  const memberCampaign = await asUser(
+    7,
+    () =>
+      first(
+        "select * from public.create_campaign('账号店长战役','账号店长','店长')",
+      ),
+    false,
+  );
+  check(
+    (
+      await asUser(
+        7,
+        () => first("select public.get_campaign_board($1) board", [other.id]),
+        false,
+      )
+    ).board !== null &&
+      (
+        await asUser(
+          7,
+          () =>
+            first("select public.get_campaign_board($1) board", [
+              memberCampaign.id,
+            ]),
+          false,
+        )
+      ).board !== null,
+    "active employee can also create and manage another campaign as GM",
+  );
+  const member7Roles = await first(
+    "select array_agg(role order by role)::text roles from public.campaign_members where user_id=$1 and active",
+    [member7.id],
+  );
+  check(
+    member7Roles.roles === "{gm,player}",
+    "campaign memberships retain both roles without changing the account",
   );
 
   // Anonymous identities are retired: they cannot create a profile at all.

@@ -44,4 +44,5 @@ export interface ActiveCampaignAccess {
   role: CampaignRole;
   characterName: string;
   jobTitle: EmployeePosition;
+  joinedAt: string;
 }

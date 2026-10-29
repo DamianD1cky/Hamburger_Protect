@@ -14,7 +14,7 @@ export {
   cancelCampaignJoin,
   createCampaign,
   deleteVisitorMessage,
-  getActiveCampaign,
+  getActiveCampaigns,
   getCampaignJoinInbox,
   getGmAccess,
   getOwnJoinRequest,

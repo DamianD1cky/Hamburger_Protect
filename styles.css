@@ -4625,6 +4625,120 @@ textarea:focus-visible {
 }
 .account-summary .access-signout svg { width: 15px; height: 15px; }
 
+.campaign-access-list {
+  margin-top: 22px;
+}
+.campaign-access-list > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.campaign-access-list > header small {
+  display: block;
+  margin-bottom: 3px;
+  color: #7e756a;
+  font-size: 12px;
+  font-weight: 600;
+}
+.campaign-access-list > header h3 {
+  margin: 0;
+  color: #29251f;
+  font-size: 16px;
+  line-height: 1.25;
+}
+.campaign-access-list > header > span {
+  flex: 0 0 auto;
+  color: #7e756a;
+  font-size: 12px;
+  font-weight: 700;
+}
+.campaign-access-rows {
+  border-top: 1px solid rgba(57, 51, 43, 0.48);
+  border-bottom: 1px solid rgba(57, 51, 43, 0.48);
+}
+.campaign-access-rows > button {
+  display: grid;
+  width: 100%;
+  min-height: 58px;
+  grid-template-columns: 36px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+  color: #29251f;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, padding 140ms ease;
+}
+.campaign-access-rows > button + button {
+  border-top: 1px solid rgba(57, 51, 43, 0.2);
+}
+.campaign-access-rows > button:hover {
+  padding-right: 8px;
+  padding-left: 8px;
+  background: rgba(255, 255, 255, 0.48);
+}
+.campaign-access-role {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(57, 51, 43, 0.34);
+  background: rgba(57, 51, 43, 0.08);
+  color: #4f4940;
+}
+.campaign-access-role.is-gm {
+  border-color: rgba(168, 20, 28, 0.34);
+  background: rgba(168, 20, 28, 0.09);
+  color: #941a20;
+}
+.campaign-access-role svg,
+.campaign-access-rows > button > svg {
+  width: 18px;
+  height: 18px;
+}
+.campaign-access-name {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.campaign-access-name strong,
+.campaign-access-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.campaign-access-name strong { font-size: 14px; }
+.campaign-access-name small {
+  color: #746b60;
+  font-size: 12px;
+}
+.campaign-access-rows > button > svg { color: #8b8277; }
+
+.participation-notice {
+  padding-left: 14px;
+  border-left: 3px solid #38724b;
+}
+.participation-notice > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #346044;
+  font-size: 12px;
+  font-weight: 800;
+}
+.participation-notice > span svg { width: 17px; height: 17px; }
+.participation-notice > strong { font-size: 18px; }
+.participation-notice > p {
+  margin: 0;
+  color: #655d52;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
 /* Approval reminder popup */
 .approval-notice-overlay {
   position: fixed;

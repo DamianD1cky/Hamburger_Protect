@@ -43,31 +43,31 @@ function toRequest(r: RemoteRequest): CampaignJoinRequest {
     reviewNote: r.review_note,
   };
 }
-export async function getActiveCampaign(): Promise<ActiveCampaignAccess | null> {
+export async function getActiveCampaigns(): Promise<ActiveCampaignAccess[]> {
   const session = await requireSupabaseSession();
   const { data, error } = await requireSupabase()
     .from("campaign_members")
     .select(
-      "campaign_id,role,character_name,job_title,campaign:campaigns(name,join_code,status)",
+      "campaign_id,role,character_name,job_title,joined_at,campaign:campaigns!inner(name,join_code,status)",
     )
     .eq("user_id", session.user.id)
     .eq("active", true)
-    .limit(1)
-    .maybeSingle();
+    .eq("campaign.status", "active")
+    .order("joined_at", { ascending: false });
   if (error) throw error;
-  if (!data) return null;
-  const row = data as unknown as {
+  const rows = data as unknown as Array<{
     campaign_id: string;
     role: ActiveCampaignAccess["role"];
     character_name: string;
     job_title: EmployeePosition;
+    joined_at: string;
     campaign: {
       name: string;
       join_code: string;
       status: "active" | "archived";
     };
-  };
-  return {
+  }>;
+  return rows.map((row) => ({
     campaignId: row.campaign_id,
     name: row.campaign.name,
     joinCode: row.campaign.join_code,
@@ -75,7 +75,8 @@ export async function getActiveCampaign(): Promise<ActiveCampaignAccess | null> 
     role: row.role,
     characterName: row.character_name,
     jobTitle: row.job_title,
-  };
+    joinedAt: row.joined_at,
+  }));
 }
 interface GmAccessRow {
   user_id: string;
@@ -156,7 +157,9 @@ export async function joinCampaign(input: {
   profileText: string;
 }) {
   await requireSupabaseSession();
-  if (await getActiveCampaign())
+  if (
+    (await getActiveCampaigns()).some((campaign) => campaign.role === "player")
+  )
     throw new Error("ONE_ACTIVE_CAMPAIGN_PER_PLAYER");
   await rpc("request_campaign_join", {
     p_join_code: input.joinCode.trim().toUpperCase(),

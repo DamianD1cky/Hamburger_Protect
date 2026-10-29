@@ -26,15 +26,24 @@ import {
   GM_PASSWORD_MIN_LENGTH,
   type GmAccess,
   type CampaignJoinRequest,
+  type ActiveCampaignAccess,
 } from "../data/campaignAccess";
 
 const employeePositions = ["厨师", "维修师", "服务员", "顾客"] as const;
+
+function campaignRoleLabel(campaign: ActiveCampaignAccess) {
+  if (campaign.role === "gm") return "GM / 店长";
+  if (campaign.role === "player") return campaign.jobTitle;
+  return "观察者";
+}
 
 interface AccessPortalProps {
   session: AppSession | null;
   legacyCutoff?: boolean;
   gmAccess: GmAccess | null;
+  activeCampaigns: ActiveCampaignAccess[];
   joinRequest: CampaignJoinRequest | null;
+  onEnterCampaign: (campaignId: string) => void;
   onRefreshJoinRequest: () => Promise<void>;
   onCancelJoinRequest: (id: string) => Promise<void>;
   onRefreshGmAccess: () => Promise<void>;
@@ -63,7 +72,9 @@ export function AccessPortal({
   session,
   legacyCutoff = false,
   gmAccess,
+  activeCampaigns,
   joinRequest,
+  onEnterCampaign,
   onRefreshJoinRequest,
   onCancelJoinRequest,
   onRefreshGmAccess,
@@ -136,7 +147,7 @@ export function AccessPortal({
         body:
           joinRequest.status === "rejected"
             ? "你的入店申请未通过。请先联系 GM 核对身份与班次码，确认后再重新提交。"
-            : "你的入店申请已提交。批准前无法访问公告板，请先联系 GM 核对身份；批准后会自动进入公告板。",
+            : "你的入店申请已提交。批准前无法访问公告板，请先联系 GM 核对身份；批准后会出现在「进行中的战役」列表。",
       });
       return;
     }
@@ -207,17 +218,14 @@ export function AccessPortal({
     gmAccess?.accountName?.replace(/@.*$/, "") ||
     session?.user?.email?.replace(/@.*$/, "") ||
     "";
+  const activePlayerCampaign = activeCampaigns.find(
+    (campaign) => campaign.role === "player",
+  );
   const heading = !session
     ? signedOutMode === "signup"
       ? "注册账号"
       : "账号登录"
-    : joinRequest
-      ? "入店申请"
-      : accountTab === "gm"
-        ? gmAccess?.status === "approved"
-          ? "创建战役"
-          : "申请成为 GM"
-        : "加入战役";
+    : "账号与战役";
 
   return (
     <div className="access-screen">
@@ -408,32 +416,96 @@ export function AccessPortal({
                 </button>
               </div>
 
-              {!joinRequest && (
-                <div className="access-tabs" role="tablist" aria-label="游玩方式">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={accountTab === "employee"}
-                    className={accountTab === "employee" ? "is-active" : ""}
-                    onClick={() => setAccountTab("employee")}
-                  >
-                    <UserRound aria-hidden="true" />
-                    员工
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={accountTab === "gm"}
-                    className={accountTab === "gm" ? "is-active" : ""}
-                    onClick={() => setAccountTab("gm")}
-                  >
-                    <Store aria-hidden="true" />
-                    GM / 店长
-                  </button>
-                </div>
+              {activeCampaigns.length > 0 && (
+                <section
+                  className="campaign-access-list"
+                  aria-labelledby="active-campaigns-title"
+                >
+                  <header>
+                    <div>
+                      <small>选择本次要使用的战役角色</small>
+                      <h3 id="active-campaigns-title">进行中的战役</h3>
+                    </div>
+                    <span>{activeCampaigns.length} 场</span>
+                  </header>
+                  <div className="campaign-access-rows">
+                    {activeCampaigns.map((campaign) => (
+                      <button
+                        type="button"
+                        key={campaign.campaignId}
+                        onClick={() => onEnterCampaign(campaign.campaignId)}
+                      >
+                        <span
+                          className={`campaign-access-role is-${campaign.role}`}
+                        >
+                          {campaign.role === "gm" ? (
+                            <Store aria-hidden="true" />
+                          ) : (
+                            <UserRound aria-hidden="true" />
+                          )}
+                        </span>
+                        <span className="campaign-access-name">
+                          <strong>{campaign.name}</strong>
+                          <small>
+                            {campaign.characterName} ·{" "}
+                            {campaignRoleLabel(campaign)}
+                          </small>
+                        </span>
+                        <ArrowRight aria-hidden="true" />
+                      </button>
+                    ))}
+                  </div>
+                </section>
               )}
 
-              {joinRequest ? (
+              <div className="access-tabs" role="tablist" aria-label="游玩方式">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={accountTab === "employee"}
+                  className={accountTab === "employee" ? "is-active" : ""}
+                  onClick={() => setAccountTab("employee")}
+                >
+                  <UserRound aria-hidden="true" />
+                  员工参与
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={accountTab === "gm"}
+                  className={accountTab === "gm" ? "is-active" : ""}
+                  onClick={() => setAccountTab("gm")}
+                >
+                  <Store aria-hidden="true" />
+                  GM / 店长
+                </button>
+              </div>
+
+              {accountTab === "employee" ? (
+                activePlayerCampaign ? (
+                  <div className="access-form participation-notice">
+                    <span>
+                      <BadgeCheck aria-hidden="true" />
+                      当前员工战役
+                    </span>
+                    <strong>{activePlayerCampaign.name}</strong>
+                    <p>
+                      {activePlayerCampaign.characterName}（
+                      {activePlayerCampaign.jobTitle}）。
+                      一个账号同时只能以员工身份参与一场进行中的战役，但不影响你管理其他战役。
+                    </p>
+                    <button
+                      className="access-submit"
+                      type="button"
+                      onClick={() =>
+                        onEnterCampaign(activePlayerCampaign.campaignId)
+                      }
+                    >
+                      继续以员工身份进入
+                      <ArrowRight aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : joinRequest ? (
                 <div className="access-form gm-approval" aria-live="polite">
                   <dl>
                     <dt>申请班次</dt>
@@ -478,8 +550,8 @@ export function AccessPortal({
                     </button>
                   )}
                 </div>
-              ) : accountTab === "employee" ? (
-                <form className="access-form" onSubmit={submitJoin} {...imeGuard}>
+                ) : (
+                  <form className="access-form" onSubmit={submitJoin} {...imeGuard}>
                   <label>
                     <span>本场角色名</span>
                     <input
@@ -543,6 +615,7 @@ export function AccessPortal({
                     {!busy && <ArrowRight aria-hidden="true" />}
                   </button>
                 </form>
+                )
               ) : gmAccess?.status === "approved" ? (
                 <form className="access-form" onSubmit={submitCampaign} {...imeGuard}>
                   <label>
