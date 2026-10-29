@@ -85,9 +85,10 @@ export function RoomSettingsDialog({
       className="room-settings-dialog"
       onClose={onClose}
     >
-      <p className="editor-help">
+      <p className="editor-help room-settings-help">
         标题、显隐与图片是本房间的共享配置。隐藏区块保留全部数据，可随时恢复。
       </p>
+      <div className="room-settings-grid">
       <section className="public-access-setting">
         <div>
           <Globe2 aria-hidden="true" />
@@ -149,7 +150,7 @@ export function RoomSettingsDialog({
         <Users />
         管理成员与角色资料
       </button>
-      <section className="room-settings-section">
+      <section className="room-settings-section board-sections-setting">
         <header>
           <div>
             <small>显示文字与可见区域</small>
@@ -280,6 +281,7 @@ export function RoomSettingsDialog({
           )}
         </div>
       </section>
+      </div>
       {error && (
         <p className="access-error" role="alert">
           {error}

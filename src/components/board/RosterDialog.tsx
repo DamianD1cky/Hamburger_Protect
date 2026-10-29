@@ -203,7 +203,7 @@ function MemberDetail({
               value={profileText}
               onChange={(event) => setProfileText(event.target.value)}
               maxLength={2000}
-              rows={6}
+              rows={4}
             />
           </label>
           <div className="member-detail-actions">
@@ -298,6 +298,7 @@ export function RosterDialog({
       className="roster-dialog"
       onClose={onClose}
     >
+      <div className={joinInbox ? "roster-shell has-inbox" : "roster-shell"}>
       {joinInbox && (
         <section className="join-request-inbox" aria-label="待审批入店申请">
           <div className="join-inbox-heading">
@@ -386,6 +387,7 @@ export function RosterDialog({
             onRemoveMember={onRemoveMember}
           />
         )}
+      </div>
       </div>
     </PaperDialog>
   );

@@ -39,7 +39,11 @@ export function NotesDialog({
     }
   };
   return (
-    <PaperDialog title={`全部便签 · ${notes.length} 条`} onClose={onClose}>
+    <PaperDialog
+      title={`全部便签 · ${notes.length} 条`}
+      className="directory-dialog notes-dialog"
+      onClose={onClose}
+    >
       <p className="editor-help">
         置顶便签优先并显示在公告板便签堆顶层，其余按发布时间从新到旧排列。
       </p>

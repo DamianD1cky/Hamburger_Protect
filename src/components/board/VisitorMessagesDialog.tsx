@@ -71,6 +71,7 @@ export function VisitorMessagesDialog({
       <p className="editor-help">
         留言与内部工作便签分开保存。访客只能新增留言，不能修改公告板内容。
       </p>
+      <div className="visitor-layout">
       <form className="visitor-message-form" onSubmit={submit}>
         <label className="field">
           <span>署名</span>
@@ -88,7 +89,7 @@ export function VisitorMessagesDialog({
           <textarea
             required
             maxLength={500}
-            rows={4}
+            rows={3}
             value={body}
             onChange={(event) => setBody(event.target.value)}
             placeholder="写下对这个房间的留言"
@@ -134,6 +135,7 @@ export function VisitorMessagesDialog({
             )}
           </article>
         ))}
+      </div>
       </div>
     </PaperDialog>
   );

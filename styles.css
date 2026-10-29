@@ -4182,3 +4182,404 @@ textarea:focus-visible {
     justify-content: center;
   }
 }
+
+/* ============================================================
+   One-screen dialogs (2026-10-29)
+   Like the board itself: everything is laid out side-by-side so
+   the whole dialog is visible at once. The header never moves,
+   primary actions are sticky to the bottom of the scroll area,
+   and only genuinely unbounded lists (notes / records / messages)
+   scroll — inside their own pane, never pushing buttons away.
+   ============================================================ */
+
+/* --- Shared shell: fixed header, one internal scroll area --- */
+.paper-dialog {
+  display: flex;
+  width: min(680px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.paper-dialog > .composer-header {
+  flex: 0 0 auto;
+  padding: 16px 22px 11px;
+  background: #f4f1e5;
+}
+.paper-dialog h1 {
+  font-size: 26px;
+}
+.paper-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 22px 18px;
+  scrollbar-color: rgba(60, 50, 35, 0.35) transparent;
+  scrollbar-width: thin;
+}
+/* Primary actions stay reachable even when a pane scrolls. */
+.paper-dialog-body .composer-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin-top: 14px;
+  padding: 12px 0 2px;
+  background: #f4f1e5;
+}
+.paper-dialog .field {
+  margin-top: 10px;
+  gap: 5px;
+}
+.paper-dialog .field input {
+  height: 40px;
+  font-size: 18px;
+}
+.paper-dialog .field textarea {
+  min-height: 72px;
+  font-size: 17px;
+}
+.paper-dialog .field select {
+  height: 42px;
+  font-size: 16px;
+}
+.paper-dialog .editor-help {
+  margin: 6px 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.paper-dialog .text-button,
+.paper-dialog .publish-button {
+  min-height: 40px;
+  padding: 7px 14px;
+  font-size: 15px;
+}
+
+/* Wide, board-like variants */
+.composer-dialog { width: min(720px, calc(100% - 32px)); }
+.editor-dialog.checklist-dialog { width: min(900px, calc(100% - 32px)); }
+.editor-dialog.index-dialog { width: min(880px, calc(100% - 32px)); }
+.resource-dialog { width: min(980px, calc(100% - 32px)); }
+.directory-dialog { width: min(1080px, calc(100% - 32px)); }
+.roster-dialog { width: min(1140px, calc(100% - 32px)); }
+.room-settings-dialog { width: min(1100px, calc(100% - 32px)); }
+.visitor-messages-dialog { width: min(1020px, calc(100% - 32px)); }
+
+/* --- Composer: publish / edit note or quest --- */
+.composer-dialog .compose-type { margin: 10px 0 2px; }
+.composer-dialog .compose-type button { min-height: 40px; }
+.composer-dialog .color-field { margin-top: 12px; }
+
+/* --- Room settings: controls left, board sections right --- */
+.room-settings-help { margin-top: 0; }
+.room-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(270px, 0.82fr) minmax(0, 1.18fr);
+  grid-template-areas:
+    "public sections"
+    "roster sections"
+    "media sections";
+  gap: 12px 22px;
+  align-items: start;
+  margin-top: 8px;
+}
+.room-settings-grid .public-access-setting {
+  grid-area: public;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+}
+.room-settings-grid .public-access-toggle { width: 100%; }
+.room-settings-grid .public-share-button { grid-column: 1; }
+.room-settings-grid .room-roster-shortcut { grid-area: roster; margin: 0; }
+.room-settings-grid .board-sections-setting {
+  grid-area: sections;
+  margin: 0;
+  padding: 2px 0 0;
+  border-top: 0;
+}
+.room-settings-grid .media-settings {
+  grid-area: media;
+  margin: 0;
+  padding: 2px 0 0;
+  border-top: 0;
+}
+.room-settings-section > header { margin-bottom: 8px; }
+.room-settings-section header h2 { font-size: 20px; }
+.section-settings-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+}
+.section-setting-row { grid-template-columns: minmax(0, 1fr) 40px; gap: 8px; }
+.section-setting-row .field { margin-top: 4px; }
+.section-setting-row .field input { height: 36px; font-size: 16px; }
+.visibility-toggle { width: 40px; height: 40px; }
+.media-setting-row { padding: 9px 0; }
+
+/* --- Roster: members | detail | join inbox, side by side --- */
+.roster-shell.has-inbox {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(290px, 0.9fr);
+  gap: 20px;
+  align-items: start;
+}
+.roster-layout { margin-top: 0; gap: 18px; }
+.join-request-inbox {
+  max-height: min(560px, calc(100dvh - 230px));
+  margin-bottom: 0;
+  padding-left: 18px;
+  overflow-y: auto;
+  border-left: 1px solid #b9b09b;
+  scrollbar-width: thin;
+}
+.join-request-row { padding: 12px 0; }
+.join-request-row .field { margin-top: 8px; }
+.roster-member-list {
+  max-height: min(520px, calc(100dvh - 240px));
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.roster-member-list > button { min-height: 50px; }
+.member-detail > header { padding-bottom: 10px; }
+.member-detail header h2 { font-size: 24px; }
+.member-profile-text { min-height: 64px; padding: 12px 14px; }
+.member-removal { margin-top: 12px; padding-top: 12px; }
+.member-detail .editor-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+.member-detail .editor-fields label:has(textarea),
+.member-detail .member-detail-actions { grid-column: 1 / -1; }
+.member-detail-actions { margin-top: 10px; }
+
+/* --- Checklist editor: item left, categories right --- */
+.checklist-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+  gap: 20px;
+  align-items: start;
+}
+.checklist-main .field:first-child { margin-top: 0; }
+.category-manager {
+  margin-top: 0;
+  padding: 0 0 0 18px;
+  border-top: 0;
+  border-left: 1px dashed #988e7e;
+}
+.category-manager .field:first-child { margin-top: 0; }
+.category-actions { margin-top: 10px; }
+/* Index picker: all nine steps in one row */
+.index-dialog .index-picker { grid-template-columns: repeat(9, 1fr); gap: 6px; }
+.index-dialog .index-picker label { min-height: 44px; gap: 4px; font-size: 14px; }
+.index-dialog .index-summary { margin: 10px 0 0; }
+
+/* --- Resource sheet: one compact row per item --- */
+.resource-sheet-body { margin-top: 6px; padding: 12px 16px 6px; }
+.resource-edit-row { padding: 8px 0 10px; }
+.resource-edit-row .editor-fields {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(230px, 1.4fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.resource-edit-row .field { margin-top: 0; }
+.resource-edit-fields { gap: 10px; }
+.resource-edit-actions { flex-wrap: nowrap; margin-top: 0; }
+.resource-read-list li { padding: 7px 0; }
+
+/* --- Directories: notes & activity as board-like grids --- */
+.note-directory,
+.activity-directory {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.note-directory .note-detail { padding: 13px 15px; }
+.note-detail header { padding-bottom: 8px; }
+.note-detail header h2 { font-size: 20px; }
+.note-detail .detail-body { font-size: 15px; line-height: 1.6; }
+.note-detail footer { padding-top: 8px; }
+.activity-entry { padding: 11px 0; }
+.notes-add-button {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  box-shadow: 0 -8px 0 #f4f1e5;
+}
+
+/* --- Visitor messages: write on the left, read on the right --- */
+.visitor-layout {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 10px;
+}
+.visitor-message-form {
+  position: sticky;
+  top: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px;
+}
+.visitor-message-form .publish-button {
+  grid-column: 1;
+  justify-self: stretch;
+  justify-content: center;
+}
+.visitor-message-list {
+  max-height: min(520px, calc(100dvh - 250px));
+  margin-top: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.visitor-message { padding: 11px 44px 11px 4px; }
+
+/* --- Handbook: two-column quick reference --- */
+.handbook-dialog { width: min(880px, 100%); }
+.handbook-dialog > header { padding: 16px 26px 12px; }
+.handbook-motto { margin: 12px 26px; padding: 10px 14px; }
+.handbook-rules {
+  grid-template-columns: 1fr 1fr;
+  gap: 0 26px;
+  padding-bottom: 12px;
+}
+.handbook-rules article { padding: 10px 0; }
+.handbook-dialog > footer { padding: 12px 26px 14px; }
+
+/* Short landscape windows: keep the multi-column layout, tighten rows */
+@media (max-height: 560px) and (min-width: 761px) {
+  .paper-dialog h1 { font-size: 23px; }
+  .paper-dialog > .composer-header { padding-top: 10px; padding-bottom: 8px; }
+  .paper-dialog-body { padding-top: 8px; }
+  .paper-dialog .field textarea { min-height: 52px; }
+}
+
+/* ============================================================
+   Phones: full-screen sheet.
+   One column is unavoidable at this width, so instead we
+   guarantee: header pinned on top, primary actions pinned to
+   the bottom (above the home indicator), exactly one scroll
+   area in between, 44px touch targets and 16px inputs
+   (prevents iOS focus zoom). Nothing is ever off-screen
+   sideways and no button hides below the fold.
+   ============================================================ */
+@media (max-width: 760px) {
+  .paper-dialog {
+    inset: 0 auto auto 0;
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .paper-dialog > .composer-header {
+    padding: calc(10px + env(safe-area-inset-top)) 16px 9px;
+  }
+  .paper-dialog h1 { font-size: 23px; }
+  .paper-dialog-body {
+    padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling: touch;
+  }
+  .paper-dialog .field input,
+  .paper-dialog .field select,
+  .paper-dialog .field textarea,
+  .access-form input,
+  .access-form select,
+  .access-form textarea { font-size: 16px; }
+  .paper-dialog .text-button,
+  .paper-dialog .publish-button,
+  .paper-dialog .icon-button { min-height: 44px; }
+  .paper-dialog-body .composer-actions {
+    padding-bottom: calc(4px + env(safe-area-inset-bottom));
+  }
+  .paper-dialog-body .composer-actions .publish-button { flex: 1; }
+
+  /* Every multi-column layout collapses to a single column */
+  .room-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "public" "roster" "sections" "media";
+  }
+  .section-settings-list { grid-template-columns: minmax(0, 1fr); }
+  .roster-shell.has-inbox { display: flex; flex-direction: column; }
+  .roster-layout { order: 1; }
+  .join-request-inbox {
+    order: 2;
+    max-height: none;
+    padding-left: 0;
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid #b9b09b;
+    padding-top: 14px;
+  }
+  /* Member picker becomes a horizontal chip rail, not a tall list */
+  .roster-member-list {
+    display: flex;
+    max-height: none;
+    padding: 0 0 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid #b9b09b;
+  }
+  .roster-member-list > button {
+    flex: 0 0 148px;
+    min-height: 52px;
+    border: 1px solid #b9b09b;
+    border-radius: 6px;
+  }
+  .roster-member-list .inactive-members { flex: 0 0 auto; margin-top: 0; }
+  .member-detail .editor-fields { grid-template-columns: minmax(0, 1fr); }
+  .checklist-columns { grid-template-columns: minmax(0, 1fr); }
+  .category-manager {
+    padding: 14px 0 0;
+    border-left: 0;
+    border-top: 1px dashed #988e7e;
+  }
+  .index-dialog .index-picker { grid-template-columns: repeat(3, 1fr); }
+  .resource-edit-row .editor-fields { grid-template-columns: minmax(0, 1fr); }
+  .resource-edit-actions { flex-wrap: wrap; }
+  .note-directory,
+  .activity-directory { grid-template-columns: minmax(0, 1fr); }
+  .visitor-layout { grid-template-columns: minmax(0, 1fr); }
+  .visitor-message-form { position: static; }
+  .visitor-message-list { max-height: none; overflow: visible; }
+
+  /* Handbook follows the same full-screen sheet rule */
+  .handbook-overlay { padding: 0; }
+  .handbook-dialog {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+  .handbook-rules { grid-template-columns: minmax(0, 1fr); }
+  .handbook-dialog > header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding-top: calc(12px + env(safe-area-inset-top));
+    background: #f1eddf;
+  }
+
+  /* Full-screen means full width, overriding the wide desktop variants */
+  .paper-dialog.paper-dialog { width: 100%; }
+
+  /* Room settings on phones: label and input share one compact row,
+     so all seven sections nearly fit without scrolling */
+  .room-settings-grid { gap: 8px; }
+  .section-setting-row { align-items: center; }
+  .section-setting-row .field {
+    grid-template-columns: 104px minmax(0, 1fr);
+    align-items: center;
+    margin-top: 2px;
+  }
+  .section-setting-row .field > span { font-size: 12px; }
+  .media-setting-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .media-setting-row .text-button,
+  .media-setting-row .file-button { width: auto; }
+}

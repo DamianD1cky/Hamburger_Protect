@@ -124,6 +124,7 @@ export function ComposerDialog({
   return (
     <PaperDialog
       title={heading}
+      className="composer-dialog"
       onClose={() => {
         if (!submitting) onClose();
       }}
@@ -190,7 +191,7 @@ export function ComposerDialog({
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   maxLength={1000}
-                  rows={6}
+                  rows={4}
                   required
                 />
               </label>

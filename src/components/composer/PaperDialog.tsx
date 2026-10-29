@@ -21,8 +21,10 @@ export function PaperDialog({
     const viewport = window.visualViewport;
     const resize = () => {
       const height = viewport?.height ?? window.innerHeight;
-      dialog.style.maxHeight = `${Math.max(100, height - 24)}px`;
-      dialog.style.top = `${(viewport?.offsetTop ?? 0) + 12}px`;
+      // Phones get a full-screen sheet: no floating card, no wasted margins.
+      const fullScreen = window.innerWidth <= 760;
+      dialog.style.maxHeight = `${Math.max(100, height - (fullScreen ? 0 : 24))}px`;
+      dialog.style.top = `${(viewport?.offsetTop ?? 0) + (fullScreen ? 0 : 12)}px`;
     };
     resize();
     dialog.showModal();
@@ -61,7 +63,7 @@ export function PaperDialog({
           <X />
         </button>
       </header>
-      {children}
+      <div className="paper-dialog-body">{children}</div>
     </dialog>
   );
 }

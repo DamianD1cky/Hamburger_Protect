@@ -172,6 +172,7 @@ export function ResourceSheetDialog({
     <PaperDialog
       title={sheet.title}
       kicker="物资便签"
+      className="resource-dialog"
       onClose={() => {
         if (!busyCount) onClose();
       }}

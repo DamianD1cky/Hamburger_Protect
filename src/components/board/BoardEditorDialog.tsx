@@ -81,6 +81,9 @@ export function BoardEditorDialog({
   return (
     <PaperDialog
       title={kind === "index" ? "调整汉堡屋指数" : "编辑每日检查清单"}
+      className={
+        kind === "index" ? "editor-dialog index-dialog" : "editor-dialog checklist-dialog"
+      }
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -130,7 +133,8 @@ export function BoardEditorDialog({
               )}
             </>
           ) : (
-            <>
+            <div className="checklist-columns">
+              <div className="checklist-main">
               <label className="field">
                 <span>选择条目</span>
                 <select value={id} onChange={(e) => select(e.target.value)}>
@@ -146,7 +150,7 @@ export function BoardEditorDialog({
                 <span>检查内容</span>
                 <textarea
                   aria-label="检查内容"
-                  rows={4}
+                  rows={3}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   maxLength={160}
@@ -167,6 +171,7 @@ export function BoardEditorDialog({
                   ))}
                 </select>
               </label>
+              </div>
               <div className="category-manager">
                 <label className="field">
                   <span>分类管理</span>
@@ -231,7 +236,7 @@ export function BoardEditorDialog({
                   删除分类会把其中的检查项移到「未分类」，不会删除内容或完成状态。
                 </p>
               </div>
-            </>
+            </div>
           )}
         </fieldset>
         {error && (
