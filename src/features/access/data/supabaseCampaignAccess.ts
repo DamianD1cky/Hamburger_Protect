@@ -100,7 +100,9 @@ function toGmAccess(r: GmAccessRow): GmAccess {
 /** Read-only GM status; reading it never creates an application. */
 export async function getGmAccess(): Promise<GmAccess | null> {
   const r = await rpc<GmAccessRow | null>("get_gm_access");
-  return r ? toGmAccess(r) : null;
+  // PostgREST returns a row of null fields (not null) when the function
+  // returns a null composite, so absence is detected by the empty user id.
+  return r?.user_id ? toGmAccess(r) : null;
 }
 /** Explicitly apply for the GM capability on this account. */
 export async function applyForGm(): Promise<GmAccess> {

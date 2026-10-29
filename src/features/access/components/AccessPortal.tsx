@@ -204,8 +204,8 @@ export function AccessPortal({
   };
 
   const accountName =
-    gmAccess?.accountName.replace(/@.*$/, "") ??
-    session?.user?.email?.replace(/@.*$/, "") ??
+    gmAccess?.accountName?.replace(/@.*$/, "") ||
+    session?.user?.email?.replace(/@.*$/, "") ||
     "";
   const heading = !session
     ? signedOutMode === "signup"
