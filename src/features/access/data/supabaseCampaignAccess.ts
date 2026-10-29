@@ -143,12 +143,13 @@ export async function signInAccount(input: {
 export async function createCampaign(input: {
   name: string;
   characterName: string;
-}) {
-  await rpc("create_campaign", {
+}): Promise<string> {
+  const row = await rpc<{ id: string }>("create_campaign", {
     p_name: input.name.trim(),
     p_character_name: input.characterName.trim(),
     p_job_title: "店长",
   });
+  return row.id;
 }
 export async function joinCampaign(input: {
   joinCode: string;

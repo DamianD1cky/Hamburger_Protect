@@ -1,5 +1,6 @@
 import type { AppSession } from "../domain/types";
 import {
+  ArrowLeft,
   ArrowRight,
   BadgeCheck,
   ChefHat,
@@ -7,6 +8,7 @@ import {
   KeyRound,
   LogOut,
   MessageSquare,
+  Plus,
   ShieldAlert,
   Store,
   UserPlus,
@@ -106,6 +108,9 @@ export function AccessPortal({
     session?.user?.displayName ?? "",
   );
   const [pendingVisitId, setPendingVisitId] = useState("");
+  // Accounts with campaigns land on the campaign list only; starting a
+  // new campaign is an explicit step away from that list.
+  const [startNew, setStartNew] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<{ title: string; body: string } | null>(
@@ -126,6 +131,12 @@ export function AccessPortal({
     setCharacterName((current) => current || session.user.displayName);
     setGmCharacterName((current) => current || session.user.displayName);
   }, [session?.user]);
+
+  // Once a join request is approved, fall back to the campaign list,
+  // where the newly joined campaign now appears.
+  useEffect(() => {
+    if (joinRequest?.status === "approved") setStartNew(false);
+  }, [joinRequest?.status]);
 
   // A public room picked before signing in opens right afterwards.
   useEffect(() => {
@@ -221,11 +232,65 @@ export function AccessPortal({
   const activePlayerCampaign = activeCampaigns.find(
     (campaign) => campaign.role === "player",
   );
+  const showCampaignHome = Boolean(
+    session && activeCampaigns.length > 0 && !startNew,
+  );
   const heading = !session
     ? signedOutMode === "signup"
       ? "注册账号"
       : "账号登录"
-    : "账号与战役";
+    : showCampaignHome
+      ? "我的战役"
+      : accountTab === "gm"
+        ? gmAccess?.status === "approved"
+          ? "创建战役"
+          : "申请成为 GM"
+        : joinRequest
+          ? "入店申请"
+          : "加入战役";
+
+  const joinRequestPanel = joinRequest ? (
+    <div className="access-form gm-approval" aria-live="polite">
+      <dl>
+        <dt>申请班次</dt>
+        <dd>{joinRequest.campaignName}</dd>
+        <dt>角色与岗位</dt>
+        <dd>
+          {joinRequest.characterName}（{joinRequest.jobTitle}）
+        </dd>
+        <dt>审批状态</dt>
+        <dd>
+          {joinRequest.status === "pending"
+            ? "等待 GM 审批"
+            : joinRequest.status === "approved"
+              ? "GM 已批准，正在核对排班"
+              : "入店申请未通过"}
+        </dd>
+      </dl>
+      {joinRequest.status === "rejected" && (
+        <p>请联系 GM 核对申请。同一账号重复提交不会重置审批结果。</p>
+      )}
+      {joinRequest.reviewNote && <p>GM 备注：{joinRequest.reviewNote}</p>}
+      <button
+        className="access-submit"
+        type="button"
+        disabled={busy}
+        onClick={() => void run(onRefreshJoinRequest)}
+      >
+        {busy ? "正在查询" : "刷新入店审批结果"}
+      </button>
+      {joinRequest.status === "pending" && (
+        <button
+          className="access-signout"
+          type="button"
+          disabled={busy}
+          onClick={() => void run(() => onCancelJoinRequest(joinRequest.id))}
+        >
+          撤回入店申请
+        </button>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div className="access-screen">
@@ -416,48 +481,62 @@ export function AccessPortal({
                 </button>
               </div>
 
-              {activeCampaigns.length > 0 && (
-                <section
-                  className="campaign-access-list"
-                  aria-labelledby="active-campaigns-title"
-                >
-                  <header>
-                    <div>
-                      <small>选择本次要使用的战役角色</small>
-                      <h3 id="active-campaigns-title">进行中的战役</h3>
-                    </div>
-                    <span>{activeCampaigns.length} 场</span>
-                  </header>
-                  <div className="campaign-access-rows">
-                    {activeCampaigns.map((campaign) => (
-                      <button
-                        type="button"
-                        key={campaign.campaignId}
-                        onClick={() => onEnterCampaign(campaign.campaignId)}
-                      >
-                        <span
-                          className={`campaign-access-role is-${campaign.role}`}
+              {showCampaignHome ? (
+                <>
+                  <section
+                    className="campaign-access-list"
+                    aria-label="进行中的战役"
+                  >
+                    <div className="campaign-access-rows">
+                      {activeCampaigns.map((campaign) => (
+                        <button
+                          type="button"
+                          key={campaign.campaignId}
+                          onClick={() => onEnterCampaign(campaign.campaignId)}
                         >
-                          {campaign.role === "gm" ? (
-                            <Store aria-hidden="true" />
-                          ) : (
-                            <UserRound aria-hidden="true" />
-                          )}
-                        </span>
-                        <span className="campaign-access-name">
-                          <strong>{campaign.name}</strong>
-                          <small>
-                            {campaign.characterName} ·{" "}
-                            {campaignRoleLabel(campaign)}
-                          </small>
-                        </span>
-                        <ArrowRight aria-hidden="true" />
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-
+                          <span
+                            className={`campaign-access-role is-${campaign.role}`}
+                          >
+                            {campaign.role === "gm" ? (
+                              <Store aria-hidden="true" />
+                            ) : (
+                              <UserRound aria-hidden="true" />
+                            )}
+                          </span>
+                          <span className="campaign-access-name">
+                            <strong>{campaign.name}</strong>
+                            <small>
+                              {campaign.characterName}　
+                              {campaignRoleLabel(campaign)}
+                            </small>
+                          </span>
+                          <ArrowRight aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                  {joinRequestPanel}
+                  <button
+                    className="access-submit campaign-start-new"
+                    type="button"
+                    onClick={() => setStartNew(true)}
+                  >
+                    重新开始战役
+                    <Plus aria-hidden="true" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  {activeCampaigns.length > 0 && (
+                    <button
+                      className="access-signout campaign-back"
+                      type="button"
+                      onClick={() => setStartNew(false)}
+                    >
+                      <ArrowLeft aria-hidden="true" />
+                      返回我的战役
+                    </button>
+                  )}
               <div className="access-tabs" role="tablist" aria-label="游玩方式">
                 <button
                   type="button"
@@ -506,50 +585,7 @@ export function AccessPortal({
                     </button>
                   </div>
                 ) : joinRequest ? (
-                <div className="access-form gm-approval" aria-live="polite">
-                  <dl>
-                    <dt>申请班次</dt>
-                    <dd>{joinRequest.campaignName}</dd>
-                    <dt>角色与岗位</dt>
-                    <dd>
-                      {joinRequest.characterName}（{joinRequest.jobTitle}）
-                    </dd>
-                    <dt>审批状态</dt>
-                    <dd>
-                      {joinRequest.status === "pending"
-                        ? "等待 GM 审批"
-                        : joinRequest.status === "approved"
-                          ? "GM 已批准，正在核对排班"
-                          : "入店申请未通过"}
-                    </dd>
-                  </dl>
-                  {joinRequest.status === "rejected" && (
-                    <p>请联系 GM 核对申请。同一账号重复提交不会重置审批结果。</p>
-                  )}
-                  {joinRequest.reviewNote && (
-                    <p>GM 备注：{joinRequest.reviewNote}</p>
-                  )}
-                  <button
-                    className="access-submit"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void run(onRefreshJoinRequest)}
-                  >
-                    {busy ? "正在查询" : "刷新入店审批结果"}
-                  </button>
-                  {joinRequest.status === "pending" && (
-                    <button
-                      className="access-signout"
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        void run(() => onCancelJoinRequest(joinRequest.id))
-                      }
-                    >
-                      撤回入店申请
-                    </button>
-                  )}
-                </div>
+                  joinRequestPanel
                 ) : (
                   <form className="access-form" onSubmit={submitJoin} {...imeGuard}>
                   <label>
@@ -685,6 +721,8 @@ export function AccessPortal({
                     {!busy && <UserPlus aria-hidden="true" />}
                   </button>
                 </div>
+              )}
+                </>
               )}
             </>
           )}

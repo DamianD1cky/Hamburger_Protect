@@ -342,8 +342,9 @@ function CloudCampaignApp() {
       }}
       onSignOut={handleSignOut}
       onCreateCampaign={async (name, characterName) => {
-        await createCampaign({ name, characterName });
+        const campaignId = await createCampaign({ name, characterName });
         await refreshAccess();
+        setSelectedCampaignId(campaignId);
       }}
       onJoinCampaign={async (input: {
         joinCode: string;

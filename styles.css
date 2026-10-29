@@ -4629,6 +4629,14 @@ textarea:focus-visible {
 .campaign-access-list {
   margin-top: 22px;
 }
+.campaign-start-new { margin-top: 18px; width: 100%; }
+.campaign-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 14px;
+}
+.campaign-back svg { width: 15px; height: 15px; }
 .campaign-access-list > header {
   display: flex;
   align-items: flex-end;
