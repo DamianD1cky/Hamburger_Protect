@@ -2895,6 +2895,9 @@ textarea:focus-visible {
     padding: 39px 24px 22px;
     touch-action: none;
     user-select: none;
+    /* iOS keeps a long-press callout / selection menu unless this is off,
+       which otherwise interrupts a touch drag halfway through. */
+    -webkit-touch-callout: none;
     will-change: transform;
   }
   .user-note h3 {
