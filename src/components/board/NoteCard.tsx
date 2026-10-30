@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   type KeyboardEvent,
   type PointerEvent,
@@ -40,14 +41,48 @@ export function NoteCard({
     null,
   );
 
+  const playFeedback = (element: HTMLElement, className: string) => {
+    element.classList.remove(className);
+    void element.offsetWidth;
+    element.classList.add(className);
+    element.addEventListener(
+      "animationend",
+      () => element.classList.remove(className),
+      { once: true },
+    );
+  };
+
   // One cancel path for Escape / pointercancel / failed save: put the note
   // back at its server coordinates and fully reset the drag state machine.
-  const cancelDrag = () => {
+  const cancelDrag = (animate = true) => {
     const element = elementRef.current;
+    const pointerId = dragRef.current.pointerId;
     if (element) {
+      const currentX = Number.parseFloat(element.style.left);
+      const currentY = Number.parseFloat(element.style.top);
+      if (pointerId >= 0 && element.hasPointerCapture(pointerId)) {
+        element.releasePointerCapture(pointerId);
+      }
+      element.classList.remove("is-dragging", "is-settling");
       element.style.left = note.x + "px";
       element.style.top = note.y + "px";
       element.style.zIndex = "";
+      const dx = (Number.isFinite(currentX) ? currentX : note.x) - note.x;
+      const dy = (Number.isFinite(currentY) ? currentY : note.y) - note.y;
+      if (animate && !window.matchMedia("(prefers-reduced-motion: reduce)").matches &&
+          (Math.abs(dx) > 1 || Math.abs(dy) > 1)) {
+        const rollback = element.animate(
+          [{ translate: `${dx}px ${dy}px` }, { translate: "0 0" }],
+          {
+            duration: 240,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+          },
+        );
+        void rollback.finished.then(
+          () => rollback.cancel(),
+          () => rollback.cancel(),
+        );
+      }
     }
     dragRef.current.pointerId = -1;
     dragRef.current.moved = false;
@@ -56,6 +91,14 @@ export function NoteCard({
       escapeListener.current = null;
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (escapeListener.current) {
+        window.removeEventListener("keydown", escapeListener.current, true);
+      }
+    };
+  }, []);
 
   const handlePointerDown = (event: PointerEvent<HTMLElement>) => {
     if (
@@ -74,6 +117,7 @@ export function NoteCard({
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.style.zIndex = "20";
+    event.currentTarget.classList.add("is-dragging");
     event.preventDefault();
     const onEscape = (keyEvent: globalThis.KeyboardEvent) => {
       if (keyEvent.key !== "Escape") return;
@@ -99,11 +143,13 @@ export function NoteCard({
 
   const handlePointerUp = (event: PointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
+    const element = event.currentTarget;
     if (event.pointerId !== drag.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     event.currentTarget.style.zIndex = "";
+    event.currentTarget.classList.remove("is-dragging");
     drag.pointerId = -1;
     if (escapeListener.current) {
       window.removeEventListener("keydown", escapeListener.current, true);
@@ -112,11 +158,16 @@ export function NoteCard({
 
     if (drag.moved) {
       drag.moved = false;
+      playFeedback(event.currentTarget, "is-settling");
       const x = Math.round(Number.parseFloat(event.currentTarget.style.left));
       const y = Math.round(Number.parseFloat(event.currentTarget.style.top));
       // If the save fails, roll back to the server coordinates instead of
       // leaving the note stranded at the dropped position.
-      void onMove(note.id, x, y).catch(() => cancelDrag());
+      void onMove(note.id, x, y)
+        .then(() => {
+          if (element.isConnected) playFeedback(element, "is-saved");
+        })
+        .catch(() => cancelDrag());
     } else {
       onEdit(note, event.currentTarget);
     }

@@ -20,6 +20,31 @@ import type {
   QuestStatus,
 } from "../domain/types";
 
+/** Shared with navigation so the prepared board is the mounted view's cache. */
+export function campaignBoardQueryOptions(
+  requestedCampaignId: string,
+  publicView = false,
+) {
+  const session = getSupabaseAppSession();
+  const cloudEnabled = backend !== "local";
+  return {
+    queryKey: [
+      "campaign-board",
+      backend,
+      publicView ? "public" : session?.user.authUserId,
+      publicView ? "visitor" : (session?.user.id ?? "demo"),
+      requestedCampaignId,
+    ] as const,
+    queryFn: () =>
+      publicView && cloudEnabled
+        ? getPublicCampaignBoard(requestedCampaignId)
+        : (cloudEnabled ? supabaseCampaignRepository : localCampaignRepository)
+          .getBoard(requestedCampaignId),
+    staleTime: cloudEnabled ? 5_000 : Number.POSITIVE_INFINITY,
+    retry: 1,
+  };
+}
+
 export function useCampaignBoard(
   requestedCampaignId = defaultBoard.campaign.id,
   publicView = false,
@@ -30,23 +55,13 @@ export function useCampaignBoard(
   const repository = cloudEnabled
     ? supabaseCampaignRepository
     : localCampaignRepository;
-  const boardKey = [
-    "campaign-board",
-    backend,
-    publicView ? "public" : session?.user.authUserId,
-    publicView ? "visitor" : (session?.user?.id ?? "demo"),
-    requestedCampaignId,
-  ] as const;
+  const options = campaignBoardQueryOptions(requestedCampaignId, publicView);
+  const boardKey = options.queryKey;
   const query = useQuery({
-    queryKey: boardKey,
-    queryFn: () =>
-      publicView && cloudEnabled
-        ? getPublicCampaignBoard(requestedCampaignId)
-        : repository.getBoard(requestedCampaignId),
+    ...options,
     placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
     refetchInterval: cloudEnabled ? 5_000 : false,
     refetchIntervalInBackground: false,
-    staleTime: cloudEnabled ? 5_000 : Number.POSITIVE_INFINITY,
   });
   const board = query.data;
   const campaignId = board?.campaign.id ?? requestedCampaignId;

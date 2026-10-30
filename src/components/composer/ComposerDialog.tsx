@@ -1,5 +1,5 @@
 import { ClipboardList, MessageSquare, Send, Trash2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   CampaignBoard,
   ComposerTarget,
@@ -59,6 +59,8 @@ export function ComposerDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<number | undefined>(undefined);
   const canManage =
     board.viewer.role === "gm" && board.campaign.status === "active";
   const canEdit =
@@ -78,6 +80,20 @@ export function ComposerDialog({
       : kind === "quest"
         ? "发布工作指示"
         : "填写便签";
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+  const requestClose = () => {
+    if (closing) return;
+    const animate =
+      Boolean(state.sourceRect) &&
+      window.matchMedia("(min-width: 761px)").matches &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!animate) {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    closeTimer.current = window.setTimeout(onClose, 220);
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting || !canEdit || !title.trim() || !body.trim()) return;
@@ -99,7 +115,7 @@ export function ComposerDialog({
           { title: title.trim(), body: body.trim(), color },
           state.target?.id,
         );
-      onClose();
+      requestClose();
     } catch {
       setError("保存失败，请检查网络或修改权限后重试。草稿已保留。");
     } finally {
@@ -116,7 +132,7 @@ export function ComposerDialog({
     setError("");
     try {
       await onDelete(state.target);
-      onClose();
+      requestClose();
     } catch {
       setError("删除失败，请刷新后重试。");
     } finally {
@@ -127,8 +143,10 @@ export function ComposerDialog({
     <PaperDialog
       title={heading}
       className="composer-dialog"
+      sourceRect={state.sourceRect}
+      closing={closing}
       onClose={() => {
-        if (!submitting) onClose();
+        if (!submitting) requestClose();
       }}
     >
       {!canEdit ? (
@@ -145,7 +163,7 @@ export function ComposerDialog({
               <dd>{quest.due || "未指定"}</dd>
             </dl>
           )}
-          <button type="button" className="text-button" onClick={onClose}>
+          <button type="button" className="text-button" onClick={requestClose}>
             返回公告板
           </button>
         </div>
@@ -258,7 +276,7 @@ export function ComposerDialog({
                 type="button"
                 className="text-button"
                 disabled={submitting}
-                onClick={onClose}
+                onClick={requestClose}
               >
                 取消
               </button>

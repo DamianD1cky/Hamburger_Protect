@@ -16,6 +16,7 @@
     "supabase:status": "supabase status",
     "supabase:push": "supabase db push",
     "check:access-ui": "node scripts/tests/access-ui.mjs",
+    "check:motion-ui": "node scripts/tests/motion-ui.mjs",
     "check:accounts": "node --test scripts/tests/accounts.mjs",
     "check:database": "node scripts/tests/database.mjs",
     "check:migration": "node scripts/tests/migration.mjs",

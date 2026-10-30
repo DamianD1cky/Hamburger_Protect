@@ -43,7 +43,7 @@ import {
   signOut,
   submitVisitorMessage,
 } from "../features/access/data/campaignAccess";
-import { clearStuckIdentities } from "../features/access/data/supabaseSession";
+import { clearStuckIdentities, getSupabaseAppSession } from "../features/access/data/supabaseSession";
 import { useAuthSession } from "../features/access/hooks/useAuthSession";
 import { defaultBoard } from "../features/campaign/domain/defaults";
 import type {
@@ -51,16 +51,17 @@ import type {
   Quest,
   QuestStatus,
 } from "../features/campaign/domain/types";
-import { useCampaignBoard } from "../features/campaign/hooks/useCampaignBoard";
+import { campaignBoardQueryOptions, useCampaignBoard } from "../features/campaign/hooks/useCampaignBoard";
+import { transitionCampaignView } from "../lib/motion";
+import { MotionText } from "../components/MotionText";
 import { useBoardViewport } from "../hooks/useBoardViewport";
 import { backend, backendError } from "../lib/backend";
 import { rpc } from "../lib/supabase/client";
 
-const BoardScene = lazy(() =>
-  import("../components/board/BoardScene").then((module) => ({
-    default: module.BoardScene,
-  })),
+const loadBoardScene = () => import("../components/board/BoardScene").then(
+  (module) => ({ default: module.BoardScene }),
 );
+const BoardScene = lazy(loadBoardScene);
 const ComposerDialog = lazy(() =>
   import("../components/composer/ComposerDialog").then((module) => ({
     default: module.ComposerDialog,
@@ -163,6 +164,9 @@ function CloudCampaignApp() {
     }
   }, [session?.user.id, session?.user.authUserId, queryClient]);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [enteringCampaignId, setEnteringCampaignId] = useState("");
+  const [navigationError, setNavigationError] = useState("");
+  const navigationLock = useRef(false);
   const [publicCampaignId, setPublicCampaignId] = useState(
     () => new URLSearchParams(window.location.search).get("visit") ?? "",
   );
@@ -270,6 +274,40 @@ function CloudCampaignApp() {
     queryClient.removeQueries({ queryKey: ["join-inbox"] });
   };
 
+  const enterCampaign = async (campaignId: string, publicView = false) => {
+    if (navigationLock.current || !session) return;
+    navigationLock.current = true;
+    setEnteringCampaignId(campaignId);
+    setNavigationError("");
+    const authId = session.user.authUserId;
+    try {
+      // Load code and data immediately; the old view stays useful on failure.
+      await Promise.all([
+        loadBoardScene(),
+        queryClient.fetchQuery(campaignBoardQueryOptions(campaignId, publicView)),
+      ]);
+      if (getSupabaseAppSession()?.user.authUserId !== authId) return;
+      await transitionCampaignView("enter", campaignId, publicView, () => {
+        if (getSupabaseAppSession()?.user.authUserId !== authId) return;
+        if (publicView) {
+          const url = new URL(window.location.href);
+          url.search = "";
+          url.searchParams.set("visit", campaignId);
+          window.history.pushState(null, "", url);
+          setPublicCampaignId(campaignId);
+        } else {
+          setSelectedCampaignId(campaignId);
+        }
+      });
+    } catch (error) {
+      if (getSupabaseAppSession()?.user.authUserId === authId)
+        setNavigationError(getAccessErrorMessage(error));
+    } finally {
+      navigationLock.current = false;
+      setEnteringCampaignId("");
+    }
+  };
+
   if (auth.loading) return <CloudStatus message="正在恢复登录身份" />;
   if (auth.error)
     return <CloudStatus message={auth.error} retry error resetIdentity />;
@@ -283,12 +321,12 @@ function CloudCampaignApp() {
       <CampaignBoardWorkspace
         campaignId={publicCampaignId}
         publicView
-        onExit={async () => {
+        onExit={() => transitionCampaignView("exit", publicCampaignId, true, () => {
           setPublicCampaignId("");
           const url = new URL(window.location.href);
           url.searchParams.delete("visit");
           window.history.replaceState(null, "", url);
-        }}
+        })}
       />
     );
   }
@@ -307,7 +345,8 @@ function CloudCampaignApp() {
       <CampaignBoardWorkspace
         key={`${session.user.authUserId}:${selectedCampaignId}`}
         campaignId={selectedCampaignId}
-        onExit={async () => setSelectedCampaignId("")}
+        onExit={() => transitionCampaignView("exit", selectedCampaignId, false,
+          () => setSelectedCampaignId(""))}
       />
     );
   }
@@ -322,7 +361,8 @@ function CloudCampaignApp() {
       joinRequest={
         activePlayerCampaign ? null : (joinRequestQuery.data ?? null)
       }
-      onEnterCampaign={setSelectedCampaignId}
+      enteringCampaignId={enteringCampaignId}
+      onEnterCampaign={(id) => void enterCampaign(id)}
       onRefreshJoinRequest={refreshAccess}
       onCancelJoinRequest={async (id) => {
         await cancelCampaignJoin(id);
@@ -334,11 +374,15 @@ function CloudCampaignApp() {
       accessError={
         joinRequestQuery.error || gmAccessQuery.error || accessQuery.error
           ? getAccessErrorMessage(joinRequestQuery.error ?? gmAccessQuery.error ?? accessQuery.error)
-          : ""
+          : navigationError
       }
       publicCampaigns={publicCampaignsQuery.data ?? []}
       publicCampaignsLoading={publicCampaignsQuery.isLoading}
       onVisitPublicCampaign={(campaignId) => {
+        if (session) {
+          void enterCampaign(campaignId, true);
+          return;
+        }
         const url = new URL(window.location.href);
         url.search = "";
         url.searchParams.set("visit", campaignId);
@@ -363,7 +407,7 @@ function CloudCampaignApp() {
       onCreateCampaign={async (name, characterName) => {
         const campaignId = await createCampaign({ name, characterName });
         await refreshAccess();
-        setSelectedCampaignId(campaignId);
+        await enterCampaign(campaignId);
       }}
       onJoinCampaign={async (input: {
         joinCode: string;
@@ -709,7 +753,7 @@ function CampaignBoardWorkspace({
       <div className="shop-status" aria-label="战役状态">
         <span className="status-dot" />
         <span className="shop-status-name">
-          <span className="status-part">{board.campaign.name}</span>
+          <span className="status-part campaign-scene-title">{board.campaign.name}</span>
           <span className="status-part">{board.viewer.displayName}</span>
           <span className="status-part">{roleLabel}</span>
         </span>
@@ -747,7 +791,7 @@ function CampaignBoardWorkspace({
             title="审批玩家入店申请"
           >
             <UserPlus aria-hidden="true" />
-            <span>{joinInbox.data?.total ?? 0}</span>
+            <MotionText value={joinInbox.data?.total ?? 0} />
           </button>
         )}
         {board.viewer.role === "gm" && (
@@ -772,7 +816,7 @@ function CampaignBoardWorkspace({
               title="访客留言"
             >
               <MessageSquare aria-hidden="true" />
-              <span>{visitorMessages.data?.length ?? 0}</span>
+              <MotionText value={visitorMessages.data?.length ?? 0} />
             </button>
           )}
         <button
@@ -823,7 +867,6 @@ function CampaignBoardWorkspace({
                 await campaign.deleteNote(target.id);
                 showToast("工作记录已取下");
               }
-              closeComposer();
             }}
           />
         )}

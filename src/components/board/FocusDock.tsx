@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import type { CampaignSectionKey } from "../../features/campaign/domain/types";
 import type { FocusZone } from "../../hooks/useBoardViewport";
 
@@ -68,8 +69,18 @@ export function FocusDock({
   const visibleItems = items.filter(
     (item) => !item.section || !hiddenSections.includes(item.section),
   );
+  const activeIndex = Math.max(
+    0,
+    visibleItems.findIndex((item) => item.id === active),
+  );
+  const style = {
+    "--focus-index": activeIndex,
+    "--focus-count": visibleItems.length,
+    "--focus-width": `calc(${100 / visibleItems.length}% - ${10 / visibleItems.length}px)`,
+  } as CSSProperties;
   return (
-    <nav className="focus-dock" aria-label="公告板区域">
+    <nav className="focus-dock" aria-label="公告板区域" style={style}>
+      <span className="focus-dock-indicator" aria-hidden="true" />
       {visibleItems.map((item) => {
         const Icon = item.icon;
         return (

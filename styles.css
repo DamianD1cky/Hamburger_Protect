@@ -505,7 +505,10 @@ button {
 }
 
 .task-paper h2 {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   height: 72px;
   margin: 0;
   place-items: center;
@@ -852,11 +855,31 @@ button {
   touch-action: none;
   cursor: grab;
   user-select: none;
-  will-change: transform;
+  scale: 1;
+  transition:
+    scale 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms ease,
+    filter 160ms ease;
+  will-change: transform, scale, left, top;
 }
 
 .user-note[data-pinned="true"] {
   z-index: 10;
+}
+
+.user-note.is-dragging {
+  scale: 1.025;
+  filter: saturate(1.06);
+  box-shadow: 16px 20px 0 rgba(0, 0, 0, 0.24);
+  cursor: grabbing;
+}
+
+.user-note.is-settling {
+  animation: note-settle 190ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.user-note.is-saved::before {
+  animation: pin-confirm 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .user-note:active {
@@ -1370,6 +1393,27 @@ button {
   }
 }
 
+@keyframes note-settle {
+  0% { scale: 1.025; }
+  55% { scale: 0.985; }
+  100% { scale: 1; }
+}
+
+@keyframes pin-confirm {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  45% { transform: translateX(-50%) translateY(3px) scale(0.78); }
+}
+
+@keyframes paper-dialog-backdrop-in {
+  from { background: transparent; }
+  to { background: #141813a6; }
+}
+
+@keyframes paper-dialog-backdrop-out {
+  from { background: #141813a6; }
+  to { background: transparent; }
+}
+
 @media (max-width: 760px) {
   .shop-status {
     top: max(10px, env(safe-area-inset-top));
@@ -1393,7 +1437,7 @@ button {
     left: 10px;
     display: grid;
     height: 58px;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(var(--focus-count), 1fr);
     align-items: center;
     padding: 5px;
     border: 1px solid rgba(255, 255, 255, 0.32);
@@ -2432,7 +2476,7 @@ button {
 .index-current strong {
   font-size: 36px;
 }
-.index-current span {
+.index-current > span {
   font-size: 21px;
 }
 .index-track {
@@ -2504,6 +2548,15 @@ textarea:focus-visible {
 }
 .paper-dialog::backdrop {
   background: #141813a6;
+}
+.paper-dialog.has-origin-motion::backdrop {
+  animation: paper-dialog-backdrop-in 220ms ease-out both;
+}
+.paper-dialog.is-closing {
+  pointer-events: none;
+}
+.paper-dialog.is-closing::backdrop {
+  animation: paper-dialog-backdrop-out 220ms ease-in both;
 }
 .paper-dialog h1 {
   font-size: 28px;
@@ -2898,14 +2951,31 @@ textarea:focus-visible {
     inset: auto 8px max(7px, env(safe-area-inset-bottom));
     display: grid;
     height: 62px;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    padding: 4px;
+    grid-template-columns: repeat(var(--focus-count), minmax(0, 1fr));
+    padding: 5px;
     border: 1px solid #f4f1e570;
     border-radius: 8px;
     background: #252b25;
     box-shadow: 0 5px 20px #0004;
   }
+  .focus-dock-indicator {
+    position: absolute;
+    z-index: 0;
+    top: 5px;
+    bottom: 5px;
+    left: 5px;
+    display: block;
+    width: var(--focus-width);
+    border-radius: 4px;
+    background: #f1eee4;
+    box-shadow: 0 2px 7px rgba(0, 0, 0, 0.18);
+    pointer-events: none;
+    transform: translateX(calc(var(--focus-index) * 100%));
+    transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
   .focus-dock button {
+    position: relative;
+    z-index: 1;
     display: flex;
     width: 100%;
     height: 52px;
@@ -2919,9 +2989,10 @@ textarea:focus-visible {
     background: transparent;
     color: #f4f1e5;
     font-size: 11px;
+    transition: color 180ms ease;
   }
   .focus-dock button.is-active {
-    background: #f4f1e5;
+    background: transparent;
     color: #252b25;
   }
   .focus-dock svg {
@@ -4919,3 +4990,53 @@ textarea:focus-visible {
 
 .account-settings-feedback { position: sticky; top: 0; z-index: 1; background: #f4f1e5; padding: 2px 0; }
 .account-settings-feedback p { margin: 4px 0; }
+
+/* Short status swaps keep the current value available to assistive technology. */
+.motion-text { position: relative; display: inline; }
+.motion-text-value { display: inline-block; }
+.motion-text .motion-text-accessible {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.task-paper h2 .task-count {
+  display: inline-block;
+  font-family: var(--ui-font);
+  font-size: 0.55em;
+  vertical-align: middle;
+  opacity: 0.78;
+}
+.paper-dialog.has-origin-motion { transform-origin: top left; }
+.campaign-access-rows > button:disabled,
+.public-room-list > button:disabled { cursor: wait; }
+
+/* Only explicit campaign navigation gets a transition; auth changes stay immediate. */
+html[data-campaign-transition]::view-transition-group(campaign-title) {
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+html[data-campaign-transition]::view-transition-old(root) {
+  animation: campaign-view-out 180ms ease-out both;
+}
+html[data-campaign-transition]::view-transition-new(root) {
+  animation: campaign-view-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+html[data-campaign-transition="exit"]::view-transition-new(root) {
+  animation-name: campaign-return-in;
+}
+@keyframes campaign-view-out {
+  to { opacity: 0; }
+}
+@keyframes campaign-view-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes campaign-return-in {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}

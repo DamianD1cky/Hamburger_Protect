@@ -55,6 +55,7 @@ interface AccessPortalProps {
   activeCampaigns: ActiveCampaignAccess[];
   joinRequest: CampaignJoinRequest | null;
   onEnterCampaign: (campaignId: string) => void;
+  enteringCampaignId: string;
   onRefreshJoinRequest: () => Promise<void>;
   onCancelJoinRequest: (id: string) => Promise<void>;
   onRefreshGmAccess: () => Promise<void>;
@@ -87,6 +88,7 @@ export function AccessPortal({
   activeCampaigns,
   joinRequest,
   onEnterCampaign,
+  enteringCampaignId,
   onRefreshJoinRequest,
   onCancelJoinRequest,
   onRefreshGmAccess,
@@ -337,6 +339,9 @@ export function AccessPortal({
                   <button
                     type="button"
                     key={campaign.id}
+                    data-campaign-entry={campaign.id}
+                    disabled={Boolean(enteringCampaignId)}
+                    aria-busy={enteringCampaignId === campaign.id || undefined}
                     onClick={() => visitPublicCampaign(campaign.id)}
                   >
                     <span>
@@ -497,6 +502,9 @@ export function AccessPortal({
                         <button
                           type="button"
                           key={campaign.campaignId}
+                          data-campaign-entry={campaign.campaignId}
+                          disabled={Boolean(enteringCampaignId)}
+                          aria-busy={enteringCampaignId === campaign.campaignId || undefined}
                           onClick={() => onEnterCampaign(campaign.campaignId)}
                         >
                           <span
@@ -511,8 +519,9 @@ export function AccessPortal({
                           <span className="campaign-access-name">
                             <strong>{campaign.name}</strong>
                             <small>
-                              {campaign.characterName}　
-                              {campaignRoleLabel(campaign)}
+                              {enteringCampaignId === campaign.campaignId
+                                ? "正在进入战役…"
+                                : `${campaign.characterName}　${campaignRoleLabel(campaign)}`}
                             </small>
                           </span>
                           <ArrowRight aria-hidden="true" />

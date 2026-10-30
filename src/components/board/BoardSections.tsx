@@ -15,6 +15,7 @@ import {
   resourceLabels,
 } from "../../features/campaign/domain/resources";
 import { nextQuestStatus } from "../../features/campaign/domain/types";
+import { MotionText } from "../MotionText";
 
 const questLabels: Record<QuestStatus, string> = {
   open: "可领取",
@@ -209,7 +210,7 @@ function TaskItem({
         <span className="task-meta">
           {quest.assigneeName || "待认领"}
           {quest.due ? "　" + quest.due : ""}
-          <i data-status={quest.status}>　{progressLabel}</i>
+          <i data-status={quest.status}>　<MotionText value={progressLabel} /></i>
         </span>
       </button>
     </div>
@@ -246,7 +247,7 @@ export function TaskSection({
       </div>
       <div className="task-papers">
         <article className="paper task-paper todo-paper">
-          <h2>进行中</h2>
+          <h2>进行中 <small className="task-count"><MotionText value={active.length} /></small></h2>
           <div className="task-list">
             {!active.length && <p className="board-empty">暂无工作指示</p>}
             {active.map((quest) => (
@@ -262,7 +263,7 @@ export function TaskSection({
           </div>
         </article>
         <article className="paper task-paper done-paper">
-          <h2>已完成</h2>
+          <h2>已完成 <small className="task-count"><MotionText value={completed.length} /></small></h2>
           <div className="task-list">
             {!completed.length && <p className="board-empty">暂无完成记录</p>}
             {completed.map((quest) => (
@@ -309,7 +310,7 @@ export function ShiftSection({
         }
         aria-haspopup={canExpand ? "dialog" : undefined}
       >
-        <strong>{active.length} 人在岗</strong>
+        <strong><MotionText value={`${active.length} 人在岗`} /></strong>
         <span className="roster-preview-list">
           {active.slice(0, 3).map((member) => (
             <span key={member.userId}>
@@ -359,8 +360,8 @@ export function BurgerIndexSection({
         )}
       </div>
       <div className="index-current">
-        <strong>{info.label}</strong>
-        <span>{info.service}</span>
+        <strong><MotionText value={info.label} /></strong>
+        <span><MotionText value={info.service} /></span>
       </div>
       <div className="index-track" aria-label={`当前指数 ${info.label}`}>
         {Array.from({ length: 9 }, (_, i) => (
@@ -399,8 +400,7 @@ export function MemoSection({
         aria-haspopup="dialog"
       >
         <strong>
-          {board.activities.length}
-          {board.hasMoreActivity ? "+" : ""} 条操作记录
+          <MotionText value={`${board.activities.length}${board.hasMoreActivity ? "+" : ""} 条操作记录`} />
         </strong>
         {board.activities.slice(0, 2).map((event) => (
           <span key={event.id}>
