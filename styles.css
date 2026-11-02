@@ -3736,8 +3736,7 @@ textarea:focus-visible {
   background-blend-mode: screen;
 }
 
-.roster-dialog,
-.room-settings-dialog {
+.roster-dialog {
   width: min(900px, calc(100% - 24px));
 }
 
@@ -4296,7 +4295,8 @@ textarea:focus-visible {
 .resource-dialog { width: min(980px, calc(100% - 32px)); }
 .directory-dialog { width: min(1080px, calc(100% - 32px)); }
 .roster-dialog { width: min(1140px, calc(100% - 32px)); }
-.room-settings-dialog { width: min(1100px, calc(100% - 32px)); }
+/* 区块设置搬回公告板后只剩 4 组内容，不再需要 1100px 的宽版。 */
+.room-settings-dialog { width: min(860px, calc(100% - 32px)); }
 .visitor-messages-dialog { width: min(1020px, calc(100% - 32px)); }
 
 /* --- Composer: publish / edit note or quest --- */
@@ -4304,16 +4304,14 @@ textarea:focus-visible {
 .composer-dialog .compose-type button { min-height: 40px; }
 .composer-dialog .color-field { margin-top: 12px; }
 
-/* --- Room settings: controls left, board sections right --- */
+/* --- Room settings: controls left, room media right --- */
 .room-settings-grid {
   display: grid;
-  grid-template-columns: minmax(270px, 0.82fr) minmax(0, 1.18fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
-    "name sections"
-    "public sections"
-    "roster sections"
-    "media sections"
-    "titles sections";
+    "name media"
+    "public media"
+    "roster media";
   gap: 12px 22px;
   align-items: start;
   margin-top: 8px;
@@ -4330,18 +4328,6 @@ textarea:focus-visible {
 .room-settings-grid .public-access-toggle { width: 100%; }
 .room-settings-grid .public-share-button { grid-column: 1; }
 .room-settings-grid .room-roster-shortcut { grid-area: roster; margin: 0; }
-.room-settings-grid .board-sections-setting {
-  grid-area: sections;
-  margin: 0;
-  padding: 2px 0 0;
-  border-top: 0;
-}
-.room-settings-grid .resource-titles-setting {
-  grid-area: titles;
-  margin: 0;
-  padding: 2px 0 0;
-  border-top: 0;
-}
 .room-settings-grid .media-settings {
   grid-area: media;
   margin: 0;
@@ -4599,7 +4585,7 @@ textarea:focus-visible {
   /* Every multi-column layout collapses to a single column */
   .room-settings-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "name" "public" "roster" "sections" "media" "titles";
+    grid-template-areas: "name" "public" "roster" "media";
   }
   .section-settings-list { grid-template-columns: minmax(0, 1fr); }
   .roster-shell.has-inbox { display: flex; flex-direction: column; }
@@ -5258,4 +5244,23 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 .sign > .sign-action:hover,
 .index-heading > .sign-action:hover {
   background: rgba(0, 0, 0, 0.22);
+}
+
+/* 顶栏的区块按钮：.shop-status button 默认是 30×30 的 grid，
+   带数字时必须改成横排，否则计数会掉到图标下面。 */
+.shop-status .section-visibility-button {
+  display: flex;
+  width: auto;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+/* 检查清单设置弹窗里跳到检查项编辑器的入口 */
+.section-checklist-shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
 }

@@ -507,7 +507,6 @@ interface SafetySectionProps {
   canManage: boolean;
   canToggle: boolean;
   onToggle: (id: string) => void;
-  onManage: () => void;
   actions?: SectionActions;
 }
 
@@ -519,7 +518,6 @@ export function SafetySection({
   canManage,
   canToggle,
   onToggle,
-  onManage,
   actions,
 }: SafetySectionProps) {
   return (
@@ -529,24 +527,14 @@ export function SafetySection({
         style={color ? titleColorStyle(color) : undefined}
       >
         <span>{title}</span>
-        {canManage && (
-          <button
-            className="sign-action"
-            type="button"
-            onClick={onManage}
-            aria-label="编辑每日检查清单"
-            title="编辑检查项"
-          >
-            <Pencil aria-hidden="true" />
-          </button>
-        )}
         <SectionActionButtons actions={actions} label={title} />
       </div>
       <article className="paper safety-paper">
         <div className="safety-list">
           {!checklist.length && (
             <p className="board-empty">
-              暂无检查项{canManage ? "，点击铅笔添加。" : "，等待 GM 登记。"}
+              暂无检查项
+              {canManage ? "，点标题旁的铅笔进入设置后添加。" : "，等待 GM 登记。"}
             </p>
           )}
           {[...categories, { id: "", name: "未分类" }].map((category) => {

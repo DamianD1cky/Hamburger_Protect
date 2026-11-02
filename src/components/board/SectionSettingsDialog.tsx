@@ -1,4 +1,4 @@
-import { RotateCcw } from "lucide-react";
+import { ListChecks, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import {
   campaignSections,
@@ -26,11 +26,14 @@ export function SectionSettingsDialog({
   board,
   onClose,
   onSave,
+  onEditChecklist,
 }: {
   sectionKey: CampaignSectionKey;
   board: CampaignBoard;
   onClose: () => void;
   onSave: (patch: CampaignSettingsPatch) => Promise<unknown>;
+  /** 只有每日检查清单用到：从同一个弹窗进到检查项编辑器。 */
+  onEditChecklist?: () => void;
 }) {
   const section =
     campaignSections.find((item) => item.id === sectionKey) ??
@@ -181,6 +184,20 @@ export function SectionSettingsDialog({
               />
             </label>
           ))}
+        </section>
+      )}
+
+      {onEditChecklist && (
+        <section className="section-settings-block">
+          <button
+            type="button"
+            className="text-button section-checklist-shortcut"
+            onClick={onEditChecklist}
+            disabled={!editable || busy}
+          >
+            <ListChecks aria-hidden="true" />
+            编辑检查项与分类
+          </button>
         </section>
       )}
 

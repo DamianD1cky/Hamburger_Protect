@@ -1,4 +1,4 @@
-import { List, Pencil, Plus } from "lucide-react";
+import { List, Plus } from "lucide-react";
 import type { MouseEvent, Ref, RefObject } from "react";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
@@ -36,7 +36,6 @@ interface BoardSceneProps {
   worldRef: Ref<HTMLDivElement>;
   viewScaleRef: RefObject<number>;
   onOpenResourceSheet: (group: number) => void;
-  onManageChecklist: () => void;
   onManageIndex: () => void;
   onOpenNotes: () => void;
   onOpenActivity: () => void;
@@ -61,7 +60,6 @@ export function BoardScene({
   worldRef,
   viewScaleRef,
   onOpenResourceSheet,
-  onManageChecklist,
   onManageIndex,
   onOpenNotes,
   onOpenActivity,
@@ -211,7 +209,6 @@ export function BoardScene({
               canManage={canManage}
               canToggle={canUpdateSharedBoard}
               onToggle={onToggleChecklist}
-              onManage={onManageChecklist}
             />
           )}
 
@@ -265,17 +262,6 @@ export function BoardScene({
                     title="填写便签"
                   >
                     <Plus aria-hidden="true" />
-                  </button>
-                )}
-                {canManage && (
-                  <button
-                    className="pin-view"
-                    type="button"
-                    onClick={() => onEditSection("notes")}
-                    aria-label="编辑便签区块的标题与底色"
-                    title="编辑便签区块"
-                  >
-                    <Pencil aria-hidden="true" />
                   </button>
                 )}
               </div>

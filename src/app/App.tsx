@@ -745,7 +745,6 @@ function CampaignBoardWorkspace({
           worldRef={worldRef}
           viewScaleRef={viewScaleRef}
           onOpenResourceSheet={setResourceSheet}
-          onManageChecklist={() => setBoardEditor("checklist")}
           onManageIndex={() => setBoardEditor("index")}
           onExpandRoster={() => setRosterOpen(true)}
           onOpenNotes={() => setNotesOpen(true)}
@@ -833,6 +832,7 @@ function CampaignBoardWorkspace({
         {board.viewer.role === "gm" && (
           <button
             type="button"
+            className="section-visibility-button"
             onClick={() => setSectionVisibilityOpen(true)}
             aria-label={
               "管理公告板区块" +
@@ -1001,6 +1001,14 @@ function CampaignBoardWorkspace({
             sectionKey={sectionSettingsKey}
             board={board}
             onClose={() => setSectionSettingsKey(null)}
+            onEditChecklist={
+              sectionSettingsKey === "safety"
+                ? () => {
+                    setSectionSettingsKey(null);
+                    setBoardEditor("checklist");
+                  }
+                : undefined
+            }
             onSave={async (patch) => {
               await patchBoardSettings(patch);
               showToast("区块设置已保存");
