@@ -11,8 +11,14 @@ import {
 import { useState, type ChangeEvent } from "react";
 import {
   campaignSections,
+  defaultSectionColors,
   defaultSectionTitles,
+  normalizeColor,
 } from "../../features/campaign/domain/campaignSettings";
+import {
+  defaultResourceTitles,
+  resourceGroups,
+} from "../../features/campaign/domain/resources";
 import type {
   CampaignBoard,
   CampaignMediaKind,
@@ -43,6 +49,29 @@ export function RoomSettingsDialog({
     ...defaultSectionTitles,
     ...board.settings.sectionTitles,
   }));
+  const [colors, setColors] = useState<Record<CampaignSectionKey, string>>(
+    () => {
+      const preset = { ...defaultSectionColors };
+      for (const [key, value] of Object.entries(
+        board.settings.sectionColors ?? {},
+      )) {
+        const normalized = normalizeColor(value);
+        if (normalized) preset[key as CampaignSectionKey] = normalized;
+      }
+      return preset;
+    },
+  );
+  const [groupTitles, setGroupTitles] = useState<Record<string, string>>(
+    () => {
+      const preset: Record<string, string> = { ...defaultResourceTitles };
+      for (const [key, value] of Object.entries(
+        board.settings.resourceTitles ?? {},
+      )) {
+        if (value) preset[key] = value;
+      }
+      return preset;
+    },
+  );
   const [hidden, setHidden] = useState<CampaignSectionKey[]>(
     board.settings.hiddenSections,
   );
@@ -170,9 +199,12 @@ export function RoomSettingsDialog({
           <button
             type="button"
             className="icon-button"
-            title="恢复默认标题"
-            aria-label="恢复所有默认标题"
-            onClick={() => setTitles({ ...defaultSectionTitles })}
+            title="恢复默认标题与底色"
+            aria-label="恢复所有默认标题与底色"
+            onClick={() => {
+              setTitles({ ...defaultSectionTitles });
+              setColors({ ...defaultSectionColors });
+            }}
           >
             <RotateCcw />
           </button>
@@ -190,6 +222,24 @@ export function RoomSettingsDialog({
                     disabled={!editable || Boolean(busy)}
                     onChange={(event) =>
                       setTitles((current) => ({
+                        ...current,
+                        [section.id]: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label
+                  className="sign-color-field"
+                  title={`设置「${titles[section.id] || section.defaultTitle}」的底色`}
+                >
+                  <input
+                    type="color"
+                    className="sign-color-input"
+                    value={colors[section.id]}
+                    disabled={!editable || Boolean(busy)}
+                    aria-label={`${section.defaultTitle}的底色`}
+                    onChange={(event) =>
+                      setColors((current) => ({
                         ...current,
                         [section.id]: event.target.value,
                       }))
@@ -217,6 +267,43 @@ export function RoomSettingsDialog({
               </div>
             );
           })}
+        </div>
+      </section>
+      <section className="room-settings-section resource-titles-setting">
+        <header>
+          <div>
+            <small>仅 GM 可编辑，玩家看到的是改后的标题</small>
+            <h2>物资便签标题</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            title="恢复默认物资标题"
+            aria-label="恢复默认物资标题"
+            onClick={() => setGroupTitles({ ...defaultResourceTitles })}
+          >
+            <RotateCcw />
+          </button>
+        </header>
+        <div className="section-settings-list">
+          {resourceGroups.map((group) => (
+            <div className="section-setting-row" key={group.id}>
+              <label className="field">
+                <span>{group.title}</span>
+                <input
+                  value={groupTitles[String(group.id)] ?? ""}
+                  maxLength={32}
+                  disabled={!editable || Boolean(busy)}
+                  onChange={(event) =>
+                    setGroupTitles((current) => ({
+                      ...current,
+                      [String(group.id)]: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          ))}
         </div>
       </section>
       <section className="room-settings-section media-settings">
@@ -314,7 +401,10 @@ export function RoomSettingsDialog({
             !editable ||
             Boolean(busy) ||
             !campaignName.trim() ||
-            campaignSections.some((section) => !titles[section.id].trim())
+            campaignSections.some((section) => !titles[section.id].trim()) ||
+            resourceGroups.some(
+              (group) => !(groupTitles[String(group.id)] ?? "").trim(),
+            )
           }
           onClick={() =>
             void run("save", async () => {
@@ -327,6 +417,28 @@ export function RoomSettingsDialog({
                         titles[section.id].trim() !== section.defaultTitle,
                     )
                     .map((section) => [section.id, titles[section.id].trim()]),
+                ),
+                sectionColors: Object.fromEntries(
+                  campaignSections
+                    .filter(
+                      (section) =>
+                        colors[section.id] !==
+                        defaultSectionColors[section.id],
+                    )
+                    .map((section) => [section.id, colors[section.id]]),
+                ),
+                resourceTitles: Object.fromEntries(
+                  resourceGroups
+                    .filter((group) => {
+                      const value = (
+                        groupTitles[String(group.id)] ?? ""
+                      ).trim();
+                      return value.length > 0 && value !== group.title;
+                    })
+                    .map((group) => [
+                      String(group.id),
+                      (groupTitles[String(group.id)] ?? "").trim(),
+                    ]),
                 ),
                 hiddenSections: hidden,
               });

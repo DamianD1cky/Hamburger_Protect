@@ -31,6 +31,8 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.checklistCategories ??= [];
   board.settings ??= {
     sectionTitles: {},
+    sectionColors: {},
+    resourceTitles: {},
     hiddenSections: [],
     isPublic: false,
     backgroundPath: null,
@@ -38,6 +40,8 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
     backgroundUrl: null,
     noteTextureUrl: null,
   };
+  board.settings.sectionColors ??= {};
+  board.settings.resourceTitles ??= {};
   board.settings.isPublic ??= false;
   board.members ??= [
     {
@@ -172,6 +176,8 @@ function snapshots(board: CampaignBoard) {
       entity: "settings",
       value: {
         section_titles: board.settings.sectionTitles,
+        section_colors: board.settings.sectionColors,
+        resource_titles: board.settings.resourceTitles,
         hidden_sections: board.settings.hiddenSections,
       },
     },
@@ -506,6 +512,8 @@ class LocalCampaignRepository implements CampaignRepository {
     return this.manage((board) => {
       board.campaign.name = draft.name.trim();
       board.settings.sectionTitles = draft.sectionTitles;
+      board.settings.sectionColors = draft.sectionColors;
+      board.settings.resourceTitles = draft.resourceTitles;
       board.settings.hiddenSections = draft.hiddenSections;
     });
   }

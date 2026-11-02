@@ -11,9 +11,11 @@ import type {
 } from "../../features/campaign/domain/types";
 import { burgerIndexInfo } from "../../features/campaign/domain/burgerIndex";
 import {
+  resourceGroupTitle,
   resourceGroups,
   resourceLabels,
 } from "../../features/campaign/domain/resources";
+import { titleColorStyle } from "../../features/campaign/domain/campaignSettings";
 import { nextQuestStatus } from "../../features/campaign/domain/types";
 import { MotionText } from "../MotionText";
 
@@ -40,34 +42,42 @@ export function InventorySection({
   canManage,
   onOpenSheet,
   title,
+  color,
+  resourceTitles = {},
 }: {
   resources: CampaignBoard["resources"];
   canManage: boolean;
   onOpenSheet: (group: number) => void;
   title: string;
+  color?: string;
+  resourceTitles?: Partial<Record<string, string>>;
 }) {
   return (
     <section
       className="board-section inventory-section"
       data-section="inventory"
     >
-      <div className="sign sign-red section-heading">
+      <div
+        className="sign sign-red section-heading"
+        style={color ? titleColorStyle(color) : undefined}
+      >
         <span>{title}</span>
       </div>
       <div className="inventory-stack">
         {resourceGroups.map((sheet) => {
           const items = resources.filter((item) => item.group === sheet.id);
+          const sheetTitle = resourceGroupTitle(sheet.id, resourceTitles);
           return (
             <button
               className="inventory-card"
               type="button"
               key={sheet.id}
               onClick={() => onOpenSheet(sheet.id)}
-              aria-label={`${canManage ? "编辑" : "查看"}便签：${sheet.title}`}
+              aria-label={`${canManage ? "编辑" : "查看"}便签：${sheetTitle}`}
               aria-haspopup="dialog"
             >
               <span className="inventory-sheet-title">
-                {sheet.title}
+                {sheetTitle}
                 <small>{items.length} 项</small>
               </span>
               <span className="inventory-preview">
@@ -103,6 +113,7 @@ interface TaskSectionProps {
   quests: Quest[];
   viewer: CampaignBoard["viewer"];
   title: string;
+  color?: string;
   campaignActive: boolean;
   onCompose: (event: MouseEvent<HTMLElement>) => void;
   onEdit: (quest: Quest, event: MouseEvent<HTMLElement>) => void;
@@ -119,7 +130,7 @@ function TaskItem({
   campaignActive,
   onEdit,
   onTransition,
-}: Omit<TaskSectionProps, "quests" | "onCompose" | "title"> & {
+}: Omit<TaskSectionProps, "quests" | "onCompose" | "title" | "color"> & {
   quest: Quest;
 }) {
   const [busy, setBusy] = useState(false);
@@ -221,6 +232,7 @@ export function TaskSection({
   quests,
   viewer,
   title,
+  color,
   campaignActive,
   onCompose,
   onEdit,
@@ -231,7 +243,10 @@ export function TaskSection({
 
   return (
     <section className="board-section task-section" data-section="tasks">
-      <div className="sign sign-red task-sign">
+      <div
+        className="sign sign-red task-sign"
+        style={color ? titleColorStyle(color) : undefined}
+      >
         <span>{title}</span>
         {viewer.role === "gm" && campaignActive && (
           <button
@@ -288,16 +303,23 @@ export function ShiftSection({
   canExpand,
   onExpand,
   title,
+  color,
 }: {
   members: CampaignBoard["members"];
   canExpand: boolean;
   onExpand: () => void;
   title: string;
+  color?: string;
 }) {
   const active = members.filter((member) => member.active);
   return (
     <section className="board-section shift-section" data-section="shifts">
-      <div className="sign sign-blue">{title}</div>
+      <div
+        className="sign sign-blue"
+        style={color ? titleColorStyle(color) : undefined}
+      >
+        {title}
+      </div>
       <button
         className="shift-paper roster-preview"
         type="button"
@@ -333,11 +355,13 @@ export function BurgerIndexSection({
   canManage,
   onManage,
   title,
+  color,
 }: {
   value: number;
   canManage: boolean;
   onManage: () => void;
   title: string;
+  color?: string;
 }) {
   const info = burgerIndexInfo(value);
   return (
@@ -346,7 +370,10 @@ export function BurgerIndexSection({
       data-section="index"
       data-color={info.color}
     >
-      <div className="index-heading">
+      <div
+        className={color ? "index-heading has-custom-color" : "index-heading"}
+        style={color ? titleColorStyle(color) : undefined}
+      >
         <span>{title}</span>
         {canManage && (
           <button
@@ -384,14 +411,21 @@ export function MemoSection({
   board,
   onOpen,
   title,
+  color,
 }: {
   board: CampaignBoard;
   onOpen: () => void;
   title: string;
+  color?: string;
 }) {
   return (
     <section className="board-section memo-section" data-section="notes">
-      <div className="sign sign-yellow">{title}</div>
+      <div
+        className="sign sign-yellow"
+        style={color ? titleColorStyle(color) : undefined}
+      >
+        {title}
+      </div>
       <button
         className="paper memo-paper notes-preview"
         type="button"
@@ -417,6 +451,7 @@ interface SafetySectionProps {
   checklist: CampaignBoard["checklist"];
   categories: CampaignBoard["checklistCategories"];
   title: string;
+  color?: string;
   canManage: boolean;
   canToggle: boolean;
   onToggle: (id: string) => void;
@@ -427,6 +462,7 @@ export function SafetySection({
   checklist,
   categories,
   title,
+  color,
   canManage,
   canToggle,
   onToggle,
@@ -434,7 +470,10 @@ export function SafetySection({
 }: SafetySectionProps) {
   return (
     <section className="board-section safety-section" data-section="safety">
-      <div className="sign sign-green section-heading">
+      <div
+        className="sign sign-green section-heading"
+        style={color ? titleColorStyle(color) : undefined}
+      >
         <span>{title}</span>
         {canManage && (
           <button

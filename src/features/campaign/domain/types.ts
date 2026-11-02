@@ -111,6 +111,8 @@ export interface ActivityPage {
 
 export interface CampaignSettings {
   sectionTitles: Partial<Record<CampaignSectionKey, string>>;
+  sectionColors: Partial<Record<CampaignSectionKey, string>>;
+  resourceTitles: Partial<Record<string, string>>;
   hiddenSections: CampaignSectionKey[];
   isPublic: boolean;
   backgroundPath: string | null;
@@ -167,6 +169,8 @@ export interface MemberProfileDraft {
 export interface CampaignSettingsDraft {
   name: string;
   sectionTitles: Partial<Record<CampaignSectionKey, string>>;
+  sectionColors: Partial<Record<CampaignSectionKey, string>>;
+  resourceTitles: Partial<Record<string, string>>;
   hiddenSections: CampaignSectionKey[];
 }
 

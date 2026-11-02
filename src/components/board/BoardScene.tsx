@@ -7,7 +7,11 @@ import stickerBottomLeft from "../../../assets/stickers/bl.webp";
 import stickerBottomRight from "../../../assets/stickers/br.webp";
 import stickerMiniOne from "../../../assets/stickers/mini1.webp";
 import stickerMiniTwo from "../../../assets/stickers/mini2.webp";
-import { sectionTitle } from "../../features/campaign/domain/campaignSettings";
+import {
+  sectionColor,
+  sectionTitle,
+  titleColorStyle,
+} from "../../features/campaign/domain/campaignSettings";
 import type {
   BoardNote,
   CampaignBoard,
@@ -75,6 +79,12 @@ export function BoardScene({
   const hidden = new Set(board.settings.hiddenSections);
   const title = (key: Parameters<typeof sectionTitle>[0]) =>
     sectionTitle(key, board.settings.sectionTitles);
+  const color = (key: Parameters<typeof sectionTitle>[0]) => {
+    const custom = board.settings.sectionColors ?? {};
+    return custom[key] ? sectionColor(key, custom) : undefined;
+  };
+  const resourceTitles = board.settings.resourceTitles ?? {};
+  const notesColor = color("notes");
   const sceneSrc = board.settings.backgroundUrl ?? sceneUrl;
   const fallBackToDefaultScene = (event: {
     currentTarget: HTMLImageElement;
@@ -115,12 +125,21 @@ export function BoardScene({
           />
         </picture>
 
+        {/* 自定义背景会整张替换 scene.webp，原本画在底图里的木质边框
+            就一起消失了（只剩四角贴纸）。这里补一层纯 CSS 边框，
+            只在用自定义背景时出现，保证四边栏始终完整。 */}
+        {board.settings.backgroundUrl && (
+          <div className="board-frame" aria-hidden="true" />
+        )}
+
         <BoardClock />
 
         <main className="board" aria-label={board.campaign.name + " 公告板"}>
           {!hidden.has("inventory") && (
             <InventorySection
               title={title("inventory")}
+              color={color("inventory")}
+              resourceTitles={resourceTitles}
               resources={board.resources}
               canManage={canUpdateSharedBoard}
               onOpenSheet={onOpenResourceSheet}
@@ -129,6 +148,7 @@ export function BoardScene({
           {!hidden.has("tasks") && (
             <TaskSection
               title={title("tasks")}
+              color={color("tasks")}
               quests={board.quests}
               viewer={board.viewer}
               campaignActive={board.campaign.status === "active"}
@@ -140,6 +160,7 @@ export function BoardScene({
           {!hidden.has("shifts") && (
             <ShiftSection
               title={title("shifts")}
+              color={color("shifts")}
               members={board.members}
               canExpand={board.viewer.role !== "observer"}
               onExpand={onExpandRoster}
@@ -148,6 +169,7 @@ export function BoardScene({
           {!hidden.has("index") && (
             <BurgerIndexSection
               title={title("index")}
+              color={color("index")}
               value={board.campaign.burgerIndex}
               canManage={canManage}
               onManage={onManageIndex}
@@ -156,6 +178,7 @@ export function BoardScene({
           {!hidden.has("activity") && (
             <MemoSection
               title={title("activity")}
+              color={color("activity")}
               board={board}
               onOpen={onOpenActivity}
             />
@@ -163,6 +186,7 @@ export function BoardScene({
           {!hidden.has("safety") && (
             <SafetySection
               title={title("safety")}
+              color={color("safety")}
               checklist={board.checklist}
               categories={board.checklistCategories}
               canManage={canManage}
@@ -179,7 +203,12 @@ export function BoardScene({
                 data-section="notes"
                 aria-live="polite"
               >
-                <h2 className="mobile-notes-heading">{title("notes")}</h2>
+                <h2
+                  className="mobile-notes-heading"
+                  style={notesColor ? titleColorStyle(notesColor) : undefined}
+                >
+                  {title("notes")}
+                </h2>
                 {board.notes.map((note) => (
                   <NoteCard
                     key={note.id}

@@ -224,6 +224,26 @@ button {
   background: rgba(5, 7, 7, 0.17);
 }
 
+/* 使用自定义背景后，底图里的木质边框会一起被替换掉（只剩四角贴纸）。
+   这里用 box-shadow 叠出一圈木框，保证四边栏始终存在。 */
+.board-frame {
+  position: absolute;
+  z-index: 11;
+  left: 510px;
+  top: 170px;
+  width: 1467px;
+  height: 1203px;
+  border-radius: 28px;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 5px rgba(26, 15, 7, 0.42),
+    0 0 0 18px #7a4d29,
+    0 0 0 30px #64401f,
+    0 0 0 38px #3f2712,
+    0 0 0 42px rgba(12, 7, 3, 0.55),
+    0 28px 52px rgba(0, 0, 0, 0.42);
+}
+
 .board-section,
 .user-notes,
 .pin-actions {
@@ -2467,6 +2487,11 @@ button {
   font-size: 23px;
   font-weight: 700;
 }
+.index-heading.has-custom-color {
+  padding: 4px 9px;
+  margin: -4px -9px 0;
+  border-radius: 5px;
+}
 .index-current {
   display: flex;
   gap: 14px;
@@ -3966,9 +3991,48 @@ textarea:focus-visible {
 
 .section-setting-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 46px;
+  grid-template-columns: minmax(0, 1fr) 46px 46px;
   align-items: end;
   gap: 10px;
+}
+
+.sign-color-field {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid #746b5e;
+  background: #f7f1e3;
+  cursor: pointer;
+}
+
+.sign-color-input {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.sign-color-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.sign-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.sign-color-input::-webkit-color-swatch {
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
+}
+
+.sign-color-input::-moz-color-swatch {
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
 }
 
 .visibility-toggle {
@@ -4248,7 +4312,8 @@ textarea:focus-visible {
     "name sections"
     "public sections"
     "roster sections"
-    "media sections";
+    "media sections"
+    "titles sections";
   gap: 12px 22px;
   align-items: start;
   margin-top: 8px;
@@ -4271,6 +4336,12 @@ textarea:focus-visible {
   padding: 2px 0 0;
   border-top: 0;
 }
+.room-settings-grid .resource-titles-setting {
+  grid-area: titles;
+  margin: 0;
+  padding: 2px 0 0;
+  border-top: 0;
+}
 .room-settings-grid .media-settings {
   grid-area: media;
   margin: 0;
@@ -4283,10 +4354,11 @@ textarea:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px 16px;
 }
-.section-setting-row { grid-template-columns: minmax(0, 1fr) 40px; gap: 8px; }
+.section-setting-row { grid-template-columns: minmax(0, 1fr) 40px 40px; gap: 8px; }
 .section-setting-row .field { margin-top: 4px; }
 .section-setting-row .field input { height: 36px; font-size: 16px; }
 .visibility-toggle { width: 40px; height: 40px; }
+.sign-color-field { width: 40px; height: 40px; }
 .media-setting-row { padding: 9px 0; }
 
 /* --- Roster: members | detail | join inbox, side by side --- */
@@ -4527,7 +4599,7 @@ textarea:focus-visible {
   /* Every multi-column layout collapses to a single column */
   .room-settings-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "name" "public" "roster" "sections" "media";
+    grid-template-areas: "name" "public" "roster" "sections" "media" "titles";
   }
   .section-settings-list { grid-template-columns: minmax(0, 1fr); }
   .roster-shell.has-inbox { display: flex; flex-direction: column; }
