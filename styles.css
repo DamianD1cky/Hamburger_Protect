@@ -5115,3 +5115,147 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   from { opacity: 0; transform: translateY(-12px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+
+/* ------------------------------------------------------------------
+   区块标题旁的操作按钮（GM）：编辑标题与底色、直接隐藏区块
+   ------------------------------------------------------------------ */
+.sign > span + .sign-action,
+.sign > .sign-action + .sign-action {
+  margin-left: 8px;
+}
+
+/* .section-heading already has a 12px gap, so reset the added margin there. */
+.section-heading > .sign-action,
+.section-heading > .sign-action + .sign-action {
+  margin-left: 0;
+}
+
+.index-heading {
+  gap: 8px;
+}
+
+.index-heading > .sign-action + .sign-action {
+  margin-left: 4px;
+}
+
+.sign-action svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ------------------------------------------------------------------
+   区块设置弹窗
+   ------------------------------------------------------------------ */
+.section-settings-dialog,
+.section-visibility-dialog {
+  width: min(520px, calc(100% - 24px));
+}
+
+.dialog-hint {
+  margin: 0 0 16px;
+  color: rgba(43, 40, 32, 0.68);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.section-settings-block {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 2px solid rgba(54, 46, 34, 0.12);
+}
+
+.section-settings-block:last-of-type {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.section-settings-heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.section-color-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: auto;
+  height: auto;
+  padding: 8px 12px;
+  border: 1px solid #746b5e;
+  background: #f7f1e3;
+  cursor: pointer;
+}
+
+.section-color-field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3d3629;
+}
+
+/* ------------------------------------------------------------------
+   区块显隐弹窗
+   ------------------------------------------------------------------ */
+.section-visibility-list {
+  display: grid;
+  gap: 8px;
+}
+
+.section-visibility-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(54, 46, 34, 0.18);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.section-visibility-row.is-hidden {
+  background: rgba(54, 46, 34, 0.08);
+}
+
+.section-visibility-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.section-visibility-name strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.section-visibility-name small {
+  color: rgba(43, 40, 32, 0.55);
+  font-size: 11px;
+}
+
+.section-visibility-row.is-hidden .section-visibility-name strong {
+  color: rgba(43, 40, 32, 0.55);
+}
+
+.section-visibility-row .visibility-toggle {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+}
+
+/* 标题牌底色可能是浅黄、米色，也可能是 GM 自定义的任意颜色，
+   所以按钮统一跟随标题文字颜色，保证在任何底色上都看得清。 */
+.sign > .sign-action,
+.index-heading > .sign-action {
+  color: inherit;
+  border-color: currentColor;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.sign > .sign-action:hover,
+.index-heading > .sign-action:hover {
+  background: rgba(0, 0, 0, 0.22);
+}

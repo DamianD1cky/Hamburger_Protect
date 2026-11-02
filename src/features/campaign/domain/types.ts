@@ -174,6 +174,9 @@ export interface CampaignSettingsDraft {
   hiddenSections: CampaignSectionKey[];
 }
 
+/** 只改其中几项时用这个，未出现的键沿用当前值。 */
+export type CampaignSettingsPatch = Partial<CampaignSettingsDraft>;
+
 export interface QuestDraft {
   title: string;
   body: string;

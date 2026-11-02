@@ -2,7 +2,7 @@ import {
   activityActor,
   activitySummary,
 } from "../../features/campaign/domain/activity";
-import { Circle, Plus, RotateCcw, ShieldCheck, Pencil } from "lucide-react";
+import { Circle, EyeOff, Plus, RotateCcw, ShieldCheck, Pencil } from "lucide-react";
 import { useState, type MouseEvent } from "react";
 import type {
   CampaignBoard,
@@ -37,6 +37,44 @@ const transitionLabels: Partial<Record<QuestStatus, string>> = {
   failed: "重新执行",
 };
 
+/** 只有 GM 拿得到：编辑该区块的标题与底色，或直接收起这个区块。 */
+export interface SectionActions {
+  onEdit: () => void;
+  onHide: () => void;
+}
+
+function SectionActionButtons({
+  actions,
+  label,
+}: {
+  actions?: SectionActions;
+  label: string;
+}) {
+  if (!actions) return null;
+  return (
+    <>
+      <button
+        className="sign-action"
+        type="button"
+        onClick={actions.onEdit}
+        aria-label={"编辑" + label + "的标题与底色"}
+        title="编辑标题与底色"
+      >
+        <Pencil aria-hidden="true" />
+      </button>
+      <button
+        className="sign-action"
+        type="button"
+        onClick={actions.onHide}
+        aria-label={"隐藏" + label}
+        title="隐藏区块"
+      >
+        <EyeOff aria-hidden="true" />
+      </button>
+    </>
+  );
+}
+
 export function InventorySection({
   resources,
   canManage,
@@ -44,6 +82,7 @@ export function InventorySection({
   title,
   color,
   resourceTitles = {},
+  actions,
 }: {
   resources: CampaignBoard["resources"];
   canManage: boolean;
@@ -51,6 +90,7 @@ export function InventorySection({
   title: string;
   color?: string;
   resourceTitles?: Partial<Record<string, string>>;
+  actions?: SectionActions;
 }) {
   return (
     <section
@@ -62,6 +102,7 @@ export function InventorySection({
         style={color ? titleColorStyle(color) : undefined}
       >
         <span>{title}</span>
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <div className="inventory-stack">
         {resourceGroups.map((sheet) => {
@@ -237,7 +278,8 @@ export function TaskSection({
   onCompose,
   onEdit,
   onTransition,
-}: TaskSectionProps) {
+  actions,
+}: TaskSectionProps & { actions?: SectionActions }) {
   const active = quests.filter((quest) => quest.status !== "completed");
   const completed = quests.filter((quest) => quest.status === "completed");
 
@@ -259,6 +301,7 @@ export function TaskSection({
             <Plus aria-hidden="true" />
           </button>
         )}
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <div className="task-papers">
         <article className="paper task-paper todo-paper">
@@ -304,12 +347,14 @@ export function ShiftSection({
   onExpand,
   title,
   color,
+  actions,
 }: {
   members: CampaignBoard["members"];
   canExpand: boolean;
   onExpand: () => void;
   title: string;
   color?: string;
+  actions?: SectionActions;
 }) {
   const active = members.filter((member) => member.active);
   return (
@@ -318,7 +363,8 @@ export function ShiftSection({
         className="sign sign-blue"
         style={color ? titleColorStyle(color) : undefined}
       >
-        {title}
+        <span>{title}</span>
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <button
         className="shift-paper roster-preview"
@@ -356,12 +402,14 @@ export function BurgerIndexSection({
   onManage,
   title,
   color,
+  actions,
 }: {
   value: number;
   canManage: boolean;
   onManage: () => void;
   title: string;
   color?: string;
+  actions?: SectionActions;
 }) {
   const info = burgerIndexInfo(value);
   return (
@@ -385,6 +433,7 @@ export function BurgerIndexSection({
             <Pencil />
           </button>
         )}
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <div className="index-current">
         <strong><MotionText value={info.label} /></strong>
@@ -412,11 +461,13 @@ export function MemoSection({
   onOpen,
   title,
   color,
+  actions,
 }: {
   board: CampaignBoard;
   onOpen: () => void;
   title: string;
   color?: string;
+  actions?: SectionActions;
 }) {
   return (
     <section className="board-section memo-section" data-section="notes">
@@ -424,7 +475,8 @@ export function MemoSection({
         className="sign sign-yellow"
         style={color ? titleColorStyle(color) : undefined}
       >
-        {title}
+        <span>{title}</span>
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <button
         className="paper memo-paper notes-preview"
@@ -456,6 +508,7 @@ interface SafetySectionProps {
   canToggle: boolean;
   onToggle: (id: string) => void;
   onManage: () => void;
+  actions?: SectionActions;
 }
 
 export function SafetySection({
@@ -467,6 +520,7 @@ export function SafetySection({
   canToggle,
   onToggle,
   onManage,
+  actions,
 }: SafetySectionProps) {
   return (
     <section className="board-section safety-section" data-section="safety">
@@ -481,10 +535,12 @@ export function SafetySection({
             type="button"
             onClick={onManage}
             aria-label="编辑每日检查清单"
+            title="编辑检查项"
           >
-            <Pencil />
+            <Pencil aria-hidden="true" />
           </button>
         )}
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <article className="paper safety-paper">
         <div className="safety-list">

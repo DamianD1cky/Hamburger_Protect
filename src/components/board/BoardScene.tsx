@@ -1,4 +1,4 @@
-import { List, Plus } from "lucide-react";
+import { List, Pencil, Plus } from "lucide-react";
 import type { MouseEvent, Ref, RefObject } from "react";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
@@ -15,6 +15,7 @@ import {
 import type {
   BoardNote,
   CampaignBoard,
+  CampaignSectionKey,
   Quest,
   QuestStatus,
 } from "../../features/campaign/domain/types";
@@ -25,6 +26,7 @@ import {
   SafetySection,
   ShiftSection,
   TaskSection,
+  type SectionActions,
 } from "./BoardSections";
 import { BoardClock } from "./BoardClock";
 import { NoteCard } from "./NoteCard";
@@ -50,6 +52,8 @@ interface BoardSceneProps {
     source: HTMLElement,
   ) => Promise<void>;
   onMoveNote: (noteId: string, x: number, y: number) => Promise<unknown>;
+  onEditSection: (key: CampaignSectionKey) => void;
+  onHideSection: (key: CampaignSectionKey) => void;
 }
 
 export function BoardScene({
@@ -69,6 +73,8 @@ export function BoardScene({
   onEditNote,
   onTransitionQuest,
   onMoveNote,
+  onEditSection,
+  onHideSection,
 }: BoardSceneProps) {
   const canEditNotes =
     board.viewer.role !== "observer" && board.campaign.status === "active";
@@ -83,6 +89,13 @@ export function BoardScene({
     const custom = board.settings.sectionColors ?? {};
     return custom[key] ? sectionColor(key, custom) : undefined;
   };
+  const actionsFor = (key: CampaignSectionKey): SectionActions | undefined =>
+    canManage
+      ? {
+          onEdit: () => onEditSection(key),
+          onHide: () => onHideSection(key),
+        }
+      : undefined;
   const resourceTitles = board.settings.resourceTitles ?? {};
   const notesColor = color("notes");
   const sceneSrc = board.settings.backgroundUrl ?? sceneUrl;
@@ -140,6 +153,7 @@ export function BoardScene({
               title={title("inventory")}
               color={color("inventory")}
               resourceTitles={resourceTitles}
+              actions={actionsFor("inventory")}
               resources={board.resources}
               canManage={canUpdateSharedBoard}
               onOpenSheet={onOpenResourceSheet}
@@ -149,6 +163,7 @@ export function BoardScene({
             <TaskSection
               title={title("tasks")}
               color={color("tasks")}
+              actions={actionsFor("tasks")}
               quests={board.quests}
               viewer={board.viewer}
               campaignActive={board.campaign.status === "active"}
@@ -161,6 +176,7 @@ export function BoardScene({
             <ShiftSection
               title={title("shifts")}
               color={color("shifts")}
+              actions={actionsFor("shifts")}
               members={board.members}
               canExpand={board.viewer.role !== "observer"}
               onExpand={onExpandRoster}
@@ -170,6 +186,7 @@ export function BoardScene({
             <BurgerIndexSection
               title={title("index")}
               color={color("index")}
+              actions={actionsFor("index")}
               value={board.campaign.burgerIndex}
               canManage={canManage}
               onManage={onManageIndex}
@@ -179,6 +196,7 @@ export function BoardScene({
             <MemoSection
               title={title("activity")}
               color={color("activity")}
+              actions={actionsFor("activity")}
               board={board}
               onOpen={onOpenActivity}
             />
@@ -187,6 +205,7 @@ export function BoardScene({
             <SafetySection
               title={title("safety")}
               color={color("safety")}
+              actions={actionsFor("safety")}
               checklist={board.checklist}
               categories={board.checklistCategories}
               canManage={canManage}
@@ -246,6 +265,17 @@ export function BoardScene({
                     title="填写便签"
                   >
                     <Plus aria-hidden="true" />
+                  </button>
+                )}
+                {canManage && (
+                  <button
+                    className="pin-view"
+                    type="button"
+                    onClick={() => onEditSection("notes")}
+                    aria-label="编辑便签区块的标题与底色"
+                    title="编辑便签区块"
+                  >
+                    <Pencil aria-hidden="true" />
                   </button>
                 )}
               </div>
