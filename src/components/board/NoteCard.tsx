@@ -101,12 +101,12 @@ export function NoteCard({
   }, []);
 
   const handlePointerDown = (event: PointerEvent<HTMLElement>) => {
-    if (
-      !canEdit ||
-      event.button !== 0 ||
-      window.matchMedia("(max-width: 1024px)").matches
-    )
-      return;
+    // Touch and pen drag on the same path as the mouse: narrow viewports used
+    // to be excluded here, which left phone users unable to move a note.
+    // A drag already in flight wins, so a second finger cannot hijack it.
+    if (!canEdit || dragRef.current.pointerId >= 0) return;
+    // Only the primary mouse button starts a drag; touch and pen always do.
+    if (event.pointerType === "mouse" && event.button !== 0) return;
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -117,7 +117,10 @@ export function NoteCard({
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.style.zIndex = "20";
-    event.currentTarget.classList.add("is-dragging");
+    // Mouse lifts immediately for direct-manipulation feedback; a finger waits
+    // until real movement, otherwise a plain tap flashes the drag styling.
+    if (event.pointerType === "mouse")
+      event.currentTarget.classList.add("is-dragging");
     event.preventDefault();
     const onEscape = (keyEvent: globalThis.KeyboardEvent) => {
       if (keyEvent.key !== "Escape") return;
@@ -135,7 +138,14 @@ export function NoteCard({
     const scale = viewScaleRef.current || 1;
     const dx = (event.clientX - drag.startX) / scale;
     const dy = (event.clientY - drag.startY) / scale;
-    if (Math.hypot(dx, dy) > 8) drag.moved = true;
+    if (Math.hypot(dx, dy) > 8) {
+      if (!drag.moved) {
+        drag.moved = true;
+        // Lift the note only once it actually moves, so a plain tap does not
+        // flash the drag styling on a touch screen.
+        event.currentTarget.classList.add("is-dragging");
+      }
+    }
     if (!drag.moved) return;
     event.currentTarget.style.left = clamp(drag.originX + dx, 18, 1172) + "px";
     event.currentTarget.style.top = clamp(drag.originY + dy, 110, 980) + "px";
@@ -194,10 +204,6 @@ export function NoteCard({
         top: note.y,
         transform: "rotate(" + note.rotation + "deg)",
         backgroundImage: noteTextureUrl ? `url(${noteTextureUrl})` : undefined,
-      }}
-      onClick={(event) => {
-        if (canEdit && window.matchMedia("(max-width: 1024px)").matches)
-          onEdit(note, event.currentTarget);
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

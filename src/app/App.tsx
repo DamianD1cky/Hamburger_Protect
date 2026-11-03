@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   BookOpen,
   Copy,
+  LayoutGrid,
   MessageSquare,
   RefreshCw,
   Settings,
@@ -47,6 +48,8 @@ import { clearStuckIdentities, getSupabaseAppSession } from "../features/access/
 import { useAuthSession } from "../features/access/hooks/useAuthSession";
 import { defaultBoard } from "../features/campaign/domain/defaults";
 import type {
+  CampaignSectionKey,
+  CampaignSettingsPatch,
   ComposerTarget,
   Quest,
   QuestStatus,
@@ -107,6 +110,16 @@ const RoomSettingsDialog = lazy(() =>
 const VisitorMessagesDialog = lazy(() =>
   import("../components/board/VisitorMessagesDialog").then((module) => ({
     default: module.VisitorMessagesDialog,
+  })),
+);
+const SectionSettingsDialog = lazy(() =>
+  import("../components/board/SectionSettingsDialog").then((module) => ({
+    default: module.SectionSettingsDialog,
+  })),
+);
+const SectionVisibilityDialog = lazy(() =>
+  import("../components/board/SectionVisibilityDialog").then((module) => ({
+    default: module.SectionVisibilityDialog,
   })),
 );
 
@@ -490,6 +503,9 @@ function CampaignBoardWorkspace({
   const [rosterOpen, setRosterOpen] = useState(false);
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const [visitorMessagesOpen, setVisitorMessagesOpen] = useState(false);
+  const [sectionSettingsKey, setSectionSettingsKey] =
+    useState<CampaignSectionKey | null>(null);
+  const [sectionVisibilityOpen, setSectionVisibilityOpen] = useState(false);
   const visitorMessages = useQuery({
     queryKey: ["visitor-messages", campaignId, campaign.board?.viewer.id],
     queryFn: () => getVisitorMessages(campaignId),
@@ -701,6 +717,17 @@ function CampaignBoardWorkspace({
   }
 
   const board = campaign.board;
+  /** 把公告板上的局部修改合进完整草稿，没改的字段沿用当前值。 */
+  const patchBoardSettings = async (patch: CampaignSettingsPatch) => {
+    await campaign.updateCampaignSettings({
+      name: board.campaign.name,
+      sectionTitles: board.settings.sectionTitles,
+      sectionColors: board.settings.sectionColors,
+      resourceTitles: board.settings.resourceTitles,
+      hiddenSections: board.settings.hiddenSections,
+      ...patch,
+    });
+  };
   const roleLabel = publicView
     ? "访客 / 只读参观"
     : board.viewer.role === "gm"
@@ -718,7 +745,6 @@ function CampaignBoardWorkspace({
           worldRef={worldRef}
           viewScaleRef={viewScaleRef}
           onOpenResourceSheet={setResourceSheet}
-          onManageChecklist={() => setBoardEditor("checklist")}
           onManageIndex={() => setBoardEditor("index")}
           onExpandRoster={() => setRosterOpen(true)}
           onOpenNotes={() => setNotesOpen(true)}
@@ -747,6 +773,15 @@ function CampaignBoardWorkspace({
           }
           onTransitionQuest={transitionQuest}
           onMoveNote={campaign.moveNote}
+          onEditSection={(key) => setSectionSettingsKey(key)}
+          onHideSection={(key) => {
+            const next = board.settings.hiddenSections.includes(key)
+              ? board.settings.hiddenSections
+              : [...board.settings.hiddenSections, key];
+            void patchBoardSettings({ hiddenSections: next })
+              .then(() => showToast("区块已隐藏，可在顶栏恢复"))
+              .catch(() => showToast("隐藏失败，请检查权限后重试"));
+          }}
         />
       </Suspense>
 
@@ -792,6 +827,25 @@ function CampaignBoardWorkspace({
           >
             <UserPlus aria-hidden="true" />
             <MotionText value={joinInbox.data?.total ?? 0} />
+          </button>
+        )}
+        {board.viewer.role === "gm" && (
+          <button
+            type="button"
+            className="section-visibility-button"
+            onClick={() => setSectionVisibilityOpen(true)}
+            aria-label={
+              "管理公告板区块" +
+              (board.settings.hiddenSections.length
+                ? `，${board.settings.hiddenSections.length} 个已隐藏`
+                : "")
+            }
+            title="管理区块显示"
+          >
+            <LayoutGrid aria-hidden="true" />
+            {board.settings.hiddenSections.length > 0 && (
+              <MotionText value={board.settings.hiddenSections.length} />
+            )}
           </button>
         )}
         {board.viewer.role === "gm" && (
@@ -939,6 +993,34 @@ function CampaignBoardWorkspace({
             onOpenRoster={() => {
               setRoomSettingsOpen(false);
               setRosterOpen(true);
+            }}
+          />
+        )}
+        {sectionSettingsKey && (
+          <SectionSettingsDialog
+            sectionKey={sectionSettingsKey}
+            board={board}
+            onClose={() => setSectionSettingsKey(null)}
+            onEditChecklist={
+              sectionSettingsKey === "safety"
+                ? () => {
+                    setSectionSettingsKey(null);
+                    setBoardEditor("checklist");
+                  }
+                : undefined
+            }
+            onSave={async (patch) => {
+              await patchBoardSettings(patch);
+              showToast("区块设置已保存");
+            }}
+          />
+        )}
+        {sectionVisibilityOpen && (
+          <SectionVisibilityDialog
+            board={board}
+            onClose={() => setSectionVisibilityOpen(false)}
+            onSave={async (patch) => {
+              await patchBoardSettings(patch);
             }}
           />
         )}

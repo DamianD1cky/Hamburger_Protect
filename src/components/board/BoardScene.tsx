@@ -7,10 +7,15 @@ import stickerBottomLeft from "../../../assets/stickers/bl.webp";
 import stickerBottomRight from "../../../assets/stickers/br.webp";
 import stickerMiniOne from "../../../assets/stickers/mini1.webp";
 import stickerMiniTwo from "../../../assets/stickers/mini2.webp";
-import { sectionTitle } from "../../features/campaign/domain/campaignSettings";
+import {
+  sectionColor,
+  sectionTitle,
+  titleColorStyle,
+} from "../../features/campaign/domain/campaignSettings";
 import type {
   BoardNote,
   CampaignBoard,
+  CampaignSectionKey,
   Quest,
   QuestStatus,
 } from "../../features/campaign/domain/types";
@@ -21,6 +26,7 @@ import {
   SafetySection,
   ShiftSection,
   TaskSection,
+  type SectionActions,
 } from "./BoardSections";
 import { BoardClock } from "./BoardClock";
 import { NoteCard } from "./NoteCard";
@@ -30,7 +36,6 @@ interface BoardSceneProps {
   worldRef: Ref<HTMLDivElement>;
   viewScaleRef: RefObject<number>;
   onOpenResourceSheet: (group: number) => void;
-  onManageChecklist: () => void;
   onManageIndex: () => void;
   onOpenNotes: () => void;
   onOpenActivity: () => void;
@@ -46,6 +51,8 @@ interface BoardSceneProps {
     source: HTMLElement,
   ) => Promise<void>;
   onMoveNote: (noteId: string, x: number, y: number) => Promise<unknown>;
+  onEditSection: (key: CampaignSectionKey) => void;
+  onHideSection: (key: CampaignSectionKey) => void;
 }
 
 export function BoardScene({
@@ -53,7 +60,6 @@ export function BoardScene({
   worldRef,
   viewScaleRef,
   onOpenResourceSheet,
-  onManageChecklist,
   onManageIndex,
   onOpenNotes,
   onOpenActivity,
@@ -65,6 +71,8 @@ export function BoardScene({
   onEditNote,
   onTransitionQuest,
   onMoveNote,
+  onEditSection,
+  onHideSection,
 }: BoardSceneProps) {
   const canEditNotes =
     board.viewer.role !== "observer" && board.campaign.status === "active";
@@ -76,6 +84,19 @@ export function BoardScene({
   const title = (key: Parameters<typeof sectionTitle>[0]) =>
     sectionTitle(key, board.settings.sectionTitles);
   const hasCustomBackground = Boolean(board.settings.backgroundUrl);
+  const color = (key: Parameters<typeof sectionTitle>[0]) => {
+    const custom = board.settings.sectionColors ?? {};
+    return custom[key] ? sectionColor(key, custom) : undefined;
+  };
+  const actionsFor = (key: CampaignSectionKey): SectionActions | undefined =>
+    canManage
+      ? {
+          onEdit: () => onEditSection(key),
+          onHide: () => onHideSection(key),
+        }
+      : undefined;
+  const resourceTitles = board.settings.resourceTitles ?? {};
+  const notesColor = color("notes");
   const sceneSrc = board.settings.backgroundUrl ?? sceneUrl;
   const fallBackToDefaultScene = (event: {
     currentTarget: HTMLImageElement;
@@ -135,6 +156,9 @@ export function BoardScene({
           {!hidden.has("inventory") && (
             <InventorySection
               title={title("inventory")}
+              color={color("inventory")}
+              resourceTitles={resourceTitles}
+              actions={actionsFor("inventory")}
               resources={board.resources}
               canManage={canUpdateSharedBoard}
               onOpenSheet={onOpenResourceSheet}
@@ -143,6 +167,8 @@ export function BoardScene({
           {!hidden.has("tasks") && (
             <TaskSection
               title={title("tasks")}
+              color={color("tasks")}
+              actions={actionsFor("tasks")}
               quests={board.quests}
               viewer={board.viewer}
               campaignActive={board.campaign.status === "active"}
@@ -154,6 +180,8 @@ export function BoardScene({
           {!hidden.has("shifts") && (
             <ShiftSection
               title={title("shifts")}
+              color={color("shifts")}
+              actions={actionsFor("shifts")}
               members={board.members}
               canExpand={board.viewer.role !== "observer"}
               onExpand={onExpandRoster}
@@ -162,6 +190,8 @@ export function BoardScene({
           {!hidden.has("index") && (
             <BurgerIndexSection
               title={title("index")}
+              color={color("index")}
+              actions={actionsFor("index")}
               value={board.campaign.burgerIndex}
               canManage={canManage}
               onManage={onManageIndex}
@@ -170,6 +200,8 @@ export function BoardScene({
           {!hidden.has("activity") && (
             <MemoSection
               title={title("activity")}
+              color={color("activity")}
+              actions={actionsFor("activity")}
               board={board}
               onOpen={onOpenActivity}
             />
@@ -177,12 +209,13 @@ export function BoardScene({
           {!hidden.has("safety") && (
             <SafetySection
               title={title("safety")}
+              color={color("safety")}
+              actions={actionsFor("safety")}
               checklist={board.checklist}
               categories={board.checklistCategories}
               canManage={canManage}
               canToggle={canUpdateSharedBoard}
               onToggle={onToggleChecklist}
-              onManage={onManageChecklist}
             />
           )}
 
@@ -193,7 +226,12 @@ export function BoardScene({
                 data-section="notes"
                 aria-live="polite"
               >
-                <h2 className="mobile-notes-heading">{title("notes")}</h2>
+                <h2
+                  className="mobile-notes-heading"
+                  style={notesColor ? titleColorStyle(notesColor) : undefined}
+                >
+                  {title("notes")}
+                </h2>
                 {board.notes.map((note) => (
                   <NoteCard
                     key={note.id}

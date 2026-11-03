@@ -2,7 +2,7 @@ import {
   activityActor,
   activitySummary,
 } from "../../features/campaign/domain/activity";
-import { Circle, Plus, RotateCcw, ShieldCheck, Pencil } from "lucide-react";
+import { Circle, EyeOff, Plus, RotateCcw, ShieldCheck, Pencil } from "lucide-react";
 import { useState, type MouseEvent } from "react";
 import type {
   CampaignBoard,
@@ -11,9 +11,11 @@ import type {
 } from "../../features/campaign/domain/types";
 import { burgerIndexInfo } from "../../features/campaign/domain/burgerIndex";
 import {
+  resourceGroupTitle,
   resourceGroups,
   resourceLabels,
 } from "../../features/campaign/domain/resources";
+import { titleColorStyle } from "../../features/campaign/domain/campaignSettings";
 import { nextQuestStatus } from "../../features/campaign/domain/types";
 import { MotionText } from "../MotionText";
 
@@ -35,39 +37,88 @@ const transitionLabels: Partial<Record<QuestStatus, string>> = {
   failed: "重新执行",
 };
 
+/** 只有 GM 拿得到：编辑该区块的标题与底色，或直接收起这个区块。 */
+export interface SectionActions {
+  onEdit: () => void;
+  onHide: () => void;
+}
+
+function SectionActionButtons({
+  actions,
+  label,
+}: {
+  actions?: SectionActions;
+  label: string;
+}) {
+  if (!actions) return null;
+  return (
+    <>
+      <button
+        className="sign-action"
+        type="button"
+        onClick={actions.onEdit}
+        aria-label={"编辑" + label + "的标题与底色"}
+        title="编辑标题与底色"
+      >
+        <Pencil aria-hidden="true" />
+      </button>
+      <button
+        className="sign-action"
+        type="button"
+        onClick={actions.onHide}
+        aria-label={"隐藏" + label}
+        title="隐藏区块"
+      >
+        <EyeOff aria-hidden="true" />
+      </button>
+    </>
+  );
+}
+
 export function InventorySection({
   resources,
   canManage,
   onOpenSheet,
   title,
+  color,
+  resourceTitles = {},
+  actions,
 }: {
   resources: CampaignBoard["resources"];
   canManage: boolean;
   onOpenSheet: (group: number) => void;
   title: string;
+  color?: string;
+  resourceTitles?: Partial<Record<string, string>>;
+  actions?: SectionActions;
 }) {
   return (
     <section
       className="board-section inventory-section"
       data-section="inventory"
     >
-      <div className="sign sign-red section-heading">
+      <div
+        className="sign sign-red section-heading"
+        style={color ? titleColorStyle(color) : undefined}
+      >
         <span>{title}</span>
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <div className="inventory-stack">
         {resourceGroups.map((sheet) => {
           const items = resources.filter((item) => item.group === sheet.id);
+          const sheetTitle = resourceGroupTitle(sheet.id, resourceTitles);
           return (
             <button
               className="inventory-card"
               type="button"
               key={sheet.id}
               onClick={() => onOpenSheet(sheet.id)}
-              aria-label={`${canManage ? "编辑" : "查看"}便签：${sheet.title}`}
+              aria-label={`${canManage ? "编辑" : "查看"}便签：${sheetTitle}`}
               aria-haspopup="dialog"
             >
               <span className="inventory-sheet-title">
-                {sheet.title}
+                {sheetTitle}
                 <small>{items.length} 项</small>
               </span>
               <span className="inventory-preview">
@@ -103,6 +154,7 @@ interface TaskSectionProps {
   quests: Quest[];
   viewer: CampaignBoard["viewer"];
   title: string;
+  color?: string;
   campaignActive: boolean;
   onCompose: (event: MouseEvent<HTMLElement>) => void;
   onEdit: (quest: Quest, event: MouseEvent<HTMLElement>) => void;
@@ -119,7 +171,7 @@ function TaskItem({
   campaignActive,
   onEdit,
   onTransition,
-}: Omit<TaskSectionProps, "quests" | "onCompose" | "title"> & {
+}: Omit<TaskSectionProps, "quests" | "onCompose" | "title" | "color"> & {
   quest: Quest;
 }) {
   const [busy, setBusy] = useState(false);
@@ -221,17 +273,22 @@ export function TaskSection({
   quests,
   viewer,
   title,
+  color,
   campaignActive,
   onCompose,
   onEdit,
   onTransition,
-}: TaskSectionProps) {
+  actions,
+}: TaskSectionProps & { actions?: SectionActions }) {
   const active = quests.filter((quest) => quest.status !== "completed");
   const completed = quests.filter((quest) => quest.status === "completed");
 
   return (
     <section className="board-section task-section" data-section="tasks">
-      <div className="sign sign-red task-sign">
+      <div
+        className="sign sign-red task-sign"
+        style={color ? titleColorStyle(color) : undefined}
+      >
         <span>{title}</span>
         {viewer.role === "gm" && campaignActive && (
           <button
@@ -244,6 +301,7 @@ export function TaskSection({
             <Plus aria-hidden="true" />
           </button>
         )}
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <div className="task-papers">
         <article className="paper task-paper todo-paper">
@@ -288,16 +346,26 @@ export function ShiftSection({
   canExpand,
   onExpand,
   title,
+  color,
+  actions,
 }: {
   members: CampaignBoard["members"];
   canExpand: boolean;
   onExpand: () => void;
   title: string;
+  color?: string;
+  actions?: SectionActions;
 }) {
   const active = members.filter((member) => member.active);
   return (
     <section className="board-section shift-section" data-section="shifts">
-      <div className="sign sign-blue">{title}</div>
+      <div
+        className="sign sign-blue"
+        style={color ? titleColorStyle(color) : undefined}
+      >
+        <span>{title}</span>
+        <SectionActionButtons actions={actions} label={title} />
+      </div>
       <button
         className="shift-paper roster-preview"
         type="button"
@@ -333,11 +401,15 @@ export function BurgerIndexSection({
   canManage,
   onManage,
   title,
+  color,
+  actions,
 }: {
   value: number;
   canManage: boolean;
   onManage: () => void;
   title: string;
+  color?: string;
+  actions?: SectionActions;
 }) {
   const info = burgerIndexInfo(value);
   return (
@@ -346,7 +418,10 @@ export function BurgerIndexSection({
       data-section="index"
       data-color={info.color}
     >
-      <div className="index-heading">
+      <div
+        className={color ? "index-heading has-custom-color" : "index-heading"}
+        style={color ? titleColorStyle(color) : undefined}
+      >
         <span>{title}</span>
         {canManage && (
           <button
@@ -358,6 +433,7 @@ export function BurgerIndexSection({
             <Pencil />
           </button>
         )}
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <div className="index-current">
         <strong><MotionText value={info.label} /></strong>
@@ -384,14 +460,24 @@ export function MemoSection({
   board,
   onOpen,
   title,
+  color,
+  actions,
 }: {
   board: CampaignBoard;
   onOpen: () => void;
   title: string;
+  color?: string;
+  actions?: SectionActions;
 }) {
   return (
     <section className="board-section memo-section" data-section="notes">
-      <div className="sign sign-yellow">{title}</div>
+      <div
+        className="sign sign-yellow"
+        style={color ? titleColorStyle(color) : undefined}
+      >
+        <span>{title}</span>
+        <SectionActionButtons actions={actions} label={title} />
+      </div>
       <button
         className="paper memo-paper notes-preview"
         type="button"
@@ -417,41 +503,38 @@ interface SafetySectionProps {
   checklist: CampaignBoard["checklist"];
   categories: CampaignBoard["checklistCategories"];
   title: string;
+  color?: string;
   canManage: boolean;
   canToggle: boolean;
   onToggle: (id: string) => void;
-  onManage: () => void;
+  actions?: SectionActions;
 }
 
 export function SafetySection({
   checklist,
   categories,
   title,
+  color,
   canManage,
   canToggle,
   onToggle,
-  onManage,
+  actions,
 }: SafetySectionProps) {
   return (
     <section className="board-section safety-section" data-section="safety">
-      <div className="sign sign-green section-heading">
+      <div
+        className="sign sign-green section-heading"
+        style={color ? titleColorStyle(color) : undefined}
+      >
         <span>{title}</span>
-        {canManage && (
-          <button
-            className="sign-action"
-            type="button"
-            onClick={onManage}
-            aria-label="编辑每日检查清单"
-          >
-            <Pencil />
-          </button>
-        )}
+        <SectionActionButtons actions={actions} label={title} />
       </div>
       <article className="paper safety-paper">
         <div className="safety-list">
           {!checklist.length && (
             <p className="board-empty">
-              暂无检查项{canManage ? "，点击铅笔添加。" : "，等待 GM 登记。"}
+              暂无检查项
+              {canManage ? "，点标题旁的铅笔进入设置后添加。" : "，等待 GM 登记。"}
             </p>
           )}
           {[...categories, { id: "", name: "未分类" }].map((category) => {

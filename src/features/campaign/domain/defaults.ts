@@ -33,6 +33,8 @@ export const defaultBoard: CampaignBoard = {
   notes: [],
   settings: {
     sectionTitles: {},
+    sectionColors: {},
+    resourceTitles: {},
     hiddenSections: [],
     isPublic: false,
     backgroundPath: null,

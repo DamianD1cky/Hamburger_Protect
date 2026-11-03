@@ -76,6 +76,8 @@ interface RemoteBoard {
   }>;
   settings: {
     section_titles: Partial<Record<CampaignSectionKey, string>>;
+    section_colors?: Partial<Record<CampaignSectionKey, string>> | null;
+    resource_titles?: Partial<Record<string, string>> | null;
     hidden_sections: CampaignSectionKey[];
     is_public: boolean;
     background_path: string | null;
@@ -250,6 +252,8 @@ async function toBoard(
     })),
     settings: {
       sectionTitles: remote.settings.section_titles ?? {},
+      sectionColors: remote.settings.section_colors ?? {},
+      resourceTitles: remote.settings.resource_titles ?? {},
       hiddenSections: remote.settings.hidden_sections ?? [],
       isPublic: remote.settings.is_public ?? false,
       backgroundPath: remote.settings.background_path,
@@ -456,6 +460,8 @@ class SupabaseCampaignRepository implements CampaignRepository {
     }
     await this.persistSettings(campaignId, board, {
       sectionTitles: draft.sectionTitles,
+      sectionColors: draft.sectionColors,
+      resourceTitles: draft.resourceTitles,
       hiddenSections: draft.hiddenSections,
     });
     return this.getBoard(campaignId);
@@ -529,6 +535,8 @@ class SupabaseCampaignRepository implements CampaignRepository {
     board: CampaignBoard,
     changes: Partial<{
       sectionTitles: CampaignSettingsDraft["sectionTitles"];
+      sectionColors: CampaignSettingsDraft["sectionColors"];
+      resourceTitles: CampaignSettingsDraft["resourceTitles"];
       hiddenSections: CampaignSettingsDraft["hiddenSections"];
       backgroundPath: string | null;
       noteTexturePath: string | null;
@@ -537,6 +545,9 @@ class SupabaseCampaignRepository implements CampaignRepository {
     await rpc("update_campaign_settings", {
       p_campaign_id: campaignId,
       p_section_titles: changes.sectionTitles ?? board.settings.sectionTitles,
+      p_section_colors: changes.sectionColors ?? board.settings.sectionColors,
+      p_resource_titles:
+        changes.resourceTitles ?? board.settings.resourceTitles,
       p_hidden_sections:
         changes.hiddenSections ?? board.settings.hiddenSections,
       p_background_path:

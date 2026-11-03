@@ -2519,6 +2519,11 @@ button {
   font-size: 23px;
   font-weight: 700;
 }
+.index-heading.has-custom-color {
+  padding: 4px 9px;
+  margin: -4px -9px 0;
+  border-radius: 5px;
+}
 .index-current {
   display: flex;
   gap: 14px;
@@ -2947,6 +2952,9 @@ textarea:focus-visible {
     padding: 39px 24px 22px;
     touch-action: none;
     user-select: none;
+    /* iOS keeps a long-press callout / selection menu unless this is off,
+       which otherwise interrupts a touch drag halfway through. */
+    -webkit-touch-callout: none;
     will-change: transform;
   }
   .user-note h3 {
@@ -3760,8 +3768,7 @@ textarea:focus-visible {
   background-blend-mode: screen;
 }
 
-.roster-dialog,
-.room-settings-dialog {
+.roster-dialog {
   width: min(900px, calc(100% - 24px));
 }
 
@@ -4015,9 +4022,48 @@ textarea:focus-visible {
 
 .section-setting-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 46px;
+  grid-template-columns: minmax(0, 1fr) 46px 46px;
   align-items: end;
   gap: 10px;
+}
+
+.sign-color-field {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid #746b5e;
+  background: #f7f1e3;
+  cursor: pointer;
+}
+
+.sign-color-input {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.sign-color-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.sign-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.sign-color-input::-webkit-color-swatch {
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
+}
+
+.sign-color-input::-moz-color-swatch {
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
 }
 
 .visibility-toggle {
@@ -4281,7 +4327,8 @@ textarea:focus-visible {
 .resource-dialog { width: min(980px, calc(100% - 32px)); }
 .directory-dialog { width: min(1080px, calc(100% - 32px)); }
 .roster-dialog { width: min(1140px, calc(100% - 32px)); }
-.room-settings-dialog { width: min(1100px, calc(100% - 32px)); }
+/* 区块设置搬回公告板后只剩 4 组内容，不再需要 1100px 的宽版。 */
+.room-settings-dialog { width: min(860px, calc(100% - 32px)); }
 .visitor-messages-dialog { width: min(1020px, calc(100% - 32px)); }
 
 /* --- Composer: publish / edit note or quest --- */
@@ -4289,15 +4336,14 @@ textarea:focus-visible {
 .composer-dialog .compose-type button { min-height: 40px; }
 .composer-dialog .color-field { margin-top: 12px; }
 
-/* --- Room settings: controls left, board sections right --- */
+/* --- Room settings: controls left, room media right --- */
 .room-settings-grid {
   display: grid;
-  grid-template-columns: minmax(270px, 0.82fr) minmax(0, 1.18fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
-    "name sections"
-    "public sections"
-    "roster sections"
-    "media sections";
+    "name media"
+    "public media"
+    "roster media";
   gap: 12px 22px;
   align-items: start;
   margin-top: 8px;
@@ -4314,12 +4360,6 @@ textarea:focus-visible {
 .room-settings-grid .public-access-toggle { width: 100%; }
 .room-settings-grid .public-share-button { grid-column: 1; }
 .room-settings-grid .room-roster-shortcut { grid-area: roster; margin: 0; }
-.room-settings-grid .board-sections-setting {
-  grid-area: sections;
-  margin: 0;
-  padding: 2px 0 0;
-  border-top: 0;
-}
 .room-settings-grid .media-settings {
   grid-area: media;
   margin: 0;
@@ -4332,10 +4372,11 @@ textarea:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px 16px;
 }
-.section-setting-row { grid-template-columns: minmax(0, 1fr) 40px; gap: 8px; }
+.section-setting-row { grid-template-columns: minmax(0, 1fr) 40px 40px; gap: 8px; }
 .section-setting-row .field { margin-top: 4px; }
 .section-setting-row .field input { height: 36px; font-size: 16px; }
 .visibility-toggle { width: 40px; height: 40px; }
+.sign-color-field { width: 40px; height: 40px; }
 .media-setting-row { padding: 9px 0; }
 
 /* --- Roster: members | detail | join inbox, side by side --- */
@@ -4576,7 +4617,7 @@ textarea:focus-visible {
   /* Every multi-column layout collapses to a single column */
   .room-settings-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "name" "public" "roster" "sections" "media";
+    grid-template-areas: "name" "public" "roster" "media";
   }
   .section-settings-list { grid-template-columns: minmax(0, 1fr); }
   .roster-shell.has-inbox { display: flex; flex-direction: column; }
@@ -5091,4 +5132,167 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 @keyframes campaign-return-in {
   from { opacity: 0; transform: translateY(-12px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+
+/* ------------------------------------------------------------------
+   区块标题旁的操作按钮（GM）：编辑标题与底色、直接隐藏区块
+   ------------------------------------------------------------------ */
+.sign > span + .sign-action,
+.sign > .sign-action + .sign-action {
+  margin-left: 8px;
+}
+
+/* .section-heading already has a 12px gap, so reset the added margin there. */
+.section-heading > .sign-action,
+.section-heading > .sign-action + .sign-action {
+  margin-left: 0;
+}
+
+.index-heading {
+  gap: 8px;
+}
+
+.index-heading > .sign-action + .sign-action {
+  margin-left: 4px;
+}
+
+.sign-action svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ------------------------------------------------------------------
+   区块设置弹窗
+   ------------------------------------------------------------------ */
+.section-settings-dialog,
+.section-visibility-dialog {
+  width: min(520px, calc(100% - 24px));
+}
+
+.dialog-hint {
+  margin: 0 0 16px;
+  color: rgba(43, 40, 32, 0.68);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.section-settings-block {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 2px solid rgba(54, 46, 34, 0.12);
+}
+
+.section-settings-block:last-of-type {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.section-settings-heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.section-color-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: auto;
+  height: auto;
+  padding: 8px 12px;
+  border: 1px solid #746b5e;
+  background: #f7f1e3;
+  cursor: pointer;
+}
+
+.section-color-field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3d3629;
+}
+
+/* ------------------------------------------------------------------
+   区块显隐弹窗
+   ------------------------------------------------------------------ */
+.section-visibility-list {
+  display: grid;
+  gap: 8px;
+}
+
+.section-visibility-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(54, 46, 34, 0.18);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.section-visibility-row.is-hidden {
+  background: rgba(54, 46, 34, 0.08);
+}
+
+.section-visibility-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.section-visibility-name strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.section-visibility-name small {
+  color: rgba(43, 40, 32, 0.55);
+  font-size: 11px;
+}
+
+.section-visibility-row.is-hidden .section-visibility-name strong {
+  color: rgba(43, 40, 32, 0.55);
+}
+
+.section-visibility-row .visibility-toggle {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+}
+
+/* 标题牌底色可能是浅黄、米色，也可能是 GM 自定义的任意颜色，
+   所以按钮统一跟随标题文字颜色，保证在任何底色上都看得清。 */
+.sign > .sign-action,
+.index-heading > .sign-action {
+  color: inherit;
+  border-color: currentColor;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.sign > .sign-action:hover,
+.index-heading > .sign-action:hover {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+/* 顶栏的区块按钮：.shop-status button 默认是 30×30 的 grid，
+   带数字时必须改成横排，否则计数会掉到图标下面。 */
+.shop-status .section-visibility-button {
+  display: flex;
+  width: auto;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+/* 检查清单设置弹窗里跳到检查项编辑器的入口 */
+.section-checklist-shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
 }

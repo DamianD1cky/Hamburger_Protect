@@ -39,6 +39,8 @@ const fieldLabels: Record<string, string> = {
   category_id: "检查分类",
   pinned: "置顶状态",
   section_titles: "区块标题",
+  section_colors: "标题底色",
+  resource_titles: "物资便签标题",
   hidden_sections: "隐藏区块",
   background_path: "场景背景",
   note_texture_path: "便签纸张",

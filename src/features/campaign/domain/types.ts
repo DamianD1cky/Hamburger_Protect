@@ -111,6 +111,8 @@ export interface ActivityPage {
 
 export interface CampaignSettings {
   sectionTitles: Partial<Record<CampaignSectionKey, string>>;
+  sectionColors: Partial<Record<CampaignSectionKey, string>>;
+  resourceTitles: Partial<Record<string, string>>;
   hiddenSections: CampaignSectionKey[];
   isPublic: boolean;
   backgroundPath: string | null;
@@ -167,8 +169,13 @@ export interface MemberProfileDraft {
 export interface CampaignSettingsDraft {
   name: string;
   sectionTitles: Partial<Record<CampaignSectionKey, string>>;
+  sectionColors: Partial<Record<CampaignSectionKey, string>>;
+  resourceTitles: Partial<Record<string, string>>;
   hiddenSections: CampaignSectionKey[];
 }
+
+/** 只改其中几项时用这个，未出现的键沿用当前值。 */
+export type CampaignSettingsPatch = Partial<CampaignSettingsDraft>;
 
 export interface QuestDraft {
   title: string;

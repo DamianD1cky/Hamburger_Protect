@@ -5,6 +5,7 @@ import type {
   ResourceItem,
 } from "../../features/campaign/domain/types";
 import {
+  resourceGroupTitle,
   resourceGroups,
   resourceLabels,
 } from "../../features/campaign/domain/resources";
@@ -165,6 +166,10 @@ export function ResourceSheetDialog({
 }) {
   const items = board.resources.filter((item) => item.group === group);
   const sheet = resourceGroups.find((sheet) => sheet.id === group)!;
+  const sheetTitle = resourceGroupTitle(
+    group,
+    board.settings.resourceTitles ?? {},
+  );
   const canEdit =
     board.viewer.role !== "observer" && board.campaign.status === "active";
   const [adding, setAdding] = useState(false);
@@ -173,7 +178,7 @@ export function ResourceSheetDialog({
     setBusyCount((count) => count + (busy ? 1 : -1));
   return (
     <PaperDialog
-      title={sheet.title}
+      title={sheetTitle}
       className="resource-dialog"
       onClose={() => {
         if (!busyCount) onClose();
