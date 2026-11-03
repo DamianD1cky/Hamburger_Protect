@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 import { loadEnv } from "vite";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -35,6 +35,9 @@ const browser = await chromium.launch({
 });
 const screenshots = join(tmpdir(), "hp-motion-regression");
 await mkdir(screenshots, { recursive: true });
+const backgroundImage = await readFile(
+  new URL("../../assets/felt.webp", import.meta.url),
+);
 let checks = 0;
 const check = (condition, message) => { assert.ok(condition, message); checks++; };
 try {
@@ -83,7 +86,7 @@ try {
       resources: [], checklist_categories: [], checklist_items: [],
       quests: [{ id: "test-quest", title: "验收任务", body: "提交后等待审核", assignee_label: "服务员", due_at: null, status: "pending_review", created_by: actorId, claimed_by: actorId, submissions: [{ id: "test-submission" }] }],
       notes: [{ id: noteId, title: "验收便签", body: "直接跟手，失败回位", color: "yellow", x: 1100, y: 650, rotation: -2, created_at: date, author_id: actorId, pinned: true, pinned_at: date }],
-      settings: { section_titles: {}, hidden_sections: [], is_public: true, background_path: null, note_texture_path: null }, events: [],
+      settings: { section_titles: {}, hidden_sections: [], is_public: true, background_path: "fixtures/custom-background.webp", note_texture_path: null }, events: [],
     };
     await context.route(`${origin}/**`, async (route) => {
       const request = route.request();
@@ -91,7 +94,15 @@ try {
       const body = request.postDataJSON();
       let result = [];
       let status = 200;
-      if (path.endsWith("/get_service_status")) result = "ready";
+      if (path.includes("/storage/v1/object/sign/campaign-media/")) {
+        if (request.method() === "GET") {
+          await route.fulfill({ contentType: "image/webp", body: backgroundImage });
+          return;
+        }
+        result = {
+          signedURL: "/object/sign/campaign-media/fixtures/custom-background.webp?token=test",
+        };
+      } else if (path.endsWith("/get_service_status")) result = "ready";
       else if (path.endsWith("/ensure_actor")) result = { id: actorId, display_name: "验收账号", disabled: false };
       else if (path.endsWith("/get_gm_access")) result = { user_id: actorId, account_name: user.email, display_name: "验收账号", status: "approved", requested_at: date, reviewed_at: date, review_note: "" };
       else if (path === "/auth/v1/user") result = user;
@@ -119,6 +130,18 @@ try {
     boardGate = null;
     await page.locator(".board").waitFor();
     await page.waitForFunction(() => !document.documentElement.dataset.campaignTransition);
+    check(
+      await page.locator('.world[data-has-custom-background="true"]').isVisible(),
+      "custom scene is marked after its signed image resolves",
+    );
+    const frameEdges = page.locator(".scene-frame > span");
+    check(await frameEdges.count() === 4, "custom scene preserves all four default frame edges");
+    check(
+      await frameEdges.evaluateAll((elements) =>
+        elements.every((element) => getComputedStyle(element).backgroundImage.includes("scene")),
+      ),
+      "preserved frame edges reuse the default scene artwork",
+    );
     const transitions = await page.evaluate(() => window.transitionLog);
     check(scenario.reduced || scenario.unsupported ? transitions.length === 0 : transitions[0]?.ready, "native transition is ready or safely bypassed");
     check(boardRequests === 1, "mounted board reuses prepared query data");

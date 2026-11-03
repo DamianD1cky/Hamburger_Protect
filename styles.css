@@ -123,6 +123,57 @@ button {
   object-fit: cover;
 }
 
+/* A custom scene replaces the room photo, not the physical notice-board
+   frame. These aligned crops preserve only its four straight edges; the
+   existing corner stickers cover the hand-drawn curved joins. */
+.scene-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  user-select: none;
+  pointer-events: none;
+}
+
+.scene-frame > span {
+  position: absolute;
+  display: block;
+  background-image: url("assets/scene.webp");
+  background-size: 2496px 1664px;
+  background-repeat: no-repeat;
+}
+
+.scene-frame-top {
+  left: 520px;
+  top: 115px;
+  width: 1437px;
+  height: 55px;
+  background-position: -520px -115px;
+}
+
+.scene-frame-right {
+  left: 1977px;
+  top: 160px;
+  width: 43px;
+  height: 1220px;
+  background-position: -1977px -160px;
+}
+
+.scene-frame-bottom {
+  left: 520px;
+  top: 1373px;
+  width: 1437px;
+  height: 67px;
+  background-position: -520px -1373px;
+}
+
+.scene-frame-left {
+  left: 466px;
+  top: 160px;
+  width: 44px;
+  height: 1220px;
+  background-position: -466px -160px;
+}
+
 .board-clock {
   position: absolute;
   z-index: 12;
@@ -201,6 +252,7 @@ button {
 
 .board {
   position: absolute;
+  z-index: 2;
   left: 510px;
   top: 170px;
   width: 1467px;

@@ -75,6 +75,7 @@ export function BoardScene({
   const hidden = new Set(board.settings.hiddenSections);
   const title = (key: Parameters<typeof sectionTitle>[0]) =>
     sectionTitle(key, board.settings.sectionTitles);
+  const hasCustomBackground = Boolean(board.settings.backgroundUrl);
   const sceneSrc = board.settings.backgroundUrl ?? sceneUrl;
   const fallBackToDefaultScene = (event: {
     currentTarget: HTMLImageElement;
@@ -99,7 +100,11 @@ export function BoardScene({
         decoding="async"
         onError={fallBackToDefaultScene}
       />
-      <div className="world" ref={worldRef}>
+      <div
+        className="world"
+        data-has-custom-background={hasCustomBackground || undefined}
+        ref={worldRef}
+      >
         <picture className="scene-picture">
           <img
             className="scene"
@@ -114,6 +119,15 @@ export function BoardScene({
             onError={fallBackToDefaultScene}
           />
         </picture>
+
+        {hasCustomBackground && (
+          <div className="scene-frame" aria-hidden="true">
+            <span className="scene-frame-top" />
+            <span className="scene-frame-right" />
+            <span className="scene-frame-bottom" />
+            <span className="scene-frame-left" />
+          </div>
+        )}
 
         <BoardClock />
 
