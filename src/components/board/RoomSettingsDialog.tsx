@@ -235,6 +235,7 @@ export function RoomSettingsDialog({
                 sectionTitles: board.settings.sectionTitles,
                 sectionColors: board.settings.sectionColors,
                 resourceTitles: board.settings.resourceTitles,
+                moduleLayout: board.settings.moduleLayout,
                 hiddenSections: board.settings.hiddenSections,
               });
               onClose();

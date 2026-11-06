@@ -5334,3 +5334,52 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 .section-color-field {
   cursor: default;
 }
+
+/* ------------------------------------------------------------------
+   公告板模块：位置由 inline style 控制，区块自身撑满外层容器
+   ------------------------------------------------------------------ */
+.board-module {
+  position: absolute;
+  z-index: 2;
+}
+
+/* 区块原本的 left/top/width/height 写死在样式表里，这里统一交给外层。 */
+.board-module > .board-section {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* 只有标题牌能拖，正文里的按钮保持正常点击 */
+.board-module.is-draggable > .board-section > .sign,
+.board-module.is-draggable > .board-section > .index-heading {
+  cursor: grab;
+  touch-action: none;
+}
+
+.board-module.is-dragging {
+  z-index: 25;
+}
+
+.board-module.is-dragging > .board-section > .sign,
+.board-module.is-dragging > .board-section > .index-heading {
+  cursor: grabbing;
+}
+
+/* 拖到别的模块身上：放不下，给个视觉提示 */
+.board-module.is-blocked > .board-section {
+  filter: saturate(0.45);
+  opacity: 0.78;
+}
+
+/* 便签始终压在模块上面，松手后也不会被挡住 */
+.board-module + .user-notes,
+.user-notes {
+  z-index: 8;
+}
+
+.pin-actions {
+  z-index: 9;
+}

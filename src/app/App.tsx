@@ -724,6 +724,7 @@ function CampaignBoardWorkspace({
       sectionTitles: board.settings.sectionTitles,
       sectionColors: board.settings.sectionColors,
       resourceTitles: board.settings.resourceTitles,
+      moduleLayout: board.settings.moduleLayout,
       hiddenSections: board.settings.hiddenSections,
       ...patch,
     });
@@ -782,6 +783,15 @@ function CampaignBoardWorkspace({
               .then(() => showToast("区块已隐藏，可在顶栏恢复"))
               .catch(() => showToast("隐藏失败，请检查权限后重试"));
           }}
+          moduleLayout={board.settings.moduleLayout}
+          onMoveModule={(key, x, y) =>
+            patchBoardSettings({
+              moduleLayout: {
+                ...board.settings.moduleLayout,
+                [key]: { x, y },
+              },
+            })
+          }
         />
       </Suspense>
 

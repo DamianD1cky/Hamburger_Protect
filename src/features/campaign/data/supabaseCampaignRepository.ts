@@ -16,6 +16,7 @@ import type {
   ResourceStatus,
 } from "../domain/types";
 import { requireSupabase, rpc } from "../../../lib/supabase/client";
+import type { BoardModuleLayout } from "../domain/boardModules";
 import {
   getSupabaseAppSession,
   requireSupabaseSession,
@@ -78,6 +79,7 @@ interface RemoteBoard {
     section_titles: Partial<Record<CampaignSectionKey, string>>;
     section_colors?: Partial<Record<CampaignSectionKey, string>> | null;
     resource_titles?: Partial<Record<string, string>> | null;
+    module_layout?: BoardModuleLayout | null;
     hidden_sections: CampaignSectionKey[];
     is_public: boolean;
     background_path: string | null;
@@ -254,6 +256,7 @@ async function toBoard(
       sectionTitles: remote.settings.section_titles ?? {},
       sectionColors: remote.settings.section_colors ?? {},
       resourceTitles: remote.settings.resource_titles ?? {},
+      moduleLayout: remote.settings.module_layout ?? {},
       hiddenSections: remote.settings.hidden_sections ?? [],
       isPublic: remote.settings.is_public ?? false,
       backgroundPath: remote.settings.background_path,
@@ -462,6 +465,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
       sectionTitles: draft.sectionTitles,
       sectionColors: draft.sectionColors,
       resourceTitles: draft.resourceTitles,
+      moduleLayout: draft.moduleLayout,
       hiddenSections: draft.hiddenSections,
     });
     return this.getBoard(campaignId);
@@ -537,6 +541,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
       sectionTitles: CampaignSettingsDraft["sectionTitles"];
       sectionColors: CampaignSettingsDraft["sectionColors"];
       resourceTitles: CampaignSettingsDraft["resourceTitles"];
+      moduleLayout: CampaignSettingsDraft["moduleLayout"];
       hiddenSections: CampaignSettingsDraft["hiddenSections"];
       backgroundPath: string | null;
       noteTexturePath: string | null;
@@ -548,6 +553,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_section_colors: changes.sectionColors ?? board.settings.sectionColors,
       p_resource_titles:
         changes.resourceTitles ?? board.settings.resourceTitles,
+      p_module_layout: changes.moduleLayout ?? board.settings.moduleLayout,
       p_hidden_sections:
         changes.hiddenSections ?? board.settings.hiddenSections,
       p_background_path:

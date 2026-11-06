@@ -1,6 +1,9 @@
 export type CampaignRole = "gm" | "player" | "observer";
 export type CampaignStatus = "active" | "archived";
 export type EmployeePosition = string;
+
+import type { BoardModuleLayout } from "./boardModules";
+
 export type CampaignSectionKey =
   "inventory" | "tasks" | "shifts" | "index" | "activity" | "safety" | "notes";
 export type CampaignMediaKind = "background" | "noteTexture";
@@ -114,6 +117,8 @@ export interface CampaignSettings {
   sectionColors: Partial<Record<CampaignSectionKey, string>>;
   resourceTitles: Partial<Record<string, string>>;
   hiddenSections: CampaignSectionKey[];
+  /** 每个模块摆放的位置；没记录的模块用内置默认位置。 */
+  moduleLayout: BoardModuleLayout;
   isPublic: boolean;
   backgroundPath: string | null;
   noteTexturePath: string | null;
@@ -172,6 +177,7 @@ export interface CampaignSettingsDraft {
   sectionColors: Partial<Record<CampaignSectionKey, string>>;
   resourceTitles: Partial<Record<string, string>>;
   hiddenSections: CampaignSectionKey[];
+  moduleLayout: BoardModuleLayout;
 }
 
 /** 只改其中几项时用这个，未出现的键沿用当前值。 */

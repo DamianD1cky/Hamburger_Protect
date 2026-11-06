@@ -34,6 +34,7 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
     sectionColors: {},
     resourceTitles: {},
     hiddenSections: [],
+    moduleLayout: {},
     isPublic: false,
     backgroundPath: null,
     noteTexturePath: null,
@@ -42,6 +43,7 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
   };
   board.settings.sectionColors ??= {};
   board.settings.resourceTitles ??= {};
+  board.settings.moduleLayout ??= {};
   board.settings.isPublic ??= false;
   board.members ??= [
     {
@@ -178,6 +180,7 @@ function snapshots(board: CampaignBoard) {
         section_titles: board.settings.sectionTitles,
         section_colors: board.settings.sectionColors,
         resource_titles: board.settings.resourceTitles,
+        module_layout: board.settings.moduleLayout,
         hidden_sections: board.settings.hiddenSections,
       },
     },
@@ -514,6 +517,7 @@ class LocalCampaignRepository implements CampaignRepository {
       board.settings.sectionTitles = draft.sectionTitles;
       board.settings.sectionColors = draft.sectionColors;
       board.settings.resourceTitles = draft.resourceTitles;
+      board.settings.moduleLayout = draft.moduleLayout;
       board.settings.hiddenSections = draft.hiddenSections;
     });
   }

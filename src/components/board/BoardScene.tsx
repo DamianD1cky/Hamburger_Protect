@@ -1,5 +1,5 @@
 import { List, Plus } from "lucide-react";
-import type { MouseEvent, Ref, RefObject } from "react";
+import type { MouseEvent, ReactNode, Ref, RefObject } from "react";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
 import stickerTopRight from "../../../assets/stickers/tr.webp";
@@ -29,7 +29,13 @@ import {
   type SectionActions,
 } from "./BoardSections";
 import { BoardClock } from "./BoardClock";
+import { BoardModuleFrame } from "./BoardModuleFrame";
 import { NoteCard } from "./NoteCard";
+import {
+  moduleRect,
+  type BoardModuleKey,
+  type BoardModuleLayout,
+} from "../../features/campaign/domain/boardModules";
 
 interface BoardSceneProps {
   board: CampaignBoard;
@@ -53,6 +59,12 @@ interface BoardSceneProps {
   onMoveNote: (noteId: string, x: number, y: number) => Promise<unknown>;
   onEditSection: (key: CampaignSectionKey) => void;
   onHideSection: (key: CampaignSectionKey) => void;
+  moduleLayout: BoardModuleLayout;
+  onMoveModule: (
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+  ) => Promise<unknown>;
 }
 
 export function BoardScene({
@@ -73,6 +85,8 @@ export function BoardScene({
   onMoveNote,
   onEditSection,
   onHideSection,
+  moduleLayout,
+  onMoveModule,
 }: BoardSceneProps) {
   const canEditNotes =
     board.viewer.role !== "observer" && board.campaign.status === "active";
@@ -97,6 +111,19 @@ export function BoardScene({
       : undefined;
   const resourceTitles = board.settings.resourceTitles ?? {};
   const notesColor = color("notes");
+  /** 把区块包进可拖拽模块；位置来自 module_layout，缺省时用内置位置。 */
+  const moduleFrame = (key: BoardModuleKey, node: ReactNode) => (
+    <BoardModuleFrame
+      moduleKey={key}
+      rect={moduleRect(key, moduleLayout)}
+      layout={moduleLayout}
+      canDrag={canManage}
+      viewScaleRef={viewScaleRef}
+      onMove={onMoveModule}
+    >
+      {node}
+    </BoardModuleFrame>
+  );
   const sceneSrc = board.settings.backgroundUrl ?? sceneUrl;
   const fallBackToDefaultScene = (event: {
     currentTarget: HTMLImageElement;
@@ -153,71 +180,83 @@ export function BoardScene({
         <BoardClock />
 
         <main className="board" aria-label={board.campaign.name + " 公告板"}>
-          {!hidden.has("inventory") && (
-            <InventorySection
-              title={title("inventory")}
-              color={color("inventory")}
-              resourceTitles={resourceTitles}
-              actions={actionsFor("inventory")}
-              resources={board.resources}
-              canManage={canUpdateSharedBoard}
-              onOpenSheet={onOpenResourceSheet}
-            />
-          )}
-          {!hidden.has("tasks") && (
-            <TaskSection
-              title={title("tasks")}
-              color={color("tasks")}
-              actions={actionsFor("tasks")}
-              quests={board.quests}
-              viewer={board.viewer}
-              campaignActive={board.campaign.status === "active"}
-              onCompose={onComposeQuest}
-              onEdit={onEditQuest}
-              onTransition={onTransitionQuest}
-            />
-          )}
-          {!hidden.has("shifts") && (
-            <ShiftSection
-              title={title("shifts")}
-              color={color("shifts")}
-              actions={actionsFor("shifts")}
-              members={board.members}
-              canExpand={board.viewer.role !== "observer"}
-              onExpand={onExpandRoster}
-            />
-          )}
-          {!hidden.has("index") && (
-            <BurgerIndexSection
-              title={title("index")}
-              color={color("index")}
-              actions={actionsFor("index")}
-              value={board.campaign.burgerIndex}
-              canManage={canManage}
-              onManage={onManageIndex}
-            />
-          )}
-          {!hidden.has("activity") && (
-            <MemoSection
-              title={title("activity")}
-              color={color("activity")}
-              actions={actionsFor("activity")}
-              board={board}
-              onOpen={onOpenActivity}
-            />
-          )}
-          {!hidden.has("safety") && (
-            <SafetySection
-              title={title("safety")}
-              color={color("safety")}
-              actions={actionsFor("safety")}
-              checklist={board.checklist}
-              categories={board.checklistCategories}
-              canManage={canManage}
-              canToggle={canUpdateSharedBoard}
-              onToggle={onToggleChecklist}
-            />
-          )}
+          {!hidden.has("inventory") &&
+            moduleFrame(
+              "inventory",
+              <InventorySection
+                title={title("inventory")}
+                color={color("inventory")}
+                resourceTitles={resourceTitles}
+                actions={actionsFor("inventory")}
+                resources={board.resources}
+                canManage={canUpdateSharedBoard}
+                onOpenSheet={onOpenResourceSheet}
+              />,
+            )}
+          {!hidden.has("tasks") &&
+            moduleFrame(
+              "tasks",
+              <TaskSection
+                title={title("tasks")}
+                color={color("tasks")}
+                actions={actionsFor("tasks")}
+                quests={board.quests}
+                viewer={board.viewer}
+                campaignActive={board.campaign.status === "active"}
+                onCompose={onComposeQuest}
+                onEdit={onEditQuest}
+                onTransition={onTransitionQuest}
+              />,
+            )}
+          {!hidden.has("shifts") &&
+            moduleFrame(
+              "shifts",
+              <ShiftSection
+                title={title("shifts")}
+                color={color("shifts")}
+                actions={actionsFor("shifts")}
+                members={board.members}
+                canExpand={board.viewer.role !== "observer"}
+                onExpand={onExpandRoster}
+              />,
+            )}
+          {!hidden.has("index") &&
+            moduleFrame(
+              "index",
+              <BurgerIndexSection
+                title={title("index")}
+                color={color("index")}
+                actions={actionsFor("index")}
+                value={board.campaign.burgerIndex}
+                canManage={canManage}
+                onManage={onManageIndex}
+              />,
+            )}
+          {!hidden.has("activity") &&
+            moduleFrame(
+              "activity",
+              <MemoSection
+                title={title("activity")}
+                color={color("activity")}
+                actions={actionsFor("activity")}
+                board={board}
+                onOpen={onOpenActivity}
+              />,
+            )}
+          {!hidden.has("safety") &&
+            moduleFrame(
+              "safety",
+              <SafetySection
+                title={title("safety")}
+                color={color("safety")}
+                actions={actionsFor("safety")}
+                checklist={board.checklist}
+                categories={board.checklistCategories}
+                canManage={canManage}
+                canToggle={canUpdateSharedBoard}
+                onToggle={onToggleChecklist}
+              />,
+            )}
 
           {!hidden.has("notes") && (
             <>
