@@ -63,6 +63,8 @@ export function SectionSettingsDialog({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /** 输入框正在编辑时的原文；合法就同步到 color，失焦后回到规范化显示。 */
+  const [hexDraft, setHexDraft] = useState<string | null>(null);
 
   const isInventory = sectionKey === "inventory";
 
@@ -124,6 +126,7 @@ export function SectionSettingsDialog({
   const resetDefaults = () => {
     setTitle(section.defaultTitle);
     setColor(defaultSectionColors[sectionKey]);
+    setHexDraft(null);
     if (isInventory) {
       const preset: Record<string, string> = {};
       for (const group of resourceGroups) preset[String(group.id)] = group.title;
@@ -152,17 +155,42 @@ export function SectionSettingsDialog({
             aria-label={section.defaultTitle + "的标题"}
           />
         </label>
-        <label className="sign-color-field section-color-field">
+        <div className="sign-color-field section-color-field">
           <span>标题底色</span>
-          <input
-            type="color"
-            className="sign-color-input"
-            value={color}
-            disabled={!editable || busy}
-            onChange={(event) => setColor(event.target.value)}
-            aria-label={section.defaultTitle + "的底色"}
-          />
-        </label>
+          <span className="color-inputs">
+            <input
+              type="color"
+              className="sign-color-input"
+              value={color}
+              disabled={!editable || busy}
+              onChange={(event) => {
+                setColor(event.target.value);
+                setHexDraft(null);
+              }}
+              aria-label={section.defaultTitle + "的取色器"}
+            />
+            <input
+              type="text"
+              className="color-hex-input"
+              value={hexDraft ?? color}
+              maxLength={7}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="#rrggbb"
+              disabled={!editable || busy}
+              onChange={(event) => {
+                const raw = event.target.value;
+                setHexDraft(raw);
+                // 输全了才生效，半截输入不会把颜色刷成黑色。
+                const normalized = normalizeColor(raw);
+                if (normalized) setColor(normalized);
+              }}
+              onBlur={() => setHexDraft(null)}
+              aria-label={section.defaultTitle + "的十六进制色号"}
+              title="直接输入十六进制色号，例如 #df101d"
+            />
+          </span>
+        </div>
       </section>
 
       {isInventory && (

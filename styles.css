@@ -5296,3 +5296,41 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   gap: 8px;
   width: 100%;
 }
+
+/* ------------------------------------------------------------------
+   底色输入：取色器 + 十六进制文本框
+   ------------------------------------------------------------------ */
+.color-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-hex-input {
+  width: 96px;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  border-radius: 4px;
+  background: #fffdf7;
+  color: #28241f;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.color-hex-input:focus-visible {
+  border-color: #2b2517;
+  outline: 2px solid rgba(43, 37, 23, 0.28);
+  outline-offset: 1px;
+}
+
+.color-hex-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* 这一行现在装的是两个输入控件，不再整体可点 */
+.section-color-field {
+  cursor: default;
+}
