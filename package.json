@@ -7,6 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check": "tsc -b --pretty false",
+    "check:harness": "node --experimental-strip-types scripts/tests/harness.mjs",
+    "check:harness-db": "node scripts/tests/harness-database.mjs",
+    "check:harness-ui": "node scripts/tests/harness-ui.mjs",
+    "app:sync": "npm run build && cap sync",
+    "app:ios": "cap open ios",
+    "app:android": "cap open android",
     "preview": "vite preview",
     "nhost:validate": "nhost config validate",
     "nhost:up": "nhost up",
@@ -24,6 +30,9 @@
     "migration:gm-passwords": "node scripts/migration/migrate-gm-passwords.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
     "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-query": "^5.104.2",
     "lucide-react": "^1.57.0",
@@ -32,6 +41,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
     "@electric-sql/pglite": "^0.5.12",
     "@nhost/cli": "^1.52.0",
     "@types/react": "^19.3.0",

@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient, type Query } from "@tanstack/react-query";
+import { Capacitor } from "@capacitor/core";
 import {
   ArrowLeft,
   BookOpen,
@@ -65,6 +66,9 @@ const loadBoardScene = () => import("../components/board/BoardScene").then(
   (module) => ({ default: module.BoardScene }),
 );
 const BoardScene = lazy(loadBoardScene);
+const HarnessWorkspace = lazy(() => import("../features/harness/HarnessWorkspace").then(
+  module => ({ default: module.HarnessWorkspace }),
+));
 const ComposerDialog = lazy(() =>
   import("../components/composer/ComposerDialog").then((module) => ({
     default: module.ComposerDialog,
@@ -501,6 +505,7 @@ function CampaignBoardWorkspace({
   const [notesOpen, setNotesOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
+  const [harnessOpen, setHarnessOpen] = useState(() => Capacitor.isNativePlatform() && !publicView);
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const [visitorMessagesOpen, setVisitorMessagesOpen] = useState(false);
   const [sectionSettingsKey, setSectionSettingsKey] =
@@ -737,6 +742,13 @@ function CampaignBoardWorkspace({
         ? board.viewer.jobTitle
         : "观察者";
 
+  if (!publicView && harnessOpen) {
+    return (
+      <Suspense fallback={<CloudStatus message="正在打开跑团工作台" />}>
+        <HarnessWorkspace key={`${board.campaign.id}:${board.viewer.id}:${board.viewer.role}`} campaign={board} onClose={() => setHarnessOpen(false)} />
+      </Suspense>
+    );
+  }
   return (
     <>
       <div className="backdrop" aria-hidden="true" />
@@ -903,6 +915,7 @@ function CampaignBoardWorkspace({
         )}
       </div>
 
+      {!publicView && <button className="harness-launch" onClick={() => setHarnessOpen(true)}><LayoutGrid size={17} />跑团工作台</button>}
       <FocusDock
         active={focusZone}
         hiddenSections={board.settings.hiddenSections}

@@ -20,3 +20,8 @@ enable_signup = true
 enable_confirmations = false
 [functions.migrate-identity]
 verify_jwt = true
+
+[functions.board-agent]
+# The handler verifies the caller by forwarding their JWT to authenticated RPCs.
+# This supports Supabase's asymmetric signing keys without a legacy gateway check.
+verify_jwt = false

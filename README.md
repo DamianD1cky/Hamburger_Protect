@@ -2,6 +2,12 @@
 
 一个围绕「保卫汉堡店」展开的多人跑团任务公告板。玩家是被困在汉○王门店的倒霉员工与顾客，需要在丧尸危机中维持营业、分配工作、记录行动并等待救援。
 
+## 多人 App / 公告板 Harness 原型
+
+功能分支新增「跑团工作台」入口，可组合多个说明、资源计数和进度钟，按战役身份使用 GM／玩家助手。包含 iOS／Android Capacitor 工程、Supabase 事务命令和可选模型适配器。原生 App 进入战役后默认打开工作台。
+
+本地体验：`VITE_BACKEND=local npm run dev`，打开公告板左下方「跑团工作台」。本地演示不跨设备联机；云端联机和 AI 需要部署对应服务。配置、验证范围和后续边界见 [HARNESS.md](HARNESS.md)。
+
 ## 在线访问
 
 <https://hamburger.damiandicky.site>

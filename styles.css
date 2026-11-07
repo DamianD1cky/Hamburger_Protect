@@ -1,3 +1,20 @@
+.harness-launch {
+  position: fixed;
+  left: max(18px, env(safe-area-inset-left));
+  bottom: calc(82px + env(safe-area-inset-bottom));
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d7ccbd;
+  border-radius: 9px;
+  background: #fffaf1;
+  color: #83271f;
+  padding: 12px 16px;
+  font: 600 13px system-ui, sans-serif;
+  cursor: pointer;
+}
+
 :root {
   --ink: #272421;
   --felt: #151717;

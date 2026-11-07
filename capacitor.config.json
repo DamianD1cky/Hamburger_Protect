@@ -1,0 +1,7 @@
+{
+  "appId": "app.hamburgerprotect.table",
+  "appName": "跑团工作台",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" },
+  "ios": { "contentInset": "automatic" }
+}
