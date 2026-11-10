@@ -196,6 +196,8 @@ export function NoteCard({
       playFeedback(event.currentTarget, "is-settling");
       const x = Math.round(Number.parseFloat(event.currentTarget.style.left));
       const y = Math.round(Number.parseFloat(event.currentTarget.style.top));
+      event.currentTarget.style.left = x + "px";
+      event.currentTarget.style.top = y + "px";
       onPositionPreview(note.id, x, y);
       // If the save fails, roll back to the server coordinates instead of
       // leaving the note stranded at the dropped position.

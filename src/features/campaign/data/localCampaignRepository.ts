@@ -3,6 +3,7 @@ import type { CampaignRepository } from "../domain/repository";
 import type {
   CampaignBoard,
   BoardActivity,
+  BoardNoteLink,
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
@@ -461,22 +462,29 @@ class LocalCampaignRepository implements CampaignRepository {
     _campaignId: string,
     fromNoteId: string,
     toNoteId: string,
-  ): Promise<CampaignBoard> {
-    return this.manage((board) => {
+  ): Promise<BoardNoteLink> {
+    let result: BoardNoteLink | undefined;
+    this.manage((board) => {
       if (fromNoteId === toNoteId) return;
-      const exists = board.noteLinks.some(
+      const existing = board.noteLinks.find(
         (link) =>
           (link.fromNoteId === fromNoteId && link.toNoteId === toNoteId) ||
           (link.fromNoteId === toNoteId && link.toNoteId === fromNoteId),
       );
-      if (exists) return;
-      board.noteLinks.push({
+      if (existing) {
+        result = { ...existing };
+        return;
+      }
+      result = {
         id: uid("link"),
         fromNoteId,
         toNoteId,
         label: null,
-      });
+      };
+      board.noteLinks.push(result);
     });
+    if (!result) throw new Error("无法创建便签连线");
+    return result;
   }
   async updateNoteLinkLabel(
     _campaignId: string,

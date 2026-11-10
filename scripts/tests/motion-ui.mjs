@@ -16,7 +16,9 @@ const campaignId = "30000000-0000-4000-8000-000000000010";
 const deniedId = "30000000-0000-4000-8000-000000000011";
 const noteId = "40000000-0000-4000-8000-000000000010";
 const linkedNoteId = "40000000-0000-4000-8000-000000000011";
+const newLinkedNoteId = "40000000-0000-4000-8000-000000000012";
 const noteLinkId = "50000000-0000-4000-8000-000000000010";
+const newNoteLinkId = "50000000-0000-4000-8000-000000000011";
 const name = "动效验收战役";
 const date = new Date().toISOString();
 const user = {
@@ -82,6 +84,20 @@ try {
     let boardGate = new Promise((resolve) => { releaseBoard = resolve; });
     let boardRequests = 0;
     let rejectMove = false;
+    let delayedMoveId = null;
+    let releaseDelayedMove;
+    let delayedMoveGate = null;
+    let releaseCreateLink;
+    let createLinkGate = null;
+    let deleteLinkRequests = 0;
+    let noteLinks = [
+      {
+        id: noteLinkId,
+        from_note_id: noteId,
+        to_note_id: linkedNoteId,
+        label: "同伴",
+      },
+    ];
     let board = {
       id: campaignId, name, join_code: "TEST00", status: "active", burger_index: 5,
       members: [{ user_id: actorId, role: "gm", character_name: "验收店长", job_title: "店长", profile_text: "", active: true, joined_at: date, left_at: null }],
@@ -90,6 +106,7 @@ try {
       notes: [
         { id: noteId, title: "验收便签", body: "直接跟手，失败回位", color: "yellow", x: 1100, y: 650, rotation: -2, created_at: date, author_id: actorId, pinned: true, pinned_at: date },
         { id: linkedNoteId, title: "连线目标", body: "验证端点同步", color: "blue", x: 820, y: 480, rotation: 1, created_at: date, author_id: actorId, pinned: false, pinned_at: null },
+        { id: newLinkedNoteId, title: "即时连线目标", body: "请求未完成也立即显示", color: "pink", x: 520, y: 820, rotation: -1, created_at: date, author_id: actorId, pinned: false, pinned_at: null },
       ],
       settings: { section_titles: {}, hidden_sections: [], is_public: true, background_path: "fixtures/custom-background.webp", note_texture_path: null }, events: [],
     };
@@ -113,7 +130,26 @@ try {
       else if (path === "/auth/v1/user") result = user;
       else if (path.endsWith("/campaign_members")) result = [campaignId, deniedId].map((id) => ({ campaign_id: id, role: "gm", character_name: "验收店长", job_title: "店长", joined_at: date, campaign: { name: id === campaignId ? name : "不可访问的战役", join_code: "TEST00", status: "active" } }));
       else if (path.endsWith("/list_public_campaigns")) result = [{ id: campaignId, name, burger_index: 5, published_at: date, message_count: 0 }];
-      else if (path.endsWith("/get_note_links")) result = [{ id: noteLinkId, from_note_id: noteId, to_note_id: linkedNoteId }];
+      else if (path.endsWith("/get_note_links")) result = noteLinks;
+      else if (path.endsWith("/create_note_link")) {
+        if (createLinkGate) await createLinkGate;
+        noteLinks.push({
+          id: newNoteLinkId,
+          from_note_id: body.p_from,
+          to_note_id: body.p_to,
+          label: null,
+        });
+        result = newNoteLinkId;
+      } else if (path.endsWith("/update_note_link_label")) {
+        noteLinks = noteLinks.map((link) =>
+          link.id === body.p_id ? { ...link, label: body.p_label } : link,
+        );
+        result = body.p_label;
+      } else if (path.endsWith("/delete_note_link")) {
+        deleteLinkRequests++;
+        noteLinks = noteLinks.filter((link) => link.id !== body.p_id);
+        result = body.p_id;
+      }
       else if (path.endsWith("/get_campaign_board") || path.endsWith("/get_public_campaign_board")) {
         boardRequests++;
         if (body.p_campaign_id === deniedId) { status = 400; result = { message: "FORBIDDEN" }; }
@@ -122,7 +158,10 @@ try {
       else if (path.endsWith("/review_quest_submission")) board.quests[0].status = body.p_approved ? "completed" : "failed";
       else if (path.endsWith("/move_note")) {
         if (rejectMove) { status = 400; result = { message: "FORBIDDEN" }; }
-        else board.notes[0] = { ...board.notes[0], x: body.p_x, y: body.p_y };
+        else {
+          if (body.p_id === delayedMoveId && delayedMoveGate) await delayedMoveGate;
+          board.notes = board.notes.map((note) => note.id === body.p_id ? { ...note, x: body.p_x, y: body.p_y } : note);
+        }
       }
       await route.fulfill({ status, headers: { "content-range": "*/0" }, contentType: "application/json", body: JSON.stringify(result) });
     });
@@ -180,8 +219,11 @@ try {
 
     if (scenario.width > 1024) {
       const note = page.locator(`[data-note-id="${noteId}"]`);
+      const linkedNote = page.locator(`[data-note-id="${linkedNoteId}"]`);
       const link = page.locator(`.note-link-line[data-from-note-id="${noteId}"]`);
+      const linkLabel = page.locator(`.note-link-label[data-link-id="${noteLinkId}"]`);
       const position = () => note.evaluate((element) => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)]);
+      const linkedPosition = () => linkedNote.evaluate((element) => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)]);
       const initial = await position();
       const box = await note.boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -207,6 +249,87 @@ try {
         "failed move restores the linked line endpoint",
       );
       check(await note.evaluate((element) => getComputedStyle(element).zIndex) === "1000", "failed move restores pinned layer");
+      rejectMove = false;
+
+      delayedMoveId = noteId;
+      delayedMoveGate = new Promise((resolve) => { releaseDelayedMove = resolve; });
+      const firstBox = await note.boundingBox();
+      await page.mouse.move(firstBox.x + firstBox.width / 2, firstBox.y + firstBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(firstBox.x + firstBox.width / 2 - 55, firstBox.y + firstBox.height / 2 - 35, { steps: 3 });
+      await page.mouse.up();
+      const firstMoved = await position();
+
+      const secondBox = await linkedNote.boundingBox();
+      await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(secondBox.x + secondBox.width / 2 + 45, secondBox.y + secondBox.height / 2 + 30, { steps: 3 });
+      const secondMoved = await linkedPosition();
+      const liveLine = await link.evaluate((element) => ["x1", "y1", "x2", "y2"].map((name) => Number(element.getAttribute(name))));
+      const liveLabel = await linkLabel.evaluate((element) => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)]);
+      check(JSON.stringify(await position()) === JSON.stringify(firstMoved), "moving a linked note does not reset the previous note");
+      check(
+        Math.abs(liveLine[0] - (firstMoved[0] + 138)) < 0.1 &&
+          Math.abs(liveLine[1] - (firstMoved[1] + 16.5)) < 0.1 &&
+          Math.abs(liveLine[2] - (secondMoved[0] + 138)) < 0.1 &&
+          Math.abs(liveLine[3] - (secondMoved[1] + 16.5)) < 0.1,
+        "both line endpoints retain their live note positions",
+      );
+      check(
+        Math.abs(liveLabel[0] - (liveLine[0] + liveLine[2]) / 2) < 0.1 &&
+          Math.abs(liveLabel[1] - (liveLine[1] + liveLine[3]) / 2) < 0.1,
+        "link label follows the live line midpoint",
+      );
+      const linkedBoardResponse = page.waitForResponse((response) =>
+        new URL(response.url()).pathname.endsWith("/get_campaign_board"),
+      );
+      await page.mouse.up();
+      const secondSettled = secondMoved.map(Math.round);
+      await linkedBoardResponse;
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
+      check(JSON.stringify(await position()) === JSON.stringify(firstMoved), "a completed linked-note save preserves the previous note position");
+      check(JSON.stringify(await linkedPosition()) === JSON.stringify(secondSettled), "the second note settles at its rounded saved position");
+      releaseDelayedMove();
+      delayedMoveGate = null;
+      delayedMoveId = null;
+      await page.waitForFunction(({ noteId, linkedNoteId, firstMoved, secondSettled }) => {
+        const first = document.querySelector(`[data-note-id="${noteId}"]`);
+        const second = document.querySelector(`[data-note-id="${linkedNoteId}"]`);
+        return Number.parseFloat(first.style.left) === firstMoved[0] &&
+          Number.parseFloat(first.style.top) === firstMoved[1] &&
+          Number.parseFloat(second.style.left) === secondSettled[0] &&
+          Number.parseFloat(second.style.top) === secondSettled[1];
+      }, { noteId, linkedNoteId, firstMoved, secondSettled });
+
+      const linkHit = page.locator(`.note-link-hit[data-link-id="${noteLinkId}"]`);
+      await linkHit.click({ force: true });
+      check(deleteLinkRequests === 0, "a single line click never deletes the connection");
+      check(await link.isVisible(), "the clicked connection remains visible");
+      check(await page.getByRole("button", { name: "删除连线", exact: true }).isVisible(), "line editing exposes an explicit delete button");
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "删除连线", exact: true }).waitFor({ state: "hidden" });
+
+      createLinkGate = new Promise((resolve) => { releaseCreateLink = resolve; });
+      const newLinkedNote = page.locator(`[data-note-id="${newLinkedNoteId}"]`);
+      await note.locator(".note-pin").click({ force: true });
+      await newLinkedNote.locator(".note-pin").click({ force: true });
+      const pendingLine = page.locator('.note-link-line[data-link-id^="pending-"]');
+      await pendingLine.waitFor();
+      check(await pendingLine.isVisible(), "a new connection appears before its request completes");
+      check(await page.getByRole("textbox", { name: "连线说明", exact: true }).isVisible(), "the relation card appears with the pending connection");
+      check(await page.locator(`.note-link-line[data-link-id="${newNoteLinkId}"]`).count() === 0, "the optimistic connection does not wait for a server id");
+      releaseCreateLink();
+      createLinkGate = null;
+      await page.waitForFunction(({ newNoteLinkId }) =>
+        document.querySelector(`.note-link-line[data-link-id="${newNoteLinkId}"]`) &&
+        !document.querySelector('.note-link-line[data-link-id^="pending-"]'),
+      { newNoteLinkId });
+      check(await page.getByRole("textbox", { name: "连线说明", exact: true }).isVisible(), "the relation card stays open after server confirmation");
+      const deletesBeforeExplicitAction = deleteLinkRequests;
+      await page.getByRole("button", { name: "删除连线", exact: true }).click();
+      await page.locator(`.note-link-line[data-link-id="${newNoteLinkId}"]`).waitFor({ state: "hidden" });
+      check(deleteLinkRequests === deletesBeforeExplicitAction + 1, "only the explicit delete button removes a connection");
+
       await note.focus();
       await page.keyboard.press("Enter");
       const composer = page.getByRole("dialog", { name: "编辑便签", exact: true });

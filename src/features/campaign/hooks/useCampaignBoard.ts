@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { backend } from "../../../lib/backend";
 import { getSupabaseAppSession } from "../../access/data/supabaseSession";
@@ -10,6 +11,7 @@ import { localCampaignRepository } from "../data/localCampaignRepository";
 import { cloneDefaultBoard, defaultBoard } from "../domain/defaults";
 import type {
   CampaignBoard,
+  BoardNoteLink,
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
@@ -55,6 +57,7 @@ export function useCampaignBoard(
   const repository = cloudEnabled
     ? supabaseCampaignRepository
     : localCampaignRepository;
+  const noteMoveRevisions = useRef(new Map<string, number>());
   const options = campaignBoardQueryOptions(requestedCampaignId, publicView);
   const boardKey = options.queryKey;
   const query = useQuery({
@@ -72,6 +75,94 @@ export function useCampaignBoard(
       throw new Error("登录账号已变更，请重新进入战役。");
     queryClient.setQueryData(boardKey, next);
     return next;
+  };
+
+  const setCachedNotePosition = (noteId: string, x: number, y: number) => {
+    queryClient.setQueryData<CampaignBoard>(boardKey, (current) => {
+      if (!current) return current;
+      const noteIndex = current.notes.findIndex((note) => note.id === noteId);
+      if (noteIndex < 0) return current;
+      const notes = current.notes.slice();
+      notes[noteIndex] = { ...notes[noteIndex], x, y };
+      return { ...current, notes };
+    });
+  };
+
+  const moveNote = async (noteId: string, x: number, y: number) => {
+    const revision = (noteMoveRevisions.current.get(noteId) ?? 0) + 1;
+    noteMoveRevisions.current.set(noteId, revision);
+    const previous = queryClient
+      .getQueryData<CampaignBoard>(boardKey)
+      ?.notes.find((note) => note.id === noteId);
+
+    await queryClient.cancelQueries({ queryKey: boardKey });
+    if (noteMoveRevisions.current.get(noteId) === revision) {
+      setCachedNotePosition(noteId, x, y);
+    }
+
+    try {
+      const next = await repository.moveNote(campaignId, noteId, x, y);
+      if (
+        cloudEnabled &&
+        getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId
+      ) {
+        throw new Error("登录账号已变更，请重新进入战役。");
+      }
+      // moveNote 返回的是整板快照。这里只合并当前便签，避免较晚返回的
+      // 旧快照覆盖其他刚移动完的便签。
+      if (noteMoveRevisions.current.get(noteId) === revision) {
+        setCachedNotePosition(noteId, x, y);
+      }
+      return next;
+    } catch (error) {
+      if (
+        previous &&
+        noteMoveRevisions.current.get(noteId) === revision
+      ) {
+        setCachedNotePosition(noteId, previous.x, previous.y);
+      }
+      throw error;
+    } finally {
+      if (noteMoveRevisions.current.get(noteId) === revision) {
+        noteMoveRevisions.current.delete(noteId);
+      }
+    }
+  };
+
+  const createNoteLink = async (
+    fromNoteId: string,
+    toNoteId: string,
+  ): Promise<BoardNoteLink> => {
+    const created = await repository.createNoteLink(
+      campaignId,
+      fromNoteId,
+      toNoteId,
+    );
+    if (
+      cloudEnabled &&
+      getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId
+    ) {
+      throw new Error("登录账号已变更，请重新进入战役。");
+    }
+    queryClient.setQueryData<CampaignBoard>(boardKey, (current) => {
+      if (!current) return current;
+      const existing = current.noteLinks.find(
+        (link) =>
+          link.id === created.id ||
+          (link.fromNoteId === created.fromNoteId &&
+            link.toNoteId === created.toNoteId),
+      );
+      if (!existing) {
+        return { ...current, noteLinks: [...current.noteLinks, created] };
+      }
+      return {
+        ...current,
+        noteLinks: current.noteLinks.map((link) =>
+          link === existing ? created : link,
+        ),
+      };
+    });
+    return created;
   };
 
   return {
@@ -107,8 +198,7 @@ export function useCampaignBoard(
       commit(() => repository.deleteQuest(campaignId, questId)),
     saveNote: (draft: NoteDraft, noteId?: string) =>
       commit(() => repository.saveNote(campaignId, draft, noteId)),
-    moveNote: (noteId: string, x: number, y: number) =>
-      commit(() => repository.moveNote(campaignId, noteId, x, y)),
+    moveNote,
     deleteNote: (noteId: string) =>
       commit(() => repository.deleteNote(campaignId, noteId)),
     setNotePinned: (noteId: string, pinned: boolean) =>
@@ -117,8 +207,7 @@ export function useCampaignBoard(
       commit(() => repository.setNoteLayer(campaignId, noteId, layer)),
     uploadNotePhoto: (file: File) =>
       repository.uploadNotePhoto(campaignId, file),
-    createNoteLink: (fromNoteId: string, toNoteId: string) =>
-      commit(() => repository.createNoteLink(campaignId, fromNoteId, toNoteId)),
+    createNoteLink,
     deleteNoteLink: (linkId: string) =>
       commit(() => repository.deleteNoteLink(campaignId, linkId)),
     updateNoteLinkLabel: (linkId: string, label: string | null) =>

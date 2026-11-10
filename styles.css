@@ -5593,6 +5593,12 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   pointer-events: auto;
 }
 
+.note-link-label-editor {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .note-link-label-text,
 .note-link-label-input {
   display: block;
@@ -5632,4 +5638,29 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 .note-link-label-input::placeholder {
   color: rgba(43, 40, 32, 0.42);
   font-size: 14px;
+}
+
+.note-link-delete {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(128, 24, 31, 0.45);
+  border-radius: 3px;
+  background: #fffdf3;
+  color: #9f1d27;
+  cursor: pointer;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.18);
+}
+
+.note-link-delete:hover {
+  background: #f9dadd;
+  color: #721018;
+}
+
+.note-link-delete svg {
+  width: 16px;
+  height: 16px;
 }

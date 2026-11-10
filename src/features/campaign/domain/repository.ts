@@ -1,5 +1,6 @@
 import type {
   CampaignBoard,
+  BoardNoteLink,
   ActivityPage,
   ResourceDraft,
   ChecklistDraft,
@@ -75,7 +76,7 @@ export interface CampaignRepository {
     campaignId: string,
     fromNoteId: string,
     toNoteId: string,
-  ): Promise<CampaignBoard>;
+  ): Promise<BoardNoteLink>;
   deleteNoteLink(campaignId: string, linkId: string): Promise<CampaignBoard>;
   updateNoteLinkLabel(
     campaignId: string,

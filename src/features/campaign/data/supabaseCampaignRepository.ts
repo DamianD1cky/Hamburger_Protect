@@ -447,12 +447,17 @@ class SupabaseCampaignRepository implements CampaignRepository {
     return this.getBoard(campaignId);
   }
   async createNoteLink(campaignId: string, fromId: string, toId: string) {
-    await rpc("create_note_link", {
+    const id = await rpc<string>("create_note_link", {
       p_campaign_id: campaignId,
       p_from: fromId,
       p_to: toId,
     });
-    return this.getBoard(campaignId);
+    return {
+      id,
+      fromNoteId: fromId,
+      toNoteId: toId,
+      label: null,
+    };
   }
   async updateNoteLinkLabel(campaignId: string, id: string, label: string | null) {
     await rpc("update_note_link_label", {

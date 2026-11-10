@@ -1,4 +1,4 @@
-import { List, Plus } from "lucide-react";
+import { List, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode, type Ref, type RefObject } from "react";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
@@ -14,6 +14,7 @@ import {
 } from "../../features/campaign/domain/campaignSettings";
 import type {
   BoardNote,
+  BoardNoteLink,
   CampaignBoard,
   CampaignSectionKey,
   Quest,
@@ -62,7 +63,7 @@ interface BoardSceneProps {
   onCreateNoteLink: (
     fromNoteId: string,
     toNoteId: string,
-  ) => Promise<CampaignBoard>;
+  ) => Promise<BoardNoteLink>;
   onDeleteNoteLink: (linkId: string) => Promise<unknown>;
   onUpdateNoteLinkLabel: (
     linkId: string,
@@ -137,7 +138,7 @@ export function BoardScene({
     if (!element) return;
     const point = pinPoint({ x, y });
     const lines = element.querySelectorAll<SVGLineElement>(
-      "[data-from-note-id], [data-to-note-id]",
+      "line[data-from-note-id], line[data-to-note-id]",
     );
     lines.forEach((line) => {
       if (line.dataset.fromNoteId === noteId) {
@@ -149,6 +150,30 @@ export function BoardScene({
         line.setAttribute("y2", String(point.y));
       }
     });
+
+    const visualLines = new Map<string, SVGLineElement>();
+    element
+      .querySelectorAll<SVGLineElement>(".note-link-line[data-link-id]")
+      .forEach((line) => {
+        const linkId = line.dataset.linkId;
+        if (linkId) visualLines.set(linkId, line);
+      });
+    element
+      .querySelectorAll<HTMLElement>(".note-link-label[data-link-id]")
+      .forEach((label) => {
+        if (
+          label.dataset.fromNoteId !== noteId &&
+          label.dataset.toNoteId !== noteId
+        ) return;
+        const line = visualLines.get(label.dataset.linkId ?? "");
+        if (!line) return;
+        const x1 = Number(line.getAttribute("x1"));
+        const y1 = Number(line.getAttribute("y1"));
+        const x2 = Number(line.getAttribute("x2"));
+        const y2 = Number(line.getAttribute("y2"));
+        label.style.left = (x1 + x2) / 2 + "px";
+        label.style.top = (y1 + y2) / 2 + "px";
+      });
   };
   const [linking, setLinking] = useState<{
     fromId: string;
@@ -162,6 +187,22 @@ export function BoardScene({
   } | null>(null);
   /** Esc 取消时置位，避免随后的 blur 又把空标签写回去。 */
   const cancelledEdit = useRef(false);
+  const [pendingLinks, setPendingLinks] = useState<BoardNoteLink[]>([]);
+  const pendingLinkCreations = useRef(
+    new Map<string, Promise<BoardNoteLink>>(),
+  );
+  const sameLinkPair = (left: BoardNoteLink, right: BoardNoteLink) =>
+    (left.fromNoteId === right.fromNoteId &&
+      left.toNoteId === right.toNoteId) ||
+    (left.fromNoteId === right.toNoteId &&
+      left.toNoteId === right.fromNoteId);
+  // 服务端确认前由临时连线占位；确认结果进入 board 后再原位替换。
+  const visibleNoteLinks = [
+    ...board.noteLinks.filter(
+      (link) => !pendingLinks.some((pending) => sameLinkPair(link, pending)),
+    ),
+    ...pendingLinks,
+  ];
 
   useEffect(() => {
     if (!linking) return;
@@ -205,31 +246,80 @@ export function BoardScene({
     }
     const fromId = linking.fromId;
     setLinking(null);
-    void onCreateNoteLink(fromId, note.id)
-      .then((next) => {
-        const created = next.noteLinks.find(
-          (link) =>
-            link.fromNoteId === fromId && link.toNoteId === note.id,
+    const optimisticLink: BoardNoteLink = {
+      id: `pending-${crypto.randomUUID()}`,
+      fromNoteId: fromId,
+      toNoteId: note.id,
+      label: null,
+    };
+    const existing = visibleNoteLinks.find((link) =>
+      sameLinkPair(link, optimisticLink),
+    );
+    if (existing) {
+      setEditingLink({ id: existing.id, draft: existing.label ?? "" });
+      return;
+    }
+
+    setPendingLinks((current) => [...current, optimisticLink]);
+    setEditingLink({ id: optimisticLink.id, draft: "" });
+    const creation = onCreateNoteLink(fromId, note.id);
+    pendingLinkCreations.current.set(optimisticLink.id, creation);
+    void creation
+      .then((created) => {
+        setPendingLinks((current) =>
+          current.filter((link) => link.id !== optimisticLink.id),
         );
-        // 刚拉好的线直接给个纸片，写完才有内容。
-        if (created && !created.label) {
-          setEditingLink({ id: created.id, draft: "" });
-        }
+        setEditingLink((current) =>
+          current?.id === optimisticLink.id
+            ? { ...current, id: created.id }
+            : current,
+        );
       })
-      .catch(() => undefined);
+      .catch(() => {
+        setPendingLinks((current) =>
+          current.filter((link) => link.id !== optimisticLink.id),
+        );
+        setEditingLink((current) =>
+          current?.id === optimisticLink.id ? null : current,
+        );
+      })
+      .finally(() => {
+        pendingLinkCreations.current.delete(optimisticLink.id);
+      });
   };
   const commitLinkLabel = (linkId: string, draft: string) => {
     if (cancelledEdit.current) {
       cancelledEdit.current = false;
       return;
     }
-    const link = board.noteLinks.find((item) => item.id === linkId);
-    setEditingLink(null);
-    if (!link) return;
     const trimmed = draft.trim();
     const next = trimmed ? trimmed.slice(0, 24) : null;
+    const pending = pendingLinkCreations.current.get(linkId);
+    const link = visibleNoteLinks.find((item) => item.id === linkId);
+    setEditingLink(null);
+    if (pending) {
+      void pending.then((created) => {
+        if (next !== created.label) {
+          return onUpdateNoteLinkLabel(created.id, next);
+        }
+      });
+      return;
+    }
+    if (!link) return;
     if (next === link.label) return;
     void onUpdateNoteLinkLabel(linkId, next);
+  };
+  const handleDeleteNoteLink = (linkId: string) => {
+    const pending = pendingLinkCreations.current.get(linkId);
+    setEditingLink(null);
+    setPendingLinks((current) =>
+      current.filter((link) => link.id !== linkId),
+    );
+    if (pending) {
+      void pending.then((created) => onDeleteNoteLink(created.id));
+      return;
+    }
+    void onDeleteNoteLink(linkId);
   };
   const resourceTitles = board.settings.resourceTitles ?? {};
   const notesColor = color("notes");
@@ -313,7 +403,7 @@ export function BoardScene({
             preserveAspectRatio="none"
             aria-hidden="true"
           >
-            {board.noteLinks.map((link) => {
+            {visibleNoteLinks.map((link) => {
               const from = board.notes.find((n) => n.id === link.fromNoteId);
               const to = board.notes.find((n) => n.id === link.toNoteId);
               if (!from || !to) return null;
@@ -323,15 +413,17 @@ export function BoardScene({
                 <line
                   key={link.id}
                   className="note-link-hit"
+                  data-link-id={link.id}
                   data-from-note-id={link.fromNoteId}
                   data-to-note-id={link.toNoteId}
                   x1={a.x}
                   y1={a.y}
                   x2={b.x}
                   y2={b.y}
-                  onPointerDown={(event) => {
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
                     event.stopPropagation();
-                    void onDeleteNoteLink(link.id);
+                    setEditingLink({ id: link.id, draft: link.label ?? "" });
                   }}
                 />
               );
@@ -344,7 +436,7 @@ export function BoardScene({
             preserveAspectRatio="none"
             aria-hidden="true"
           >
-            {board.noteLinks.map((link) => {
+            {visibleNoteLinks.map((link) => {
               const from = board.notes.find((n) => n.id === link.fromNoteId);
               const to = board.notes.find((n) => n.id === link.toNoteId);
               if (!from || !to) return null;
@@ -354,6 +446,7 @@ export function BoardScene({
                 <line
                   key={link.id}
                   className="note-link-line"
+                  data-link-id={link.id}
                   data-from-note-id={link.fromNoteId}
                   data-to-note-id={link.toNoteId}
                   x1={a.x}
@@ -382,7 +475,7 @@ export function BoardScene({
           </svg>
 
           {/* 连线上的纸片：新建连线后自动出现，留空则不保留 */}
-          {board.noteLinks.map((link) => {
+          {visibleNoteLinks.map((link) => {
             const from = board.notes.find((n) => n.id === link.fromNoteId);
             const to = board.notes.find((n) => n.id === link.toNoteId);
             if (!from || !to) return null;
@@ -394,37 +487,58 @@ export function BoardScene({
               <div
                 className="note-link-label"
                 key={link.id}
+                data-link-id={link.id}
+                data-from-note-id={link.fromNoteId}
+                data-to-note-id={link.toNoteId}
                 style={{ left: (a.x + b.x) / 2, top: (a.y + b.y) / 2 }}
               >
                 {editing && editingLink ? (
-                  <input
-                    className="note-link-label-input"
-                    value={editingLink.draft}
-                    maxLength={24}
-                    autoFocus
-                    placeholder="写点关系…"
-                    aria-label="连线说明"
-                    onChange={(event) =>
-                      setEditingLink({
-                        id: link.id,
-                        draft: event.target.value,
-                      })
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        event.currentTarget.blur();
+                  <div className="note-link-label-editor">
+                    <input
+                      className="note-link-label-input"
+                      value={editingLink.draft}
+                      maxLength={24}
+                      autoFocus
+                      placeholder="写点关系…"
+                      aria-label="连线说明"
+                      onChange={(event) =>
+                        setEditingLink({
+                          id: link.id,
+                          draft: event.target.value,
+                        })
                       }
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        cancelledEdit.current = true;
-                        setEditingLink(null);
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          cancelledEdit.current = true;
+                          setEditingLink(null);
+                        }
+                      }}
+                      onBlur={(event) =>
+                        commitLinkLabel(link.id, event.currentTarget.value)
                       }
-                    }}
-                    onBlur={(event) =>
-                      commitLinkLabel(link.id, event.currentTarget.value)
-                    }
-                  />
+                    />
+                    <button
+                      className="note-link-delete"
+                      type="button"
+                      aria-label="删除连线"
+                      title="删除连线"
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteNoteLink(link.id);
+                      }}
+                    >
+                      <Trash2 aria-hidden="true" />
+                    </button>
+                  </div>
                 ) : (
                   <button
                     type="button"
