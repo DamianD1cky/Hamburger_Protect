@@ -5581,3 +5581,55 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 .note-meta .note-layer-actions {
   margin-left: 0;
 }
+
+/* ------------------------------------------------------------------
+   连线上的纸片：写关系说明，例如「情侣」
+   ------------------------------------------------------------------ */
+.note-link-label {
+  position: absolute;
+  z-index: 1150;
+  max-width: 200px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+.note-link-label-text,
+.note-link-label-input {
+  display: block;
+  width: auto;
+  min-width: 44px;
+  padding: 3px 9px;
+  border: 1px solid rgba(50, 46, 35, 0.35);
+  border-radius: 3px;
+  background: #fffdf3;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.22);
+  color: #2b2517;
+  font-family: var(--hand-font);
+  font-size: 17px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-link-label-text {
+  cursor: text;
+}
+
+.note-link-label-text:hover {
+  background: #fff8dd;
+  border-color: rgba(200, 38, 47, 0.55);
+}
+
+.note-link-label-input {
+  width: 132px;
+  text-align: center;
+  outline: 2px solid rgba(200, 38, 47, 0.55);
+  outline-offset: 1px;
+}
+
+.note-link-label-input::placeholder {
+  color: rgba(43, 40, 32, 0.42);
+  font-size: 14px;
+}

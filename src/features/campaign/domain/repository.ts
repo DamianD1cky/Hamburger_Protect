@@ -77,6 +77,11 @@ export interface CampaignRepository {
     toNoteId: string,
   ): Promise<CampaignBoard>;
   deleteNoteLink(campaignId: string, linkId: string): Promise<CampaignBoard>;
+  updateNoteLinkLabel(
+    campaignId: string,
+    linkId: string,
+    label: string | null,
+  ): Promise<CampaignBoard>;
   updateMemberProfile(
     campaignId: string,
     draft: MemberProfileDraft,

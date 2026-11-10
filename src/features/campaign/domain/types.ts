@@ -100,6 +100,8 @@ export interface BoardNoteLink {
   id: string;
   fromNoteId: string;
   toNoteId: string;
+  /** 线上的纸片文字；为空则不显示纸片。 */
+  label: string | null;
 }
 
 export interface BoardActivity {

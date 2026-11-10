@@ -777,6 +777,7 @@ function CampaignBoardWorkspace({
           onNoteLayer={campaign.setNoteLayer}
           onCreateNoteLink={campaign.createNoteLink}
           onDeleteNoteLink={campaign.deleteNoteLink}
+          onUpdateNoteLinkLabel={campaign.updateNoteLinkLabel}
           onEditSection={(key) => setSectionSettingsKey(key)}
           onHideSection={(key) => {
             const next = board.settings.hiddenSections.includes(key)

@@ -26,6 +26,7 @@ interface RemoteNoteLink {
   id: string;
   from_note_id: string;
   to_note_id: string;
+  label?: string | null;
 }
 
 interface RemoteBoard {
@@ -177,6 +178,7 @@ async function loadNoteLinks(campaignId: string): Promise<BoardNoteLink[]> {
       id: link.id,
       fromNoteId: link.from_note_id,
       toNoteId: link.to_note_id,
+      label: link.label ?? null,
     }));
   } catch {
     return [];
@@ -449,6 +451,14 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_campaign_id: campaignId,
       p_from: fromId,
       p_to: toId,
+    });
+    return this.getBoard(campaignId);
+  }
+  async updateNoteLinkLabel(campaignId: string, id: string, label: string | null) {
+    await rpc("update_note_link_label", {
+      p_campaign_id: campaignId,
+      p_id: id,
+      p_label: label,
     });
     return this.getBoard(campaignId);
   }

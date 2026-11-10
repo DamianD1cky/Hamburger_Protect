@@ -59,8 +59,15 @@ interface BoardSceneProps {
   ) => Promise<void>;
   onMoveNote: (noteId: string, x: number, y: number) => Promise<unknown>;
   onNoteLayer: (noteId: string, layer: number) => Promise<unknown>;
-  onCreateNoteLink: (fromNoteId: string, toNoteId: string) => Promise<unknown>;
+  onCreateNoteLink: (
+    fromNoteId: string,
+    toNoteId: string,
+  ) => Promise<CampaignBoard>;
   onDeleteNoteLink: (linkId: string) => Promise<unknown>;
+  onUpdateNoteLinkLabel: (
+    linkId: string,
+    label: string | null,
+  ) => Promise<unknown>;
   onEditSection: (key: CampaignSectionKey) => void;
   onHideSection: (key: CampaignSectionKey) => void;
   moduleLayout: BoardModuleLayout;
@@ -90,6 +97,7 @@ export function BoardScene({
   onNoteLayer,
   onCreateNoteLink,
   onDeleteNoteLink,
+  onUpdateNoteLinkLabel,
   onEditSection,
   onHideSection,
   moduleLayout,
@@ -147,6 +155,13 @@ export function BoardScene({
     x: number;
     y: number;
   } | null>(null);
+  /** 正在编辑的连线纸片；新建连线后自动进入这个状态。 */
+  const [editingLink, setEditingLink] = useState<{
+    id: string;
+    draft: string;
+  } | null>(null);
+  /** Esc 取消时置位，避免随后的 blur 又把空标签写回去。 */
+  const cancelledEdit = useRef(false);
 
   useEffect(() => {
     if (!linking) return;
@@ -190,7 +205,31 @@ export function BoardScene({
     }
     const fromId = linking.fromId;
     setLinking(null);
-    void onCreateNoteLink(fromId, note.id);
+    void onCreateNoteLink(fromId, note.id)
+      .then((next) => {
+        const created = next.noteLinks.find(
+          (link) =>
+            link.fromNoteId === fromId && link.toNoteId === note.id,
+        );
+        // 刚拉好的线直接给个纸片，写完才有内容。
+        if (created && !created.label) {
+          setEditingLink({ id: created.id, draft: "" });
+        }
+      })
+      .catch(() => undefined);
+  };
+  const commitLinkLabel = (linkId: string, draft: string) => {
+    if (cancelledEdit.current) {
+      cancelledEdit.current = false;
+      return;
+    }
+    const link = board.noteLinks.find((item) => item.id === linkId);
+    setEditingLink(null);
+    if (!link) return;
+    const trimmed = draft.trim();
+    const next = trimmed ? trimmed.slice(0, 24) : null;
+    if (next === link.label) return;
+    void onUpdateNoteLinkLabel(linkId, next);
   };
   const resourceTitles = board.settings.resourceTitles ?? {};
   const notesColor = color("notes");
@@ -341,6 +380,69 @@ export function BoardScene({
                 );
               })()}
           </svg>
+
+          {/* 连线上的纸片：新建连线后自动出现，留空则不保留 */}
+          {board.noteLinks.map((link) => {
+            const from = board.notes.find((n) => n.id === link.fromNoteId);
+            const to = board.notes.find((n) => n.id === link.toNoteId);
+            if (!from || !to) return null;
+            const a = pinPoint(from);
+            const b = pinPoint(to);
+            const editing = editingLink?.id === link.id;
+            if (!link.label && !editing) return null;
+            return (
+              <div
+                className="note-link-label"
+                key={link.id}
+                style={{ left: (a.x + b.x) / 2, top: (a.y + b.y) / 2 }}
+              >
+                {editing && editingLink ? (
+                  <input
+                    className="note-link-label-input"
+                    value={editingLink.draft}
+                    maxLength={24}
+                    autoFocus
+                    placeholder="写点关系…"
+                    aria-label="连线说明"
+                    onChange={(event) =>
+                      setEditingLink({
+                        id: link.id,
+                        draft: event.target.value,
+                      })
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelledEdit.current = true;
+                        setEditingLink(null);
+                      }
+                    }}
+                    onBlur={(event) =>
+                      commitLinkLabel(link.id, event.currentTarget.value)
+                    }
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="note-link-label-text"
+                    title="编辑连线说明"
+                    onClick={() =>
+                      setEditingLink({
+                        id: link.id,
+                        draft: link.label ?? "",
+                      })
+                    }
+                  >
+                    {link.label}
+                  </button>
+                )}
+              </div>
+            );
+          })}
           {!hidden.has("inventory") &&
             moduleFrame(
               "inventory",

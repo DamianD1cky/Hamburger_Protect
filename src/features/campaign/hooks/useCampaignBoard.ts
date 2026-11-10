@@ -121,6 +121,8 @@ export function useCampaignBoard(
       commit(() => repository.createNoteLink(campaignId, fromNoteId, toNoteId)),
     deleteNoteLink: (linkId: string) =>
       commit(() => repository.deleteNoteLink(campaignId, linkId)),
+    updateNoteLinkLabel: (linkId: string, label: string | null) =>
+      commit(() => repository.updateNoteLinkLabel(campaignId, linkId, label)),
     updateMemberProfile: (draft: MemberProfileDraft) =>
       commit(() => repository.updateMemberProfile(campaignId, draft)),
     removeMember: (userId: string, note?: string) =>

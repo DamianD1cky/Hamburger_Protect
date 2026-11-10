@@ -474,7 +474,20 @@ class LocalCampaignRepository implements CampaignRepository {
         id: uid("link"),
         fromNoteId,
         toNoteId,
+        label: null,
       });
+    });
+  }
+  async updateNoteLinkLabel(
+    _campaignId: string,
+    linkId: string,
+    label: string | null,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      const link = board.noteLinks.find((item) => item.id === linkId);
+      if (!link) return;
+      const trimmed = (label ?? "").trim();
+      link.label = trimmed ? trimmed.slice(0, 24) : null;
     });
   }
   async deleteNoteLink(
