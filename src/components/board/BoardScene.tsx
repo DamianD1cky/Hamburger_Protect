@@ -249,6 +249,36 @@ export function BoardScene({
           aria-label={board.campaign.name + " 公告板"}
           ref={boardRef}
         >
+                    {/* 命中层压在便签下面：点便签时不会被线抢走事件 */}
+          <svg
+            className="note-links-hit"
+            viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            {board.noteLinks.map((link) => {
+              const from = board.notes.find((n) => n.id === link.fromNoteId);
+              const to = board.notes.find((n) => n.id === link.toNoteId);
+              if (!from || !to) return null;
+              const a = pinPoint(from);
+              const b = pinPoint(to);
+              return (
+                <line
+                  key={link.id}
+                  className="note-link-hit"
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    void onDeleteNoteLink(link.id);
+                  }}
+                />
+              );
+            })}
+          </svg>
+          {/* 视觉层盖在便签上面：红绳从一颗图钉直接连到另一颗 */}
           <svg
             className="note-links"
             viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
@@ -256,42 +286,25 @@ export function BoardScene({
             aria-hidden="true"
           >
             {board.noteLinks.map((link) => {
-              const from = board.notes.find(
-                (note) => note.id === link.fromNoteId,
-              );
-              const to = board.notes.find((note) => note.id === link.toNoteId);
+              const from = board.notes.find((n) => n.id === link.fromNoteId);
+              const to = board.notes.find((n) => n.id === link.toNoteId);
               if (!from || !to) return null;
               const a = pinPoint(from);
               const b = pinPoint(to);
               return (
-                <g key={link.id}>
-                  {/* 细线不好点，单独铺一条更宽的透明命中区 */}
-                  <line
-                    className="note-link-hit"
-                    x1={a.x}
-                    y1={a.y}
-                    x2={b.x}
-                    y2={b.y}
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                      void onDeleteNoteLink(link.id);
-                    }}
-                  />
-                  <line
-                    className="note-link-line"
-                    x1={a.x}
-                    y1={a.y}
-                    x2={b.x}
-                    y2={b.y}
-                  />
-                </g>
+                <line
+                  key={link.id}
+                  className="note-link-line"
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                />
               );
             })}
             {linking &&
               (() => {
-                const from = board.notes.find(
-                  (note) => note.id === linking.fromId,
-                );
+                const from = board.notes.find((n) => n.id === linking.fromId);
                 if (!from) return null;
                 const a = pinPoint(from);
                 return (

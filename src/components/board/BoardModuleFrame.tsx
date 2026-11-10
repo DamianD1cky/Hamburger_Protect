@@ -83,7 +83,11 @@ export function BoardModuleFrame({
         if (Math.hypot(dx, dy) <= 4) return;
         drag.moved = true;
         suppressClick.current = true;
-        element.setPointerCapture?.(event.pointerId);
+        try {
+          element.setPointerCapture?.(event.pointerId);
+        } catch {
+          // 同上：指针已释放时忽略。
+        }
         element.classList.add("is-dragging");
       }
       event.preventDefault();
@@ -112,8 +116,12 @@ export function BoardModuleFrame({
       if (!drag.active) return;
       drag.active = false;
       element.classList.remove("is-dragging", "is-blocked");
-      if (element.hasPointerCapture?.(drag.pointerId)) {
-        element.releasePointerCapture?.(drag.pointerId);
+      try {
+        if (element.hasPointerCapture?.(drag.pointerId)) {
+          element.releasePointerCapture?.(drag.pointerId);
+        }
+      } catch {
+        // ignore
       }
       const changed = drag.x !== rect.x || drag.y !== rect.y;
       if (!drag.moved || !changed) {

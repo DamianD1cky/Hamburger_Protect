@@ -131,7 +131,11 @@ export function NoteCard({
       originY: note.y,
       moved: false,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // 指针已经释放时捕获会抛错，跳过即可，不影响后续拖动判断。
+    }
     event.currentTarget.style.zIndex = String(dragZ);
     // Mouse lifts immediately for direct-manipulation feedback; a finger waits
     // until real movement, otherwise a plain tap flashes the drag styling.

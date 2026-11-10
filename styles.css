@@ -5525,10 +5525,21 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   outline-offset: 3px;
 }
 
-/* 连线层压在模块之上、便签之下 */
-.note-links {
+/* 命中层压在便签下面：只负责「点线删除」，不抢便签的点击 */
+.note-links-hit {
   position: absolute;
   z-index: 5;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* 视觉层盖在便签上面（便签最高 1000 + layer），红绳直接跨在两颗图钉之间 */
+.note-links {
+  position: absolute;
+  z-index: 1100;
   inset: 0;
   width: 100%;
   height: 100%;
