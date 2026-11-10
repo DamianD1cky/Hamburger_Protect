@@ -113,6 +113,10 @@ export function useCampaignBoard(
       commit(() => repository.deleteNote(campaignId, noteId)),
     setNotePinned: (noteId: string, pinned: boolean) =>
       commit(() => repository.setNotePinned(campaignId, noteId, pinned)),
+    setNoteLayer: (noteId: string, layer: number) =>
+      commit(() => repository.setNoteLayer(campaignId, noteId, layer)),
+    uploadNotePhoto: (file: File) =>
+      repository.uploadNotePhoto(campaignId, file),
     updateMemberProfile: (draft: MemberProfileDraft) =>
       commit(() => repository.updateMemberProfile(campaignId, draft)),
     removeMember: (userId: string, note?: string) =>

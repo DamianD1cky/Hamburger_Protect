@@ -5,6 +5,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
 import type { BoardNote } from "../../features/campaign/domain/types";
 
@@ -18,6 +19,7 @@ interface NoteCardProps {
   noteTextureUrl: string | null;
   onEdit: (note: BoardNote, element: HTMLElement) => void;
   onMove: (noteId: string, x: number, y: number) => Promise<unknown>;
+  onLayerChange: (noteId: string, layer: number) => Promise<unknown>;
 }
 
 export function NoteCard({
@@ -27,7 +29,11 @@ export function NoteCard({
   noteTextureUrl,
   onEdit,
   onMove,
+  onLayerChange,
 }: NoteCardProps) {
+  // pinned 永远压在最上面，其余按 layer 叠；拖拽时再临时抬高。
+  const baseZ = (note.pinned ? 1000 : 50) + (note.layer ?? 0);
+  const dragZ = baseZ + 200;
   const elementRef = useRef<HTMLElement>(null);
   const dragRef = useRef({
     pointerId: -1,
@@ -66,7 +72,7 @@ export function NoteCard({
       element.classList.remove("is-dragging", "is-settling");
       element.style.left = note.x + "px";
       element.style.top = note.y + "px";
-      element.style.zIndex = "";
+      element.style.zIndex = String(baseZ);
       const dx = (Number.isFinite(currentX) ? currentX : note.x) - note.x;
       const dy = (Number.isFinite(currentY) ? currentY : note.y) - note.y;
       if (animate && !window.matchMedia("(prefers-reduced-motion: reduce)").matches &&
@@ -105,6 +111,8 @@ export function NoteCard({
     // to be excluded here, which left phone users unable to move a note.
     // A drag already in flight wins, so a second finger cannot hijack it.
     if (!canEdit || dragRef.current.pointerId >= 0) return;
+    // 点图层按钮之类的控件不应该把便签拖走。
+    if ((event.target as HTMLElement).closest("button")) return;
     // Only the primary mouse button starts a drag; touch and pen always do.
     if (event.pointerType === "mouse" && event.button !== 0) return;
     dragRef.current = {
@@ -116,7 +124,7 @@ export function NoteCard({
       moved: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
-    event.currentTarget.style.zIndex = "20";
+    event.currentTarget.style.zIndex = String(dragZ);
     // Mouse lifts immediately for direct-manipulation feedback; a finger waits
     // until real movement, otherwise a plain tap flashes the drag styling.
     if (event.pointerType === "mouse")
@@ -158,7 +166,7 @@ export function NoteCard({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    event.currentTarget.style.zIndex = "";
+    event.currentTarget.style.zIndex = String(baseZ);
     event.currentTarget.classList.remove("is-dragging");
     drag.pointerId = -1;
     if (escapeListener.current) {
@@ -196,12 +204,14 @@ export function NoteCard({
       data-note-id={note.id}
       data-color={note.color}
       data-pinned={note.pinned}
+      data-photo={note.imageUrl || note.imagePath ? "true" : undefined}
       role={canEdit ? "button" : undefined}
       tabIndex={canEdit ? 0 : -1}
       aria-label={canEdit ? "编辑工作记录：" + note.title : undefined}
       style={{
         left: note.x,
         top: note.y,
+        zIndex: baseZ,
         transform: "rotate(" + note.rotation + "deg)",
         backgroundImage: noteTextureUrl ? `url(${noteTextureUrl})` : undefined,
       }}
@@ -211,13 +221,54 @@ export function NoteCard({
       onPointerCancel={() => cancelDrag()}
       onKeyDown={handleKeyDown}
     >
-      <h3>{note.title}</h3>
-      <p>{note.body}</p>
+      {note.imageUrl || note.imagePath ? (
+        <figure className="note-photo">
+          <img
+            src={note.imageUrl ?? note.imagePath ?? ""}
+            alt={note.title || "线索照片"}
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+          />
+          {note.title.trim() && <figcaption>{note.title}</figcaption>}
+        </figure>
+      ) : (
+        <>
+          <h3>{note.title}</h3>
+          <p>{note.body}</p>
+        </>
+      )}
       <footer className="note-meta">
         <span>{note.authorName}</span>
         <time dateTime={note.createdAt}>
           {formatNoteTimestamp(note.createdAt)}
         </time>
+        {canEdit && (
+          <span className="note-layer-actions">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void onLayerChange(note.id, note.layer + 1);
+              }}
+              aria-label="上移一层"
+              title="上移一层"
+            >
+              <ChevronUp aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void onLayerChange(note.id, note.layer - 1);
+              }}
+              aria-label="下移一层"
+              title="下移一层"
+            >
+              <ChevronDown aria-hidden="true" />
+            </button>
+          </span>
+        )}
       </footer>
     </article>
   );

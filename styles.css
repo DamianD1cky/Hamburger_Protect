@@ -5383,3 +5383,111 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 .pin-actions {
   z-index: 9;
 }
+
+/* ------------------------------------------------------------------
+   带照片的便签：拍立得样式（白边 + 底部说明）
+   ------------------------------------------------------------------ */
+.user-note[data-photo="true"] {
+  padding: 12px 12px 8px;
+  background: #fffdf8;
+  border-color: rgba(50, 46, 35, 0.18);
+}
+
+.note-photo {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  gap: 8px;
+}
+
+.note-photo img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  background: #ddd7c9;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.note-photo figcaption {
+  display: -webkit-box;
+  overflow: hidden;
+  padding: 0 2px 4px;
+  color: #3a3428;
+  font-family: var(--hand-font);
+  font-size: 19px;
+  line-height: 1.3;
+  text-align: center;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* ------------------------------------------------------------------
+   便签的图层上下移动（与置顶并行）
+   ------------------------------------------------------------------ */
+.note-layer-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+  pointer-events: auto;
+}
+
+.note-layer-actions button {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: rgba(43, 40, 32, 0.5);
+  cursor: pointer;
+}
+
+.note-layer-actions button:hover {
+  background: rgba(43, 40, 32, 0.1);
+  color: rgba(43, 40, 32, 0.85);
+}
+
+.note-layer-actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* ------------------------------------------------------------------
+   编辑器里的照片选择
+   ------------------------------------------------------------------ */
+.note-photo-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.note-photo-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3d3629;
+}
+
+.note-photo-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.note-photo-preview img {
+  width: 110px;
+  height: 110px;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: #ddd7c9;
+}
+
+.note-photo-hint {
+  color: rgba(43, 40, 32, 0.55);
+  font-size: 11px;
+  line-height: 1.5;
+}

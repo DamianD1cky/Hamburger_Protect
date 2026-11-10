@@ -57,6 +57,7 @@ interface BoardSceneProps {
     source: HTMLElement,
   ) => Promise<void>;
   onMoveNote: (noteId: string, x: number, y: number) => Promise<unknown>;
+  onNoteLayer: (noteId: string, layer: number) => Promise<unknown>;
   onEditSection: (key: CampaignSectionKey) => void;
   onHideSection: (key: CampaignSectionKey) => void;
   moduleLayout: BoardModuleLayout;
@@ -83,6 +84,7 @@ export function BoardScene({
   onEditNote,
   onTransitionQuest,
   onMoveNote,
+  onNoteLayer,
   onEditSection,
   onHideSection,
   moduleLayout,
@@ -284,6 +286,7 @@ export function BoardScene({
                     }
                     onEdit={onEditNote}
                     onMove={onMoveNote}
+                    onLayerChange={onNoteLayer}
                   />
                 ))}
               </div>

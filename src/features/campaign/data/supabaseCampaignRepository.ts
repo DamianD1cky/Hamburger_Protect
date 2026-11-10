@@ -74,6 +74,8 @@ interface RemoteBoard {
     author_id: string;
     pinned: boolean;
     pinned_at: string | null;
+    layer?: number | null;
+    image_path?: string | null;
   }>;
   settings: {
     section_titles: Partial<Record<CampaignSectionKey, string>>;
@@ -236,22 +238,29 @@ async function toBoard(
     })),
     activities: activityPage(events).items,
     hasMoreActivity: activityPage(events).hasMore,
-    notes: remote.notes.map((note) => ({
-      id: note.id,
-      title: note.title,
-      body: note.body,
-      color: note.color,
-      x: note.x,
-      y: note.y,
-      rotation: note.rotation,
-      createdAt: note.created_at,
-      authorId: note.author_id,
-      authorName:
-        remote.members.find((member) => member.user_id === note.author_id)
-          ?.character_name ?? "未知员工",
-      pinned: note.pinned,
-      pinnedAt: note.pinned_at,
-    })),
+    notes: await Promise.all(
+      remote.notes.map(async (note) => ({
+        id: note.id,
+        title: note.title,
+        body: note.body,
+        color: note.color,
+        x: note.x,
+        y: note.y,
+        rotation: note.rotation,
+        createdAt: note.created_at,
+        authorId: note.author_id,
+        authorName:
+          remote.members.find((member) => member.user_id === note.author_id)
+            ?.character_name ?? "未知员工",
+        pinned: note.pinned,
+        pinnedAt: note.pinned_at,
+        layer: note.layer ?? 0,
+        imagePath: note.image_path ?? null,
+        imageUrl: note.image_path
+          ? await signedMediaUrl(note.image_path, publicView)
+          : null,
+      })),
+    ),
     settings: {
       sectionTitles: remote.settings.section_titles ?? {},
       sectionColors: remote.settings.section_colors ?? {},
@@ -407,6 +416,33 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_x: 1098 + (count % 2) * 36,
       p_y: 605 + (count % 3) * 168,
       p_rotation: [-2.4, 1.8, -0.8][count % 3],
+      p_image_path: draft.imagePath ?? null,
+    });
+    return this.getBoard(campaignId);
+  }
+  async uploadNotePhoto(campaignId: string, file: File) {
+    const extensions: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    };
+    const extension = extensions[file.type];
+    if (!extension) throw new Error("照片仅支持 JPEG、PNG、WebP");
+    if (file.size > 5 * 1024 * 1024) throw new Error("照片不能超过 5 MiB");
+    const path = `${campaignId}/note-${crypto.randomUUID()}.${extension}`;
+    const bucket = requireSupabase().storage.from("campaign-media");
+    const upload = await bucket.upload(path, file, {
+      contentType: file.type,
+      upsert: false,
+    });
+    if (upload.error) throw new Error("照片上传失败");
+    return path;
+  }
+  async setNoteLayer(campaignId: string, id: string, layer: number) {
+    await rpc("set_note_layer", {
+      p_campaign_id: campaignId,
+      p_id: id,
+      p_layer: layer,
     });
     return this.getBoard(campaignId);
   }

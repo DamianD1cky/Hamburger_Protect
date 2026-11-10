@@ -88,6 +88,12 @@ export interface BoardNote {
   authorName: string;
   pinned: boolean;
   pinnedAt: string | null;
+  /** 图层顺序，与 pinned 并行：pinned 永远在最上，其余按 layer 叠。 */
+  layer: number;
+  /** 便签照片的存储路径。 */
+  imagePath: string | null;
+  /** 由 imagePath 换来的临时访问地址。 */
+  imageUrl?: string | null;
 }
 
 export interface BoardActivity {
@@ -194,6 +200,8 @@ export interface NoteDraft {
   title: string;
   body: string;
   color: NoteColor;
+  /** null 表示这张便签不带照片。 */
+  imagePath: string | null;
 }
 
 export type ComposerTarget =

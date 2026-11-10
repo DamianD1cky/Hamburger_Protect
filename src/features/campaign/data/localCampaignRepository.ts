@@ -130,6 +130,8 @@ function loadLegacyBoard(): CampaignBoard | null {
         authorName: board.viewer.displayName,
         pinned: false,
         pinnedAt: null,
+        layer: Number(note.layer ?? 0),
+        imagePath: null,
       }));
     }
 
@@ -442,6 +444,7 @@ class LocalCampaignRepository implements CampaignRepository {
         authorName: board.viewer.displayName,
         pinned: false,
         pinnedAt: null,
+        layer: 0,
       });
     });
   }
@@ -469,6 +472,21 @@ class LocalCampaignRepository implements CampaignRepository {
       if (!note) throw new Error("便签不存在");
       note.pinned = pinned;
       note.pinnedAt = pinned ? new Date().toISOString() : null;
+    });
+  }
+  async uploadNotePhoto(_campaignId: string, file: File) {
+    // 演示模式没有后端存储，直接用本地对象地址预览。
+    return URL.createObjectURL(file);
+  }
+  async setNoteLayer(
+    _campaignId: string,
+    noteId: string,
+    layer: number,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      const note = board.notes.find((item) => item.id === noteId);
+      if (!note) throw new Error("便签不存在");
+      note.layer = Math.max(-50, Math.min(50, layer));
     });
   }
 

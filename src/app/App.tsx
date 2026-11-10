@@ -774,6 +774,7 @@ function CampaignBoardWorkspace({
           }
           onTransitionQuest={transitionQuest}
           onMoveNote={campaign.moveNote}
+          onNoteLayer={campaign.setNoteLayer}
           onEditSection={(key) => setSectionSettingsKey(key)}
           onHideSection={(key) => {
             const next = board.settings.hiddenSections.includes(key)
@@ -923,6 +924,7 @@ function CampaignBoardWorkspace({
               await campaign.saveNote(draft, id);
               showToast(id ? "工作记录已更新" : "工作记录已贴上公告板");
             }}
+            onUploadPhoto={(file) => campaign.uploadNotePhoto(file)}
             onDelete={async (target) => {
               if (target.kind === "quest") {
                 await campaign.deleteQuest(target.id);

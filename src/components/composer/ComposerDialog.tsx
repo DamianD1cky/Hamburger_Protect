@@ -1,5 +1,5 @@
-import { ClipboardList, MessageSquare, Send, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ClipboardList, Image as ImageIcon, MessageSquare, Send, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type {
   CampaignBoard,
   ComposerTarget,
@@ -8,6 +8,7 @@ import type {
   QuestDraft,
 } from "../../features/campaign/domain/types";
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
+import { blobToFile, compressImage } from "../../lib/imageCompress";
 import { PaperDialog } from "./PaperDialog";
 
 export type ComposeKind = "note" | "quest";
@@ -24,6 +25,8 @@ interface ComposerDialogProps {
   onSaveQuest: (draft: QuestDraft, id?: string) => Promise<void>;
   onSaveNote: (draft: NoteDraft, id?: string) => Promise<void>;
   onDelete: (target: ComposerTarget) => Promise<void>;
+  /** 返回存储路径；失败抛错。 */
+  onUploadPhoto: (file: File) => Promise<string>;
 }
 const colors: Array<{ value: NoteColor; label: string }> = [
   { value: "yellow", label: "黄色" },
@@ -40,6 +43,7 @@ export function ComposerDialog({
   onSaveQuest,
   onSaveNote,
   onDelete,
+  onUploadPhoto,
 }: ComposerDialogProps) {
   const quest =
     state.target?.kind === "quest"
@@ -55,6 +59,11 @@ export function ComposerDialog({
   const [assigneeName, setAssigneeName] = useState(quest?.assigneeName ?? "");
   const [due, setDue] = useState(quest?.due ?? "");
   const [color, setColor] = useState<NoteColor>(note?.color ?? "yellow");
+  const [photoPath, setPhotoPath] = useState<string | null>(note?.imagePath ?? null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const hasPhoto = Boolean(photoPath || photoFile);
+  const previewSrc = photoPreview ?? note?.imageUrl ?? null;
   const imeGuard = useImeEnterGuard();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -81,6 +90,44 @@ export function ComposerDialog({
         ? "发布工作指示"
         : "填写便签";
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+  useEffect(
+    () => () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+    },
+    [photoPreview],
+  );
+  const choosePhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("照片仅支持 JPEG、PNG、WebP");
+      return;
+    }
+    try {
+      const compressed = await compressImage(file);
+      if (compressed.size > 5 * 1024 * 1024) {
+        setError("照片压缩后仍超过 5 MiB，请换一张小一点的");
+        return;
+      }
+      setError("");
+      setPhotoFile(blobToFile(compressed, "note.jpg"));
+      setPhotoPreview((previous) => {
+        if (previous) URL.revokeObjectURL(previous);
+        return URL.createObjectURL(compressed);
+      });
+    } catch {
+      setError("照片处理失败，请换一张试试");
+    }
+  };
+  const clearPhoto = () => {
+    setPhotoFile(null);
+    setPhotoPath(null);
+    setPhotoPreview((previous) => {
+      if (previous) URL.revokeObjectURL(previous);
+      return null;
+    });
+  };
   const requestClose = () => {
     if (closing) return;
     const animate =
@@ -96,7 +143,8 @@ export function ComposerDialog({
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (submitting || !canEdit || !title.trim() || !body.trim()) return;
+    if (submitting || !canEdit || !title.trim()) return;
+    if (kind === "quest" && !body.trim()) return;
     setSubmitting(true);
     setError("");
     try {
@@ -110,11 +158,19 @@ export function ComposerDialog({
           },
           state.target?.id,
         );
-      else
+      else {
+        let imagePath = photoPath;
+        if (photoFile) imagePath = await onUploadPhoto(photoFile);
         await onSaveNote(
-          { title: title.trim(), body: body.trim(), color },
+          {
+            title: title.trim(),
+            body: body.trim(),
+            color,
+            imagePath,
+          },
           state.target?.id,
         );
+      }
       requestClose();
     } catch {
       setError("保存失败，请检查网络或修改权限后重试。草稿已保留。");
@@ -212,7 +268,7 @@ export function ComposerDialog({
                   onChange={(e) => setBody(e.target.value)}
                   maxLength={1000}
                   rows={4}
-                  required
+                  required={kind === "quest" || !hasPhoto}
                 />
               </label>
               {kind === "quest" && (
@@ -252,6 +308,36 @@ export function ComposerDialog({
                     </label>
                   ))}
                 </fieldset>
+              )}
+              {kind === "note" && (
+                <div className="note-photo-field">
+                  <span className="note-photo-label">线索照片（可选）</span>
+                  {previewSrc ? (
+                    <div className="note-photo-preview">
+                      <img src={previewSrc} alt="待上传的照片预览" />
+                      <button
+                        type="button"
+                        className="text-button danger-button"
+                        onClick={clearPhoto}
+                      >
+                        移除照片
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="text-button file-button">
+                      <ImageIcon aria-hidden="true" />
+                      插入照片
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={(event) => void choosePhoto(event)}
+                      />
+                    </label>
+                  )}
+                  <small className="note-photo-hint">
+                    上传前会压到长边 1600px；带照片的便签按拍立得样式显示，标题作为照片下方的说明。
+                  </small>
+                </div>
               )}
             </fieldset>
             {error && (

@@ -65,6 +65,12 @@ export interface CampaignRepository {
     noteId: string,
     pinned: boolean,
   ): Promise<CampaignBoard>;
+  setNoteLayer(
+    campaignId: string,
+    noteId: string,
+    layer: number,
+  ): Promise<CampaignBoard>;
+  uploadNotePhoto(campaignId: string, file: File): Promise<string>;
   updateMemberProfile(
     campaignId: string,
     draft: MemberProfileDraft,
