@@ -5570,3 +5570,14 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   stroke: #8c1016;
   stroke-width: 4;
 }
+
+/* 便签底栏现在只剩图层按钮，单独靠右对齐 */
+.note-meta {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 10px;
+}
+
+.note-meta .note-layer-actions {
+  margin-left: 0;
+}

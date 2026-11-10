@@ -6,7 +6,6 @@ import {
   type RefObject,
 } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
 import type { BoardNote } from "../../features/campaign/domain/types";
 
 const clamp = (value: number, min: number, max: number) =>
@@ -268,12 +267,8 @@ export function NoteCard({
           <p>{note.body}</p>
         </>
       )}
-      <footer className="note-meta">
-        <span>{note.authorName}</span>
-        <time dateTime={note.createdAt}>
-          {formatNoteTimestamp(note.createdAt)}
-        </time>
-        {canEdit && (
+      {canEdit && (
+        <footer className="note-meta">
           <span className="note-layer-actions">
             <button
               type="button"
@@ -298,8 +293,8 @@ export function NoteCard({
               <ChevronDown aria-hidden="true" />
             </button>
           </span>
-        )}
-      </footer>
+        </footer>
+      )}
     </article>
   );
 }
