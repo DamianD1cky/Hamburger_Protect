@@ -20,6 +20,11 @@ interface NoteCardProps {
   onEdit: (note: BoardNote, element: HTMLElement) => void;
   onMove: (noteId: string, x: number, y: number) => Promise<unknown>;
   onLayerChange: (noteId: string, layer: number) => Promise<unknown>;
+  /** 允许从这张便签发起点/终点连线。 */
+  canLink: boolean;
+  /** 正在从这张便签拉线。 */
+  linkingFrom: boolean;
+  onPinClick: (note: BoardNote) => void;
 }
 
 export function NoteCard({
@@ -30,6 +35,9 @@ export function NoteCard({
   onEdit,
   onMove,
   onLayerChange,
+  canLink,
+  linkingFrom,
+  onPinClick,
 }: NoteCardProps) {
   // pinned 永远压在最上面，其余按 layer 叠；拖拽时再临时抬高。
   const baseZ = (note.pinned ? 1000 : 50) + (note.layer ?? 0);
@@ -205,6 +213,7 @@ export function NoteCard({
       data-color={note.color}
       data-pinned={note.pinned}
       data-photo={note.imageUrl || note.imagePath ? "true" : undefined}
+      data-linking={linkingFrom ? "true" : undefined}
       role={canEdit ? "button" : undefined}
       tabIndex={canEdit ? 0 : -1}
       aria-label={canEdit ? "编辑工作记录：" + note.title : undefined}
@@ -221,6 +230,23 @@ export function NoteCard({
       onPointerCancel={() => cancelDrag()}
       onKeyDown={handleKeyDown}
     >
+      {canLink && (
+        <button
+          className={linkingFrom ? "note-pin is-arming" : "note-pin"}
+          type="button"
+          aria-label={
+            linkingFrom
+              ? "选择这张便签完成连线"
+              : "从这里拉一条线连接到另一张便签"
+          }
+          title={linkingFrom ? "点这里连上" : "连线"}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onPinClick(note);
+          }}
+        />
+      )}
       {note.imageUrl || note.imagePath ? (
         <figure className="note-photo">
           <img

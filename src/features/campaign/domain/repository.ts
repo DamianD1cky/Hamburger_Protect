@@ -71,6 +71,12 @@ export interface CampaignRepository {
     layer: number,
   ): Promise<CampaignBoard>;
   uploadNotePhoto(campaignId: string, file: File): Promise<string>;
+  createNoteLink(
+    campaignId: string,
+    fromNoteId: string,
+    toNoteId: string,
+  ): Promise<CampaignBoard>;
+  deleteNoteLink(campaignId: string, linkId: string): Promise<CampaignBoard>;
   updateMemberProfile(
     campaignId: string,
     draft: MemberProfileDraft,

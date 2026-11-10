@@ -45,6 +45,7 @@ export const defaultBoard: CampaignBoard = {
   },
   activities: [],
   hasMoreActivity: false,
+  noteLinks: [],
 };
 
 export function cloneDefaultBoard(): CampaignBoard {

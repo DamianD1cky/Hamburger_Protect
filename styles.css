@@ -5491,3 +5491,71 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   font-size: 11px;
   line-height: 1.5;
 }
+
+/* ------------------------------------------------------------------
+   便签连线：图钉按钮 + 红线
+   ------------------------------------------------------------------ */
+/* 盖在原来的 CSS 图钉上，作为可点区域 */
+.note-pin {
+  position: absolute;
+  z-index: 3;
+  top: 2px;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: crosshair;
+  transform: translateX(-50%);
+}
+
+.note-pin:hover {
+  background: rgba(231, 43, 60, 0.16);
+}
+
+.note-pin.is-arming {
+  background: rgba(231, 43, 60, 0.28);
+  box-shadow: 0 0 0 3px rgba(231, 43, 60, 0.4);
+}
+
+.user-note[data-linking="true"] {
+  outline: 3px dashed rgba(231, 43, 60, 0.75);
+  outline-offset: 3px;
+}
+
+/* 连线层压在模块之上、便签之下 */
+.note-links {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.note-link-line {
+  stroke: #c8262f;
+  stroke-width: 3;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.28));
+}
+
+.note-link-line.is-preview {
+  stroke-dasharray: 8 6;
+  opacity: 0.85;
+}
+
+.note-link-hit {
+  stroke: transparent;
+  stroke-width: 18;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.note-link-hit:hover + .note-link-line {
+  stroke: #8c1016;
+  stroke-width: 4;
+}

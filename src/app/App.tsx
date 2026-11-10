@@ -775,6 +775,8 @@ function CampaignBoardWorkspace({
           onTransitionQuest={transitionQuest}
           onMoveNote={campaign.moveNote}
           onNoteLayer={campaign.setNoteLayer}
+          onCreateNoteLink={campaign.createNoteLink}
+          onDeleteNoteLink={campaign.deleteNoteLink}
           onEditSection={(key) => setSectionSettingsKey(key)}
           onHideSection={(key) => {
             const next = board.settings.hiddenSections.includes(key)

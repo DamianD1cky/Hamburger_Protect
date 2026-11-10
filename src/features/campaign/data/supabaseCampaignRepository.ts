@@ -2,6 +2,7 @@ import type { CampaignRepository } from "../domain/repository";
 import type {
   CampaignBoard,
   BoardActivity,
+  BoardNoteLink,
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
@@ -21,6 +22,12 @@ import {
   getSupabaseAppSession,
   requireSupabaseSession,
 } from "../../access/data/supabaseSession";
+interface RemoteNoteLink {
+  id: string;
+  from_note_id: string;
+  to_note_id: string;
+}
+
 interface RemoteBoard {
   id: string;
   name: string;
@@ -160,6 +167,22 @@ function dueTimestamp(value: string) {
   return date.toISOString();
 }
 
+/** 便签连线；读失败不该拖垮整个公告板，退化成空数组。 */
+async function loadNoteLinks(campaignId: string): Promise<BoardNoteLink[]> {
+  try {
+    const data = await rpc<RemoteNoteLink[] | null>("get_note_links", {
+      p_campaign_id: campaignId,
+    });
+    return (data ?? []).map((link) => ({
+      id: link.id,
+      fromNoteId: link.from_note_id,
+      toNoteId: link.to_note_id,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 async function toBoard(
   remote: RemoteBoard,
   events: RemoteActivity[],
@@ -261,6 +284,7 @@ async function toBoard(
           : null,
       })),
     ),
+    noteLinks: await loadNoteLinks(remote.id),
     settings: {
       sectionTitles: remote.settings.section_titles ?? {},
       sectionColors: remote.settings.section_colors ?? {},
@@ -417,6 +441,21 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_y: 605 + (count % 3) * 168,
       p_rotation: [-2.4, 1.8, -0.8][count % 3],
       p_image_path: draft.imagePath ?? null,
+    });
+    return this.getBoard(campaignId);
+  }
+  async createNoteLink(campaignId: string, fromId: string, toId: string) {
+    await rpc("create_note_link", {
+      p_campaign_id: campaignId,
+      p_from: fromId,
+      p_to: toId,
+    });
+    return this.getBoard(campaignId);
+  }
+  async deleteNoteLink(campaignId: string, id: string) {
+    await rpc("delete_note_link", {
+      p_campaign_id: campaignId,
+      p_id: id,
     });
     return this.getBoard(campaignId);
   }

@@ -117,6 +117,10 @@ export function useCampaignBoard(
       commit(() => repository.setNoteLayer(campaignId, noteId, layer)),
     uploadNotePhoto: (file: File) =>
       repository.uploadNotePhoto(campaignId, file),
+    createNoteLink: (fromNoteId: string, toNoteId: string) =>
+      commit(() => repository.createNoteLink(campaignId, fromNoteId, toNoteId)),
+    deleteNoteLink: (linkId: string) =>
+      commit(() => repository.deleteNoteLink(campaignId, linkId)),
     updateMemberProfile: (draft: MemberProfileDraft) =>
       commit(() => repository.updateMemberProfile(campaignId, draft)),
     removeMember: (userId: string, note?: string) =>

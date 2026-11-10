@@ -1,5 +1,5 @@
 import { List, Plus } from "lucide-react";
-import type { MouseEvent, ReactNode, Ref, RefObject } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode, type Ref, type RefObject } from "react";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
 import stickerTopRight from "../../../assets/stickers/tr.webp";
@@ -30,6 +30,7 @@ import {
 } from "./BoardSections";
 import { BoardClock } from "./BoardClock";
 import { BoardModuleFrame } from "./BoardModuleFrame";
+import { BOARD_HEIGHT, BOARD_WIDTH } from "../../features/campaign/domain/boardModules";
 import { NoteCard } from "./NoteCard";
 import {
   moduleRect,
@@ -58,6 +59,8 @@ interface BoardSceneProps {
   ) => Promise<void>;
   onMoveNote: (noteId: string, x: number, y: number) => Promise<unknown>;
   onNoteLayer: (noteId: string, layer: number) => Promise<unknown>;
+  onCreateNoteLink: (fromNoteId: string, toNoteId: string) => Promise<unknown>;
+  onDeleteNoteLink: (linkId: string) => Promise<unknown>;
   onEditSection: (key: CampaignSectionKey) => void;
   onHideSection: (key: CampaignSectionKey) => void;
   moduleLayout: BoardModuleLayout;
@@ -85,6 +88,8 @@ export function BoardScene({
   onTransitionQuest,
   onMoveNote,
   onNoteLayer,
+  onCreateNoteLink,
+  onDeleteNoteLink,
   onEditSection,
   onHideSection,
   moduleLayout,
@@ -111,6 +116,64 @@ export function BoardScene({
           onHide: () => onHideSection(key),
         }
       : undefined;
+  // 连线的锚点固定在便签顶部的图钉上，所以只跟 x 和固定偏移有关。
+  const NOTE_WIDTH = 276;
+  const PIN_Y = 16.5;
+  const pinPoint = (note: BoardNote) => ({
+    x: note.x + NOTE_WIDTH / 2,
+    y: note.y + PIN_Y,
+  });
+  const boardRef = useRef<HTMLElement>(null);
+  const [linking, setLinking] = useState<{
+    fromId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!linking) return;
+    const toBoardPoint = (clientX: number, clientY: number) => {
+      const element = boardRef.current;
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      const scale = viewScaleRef.current || 1;
+      return {
+        x: (clientX - rect.left) / scale,
+        y: (clientY - rect.top) / scale,
+      };
+    };
+    const onMove = (event: globalThis.PointerEvent) => {
+      const point = toBoardPoint(event.clientX, event.clientY);
+      if (!point) return;
+      setLinking((current) =>
+        current ? { ...current, x: point.x, y: point.y } : current,
+      );
+    };
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setLinking(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [linking, viewScaleRef]);
+
+  const handlePinClick = (note: BoardNote) => {
+    if (!linking) {
+      const point = pinPoint(note);
+      setLinking({ fromId: note.id, x: point.x, y: point.y });
+      return;
+    }
+    if (linking.fromId === note.id) {
+      setLinking(null);
+      return;
+    }
+    const fromId = linking.fromId;
+    setLinking(null);
+    void onCreateNoteLink(fromId, note.id);
+  };
   const resourceTitles = board.settings.resourceTitles ?? {};
   const notesColor = color("notes");
   /** 把区块包进可拖拽模块；位置来自 module_layout，缺省时用内置位置。 */
@@ -181,7 +244,67 @@ export function BoardScene({
 
         <BoardClock />
 
-        <main className="board" aria-label={board.campaign.name + " 公告板"}>
+        <main
+          className="board"
+          aria-label={board.campaign.name + " 公告板"}
+          ref={boardRef}
+        >
+          <svg
+            className="note-links"
+            viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            {board.noteLinks.map((link) => {
+              const from = board.notes.find(
+                (note) => note.id === link.fromNoteId,
+              );
+              const to = board.notes.find((note) => note.id === link.toNoteId);
+              if (!from || !to) return null;
+              const a = pinPoint(from);
+              const b = pinPoint(to);
+              return (
+                <g key={link.id}>
+                  {/* 细线不好点，单独铺一条更宽的透明命中区 */}
+                  <line
+                    className="note-link-hit"
+                    x1={a.x}
+                    y1={a.y}
+                    x2={b.x}
+                    y2={b.y}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      void onDeleteNoteLink(link.id);
+                    }}
+                  />
+                  <line
+                    className="note-link-line"
+                    x1={a.x}
+                    y1={a.y}
+                    x2={b.x}
+                    y2={b.y}
+                  />
+                </g>
+              );
+            })}
+            {linking &&
+              (() => {
+                const from = board.notes.find(
+                  (note) => note.id === linking.fromId,
+                );
+                if (!from) return null;
+                const a = pinPoint(from);
+                return (
+                  <line
+                    className="note-link-line is-preview"
+                    x1={a.x}
+                    y1={a.y}
+                    x2={linking.x}
+                    y2={linking.y}
+                  />
+                );
+              })()}
+          </svg>
           {!hidden.has("inventory") &&
             moduleFrame(
               "inventory",
@@ -287,6 +410,9 @@ export function BoardScene({
                     onEdit={onEditNote}
                     onMove={onMoveNote}
                     onLayerChange={onNoteLayer}
+                    canLink={canUpdateSharedBoard}
+                    linkingFrom={linking?.fromId === note.id}
+                    onPinClick={handlePinClick}
                   />
                 ))}
               </div>

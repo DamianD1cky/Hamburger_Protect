@@ -96,6 +96,12 @@ export interface BoardNote {
   imageUrl?: string | null;
 }
 
+export interface BoardNoteLink {
+  id: string;
+  fromNoteId: string;
+  toNoteId: string;
+}
+
 export interface BoardActivity {
   id: string;
   actorId: string | null;
@@ -157,6 +163,7 @@ export interface CampaignBoard {
   checklist: ChecklistItem[];
   quests: Quest[];
   notes: BoardNote[];
+  noteLinks: BoardNoteLink[];
   settings: CampaignSettings;
   activities: BoardActivity[];
   hasMoreActivity: boolean;

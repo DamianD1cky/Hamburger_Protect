@@ -44,6 +44,7 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.settings.sectionColors ??= {};
   board.settings.resourceTitles ??= {};
   board.settings.moduleLayout ??= {};
+  board.noteLinks ??= [];
   board.settings.isPublic ??= false;
   board.members ??= [
     {
@@ -456,9 +457,42 @@ class LocalCampaignRepository implements CampaignRepository {
     });
   }
 
+  async createNoteLink(
+    _campaignId: string,
+    fromNoteId: string,
+    toNoteId: string,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      if (fromNoteId === toNoteId) return;
+      const exists = board.noteLinks.some(
+        (link) =>
+          (link.fromNoteId === fromNoteId && link.toNoteId === toNoteId) ||
+          (link.fromNoteId === toNoteId && link.toNoteId === fromNoteId),
+      );
+      if (exists) return;
+      board.noteLinks.push({
+        id: uid("link"),
+        fromNoteId,
+        toNoteId,
+      });
+    });
+  }
+  async deleteNoteLink(
+    _campaignId: string,
+    linkId: string,
+  ): Promise<CampaignBoard> {
+    return this.manage((board) => {
+      board.noteLinks = board.noteLinks.filter((link) => link.id !== linkId);
+    });
+  }
   async deleteNote(_campaignId: string, noteId: string) {
     return this.mutate((board) => {
       board.notes = board.notes.filter((note) => note.id !== noteId);
+      // 便签没了，连着它的线也一起删（对应后端的 CASCADE）。
+      board.noteLinks = board.noteLinks.filter(
+        (link) =>
+          link.fromNoteId !== noteId && link.toNoteId !== noteId,
+      );
     });
   }
 
