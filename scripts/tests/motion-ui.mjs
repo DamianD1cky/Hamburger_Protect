@@ -15,6 +15,8 @@ const actorId = "20000000-0000-4000-8000-000000000010";
 const campaignId = "30000000-0000-4000-8000-000000000010";
 const deniedId = "30000000-0000-4000-8000-000000000011";
 const noteId = "40000000-0000-4000-8000-000000000010";
+const linkedNoteId = "40000000-0000-4000-8000-000000000011";
+const noteLinkId = "50000000-0000-4000-8000-000000000010";
 const name = "动效验收战役";
 const date = new Date().toISOString();
 const user = {
@@ -85,7 +87,10 @@ try {
       members: [{ user_id: actorId, role: "gm", character_name: "验收店长", job_title: "店长", profile_text: "", active: true, joined_at: date, left_at: null }],
       resources: [], checklist_categories: [], checklist_items: [],
       quests: [{ id: "test-quest", title: "验收任务", body: "提交后等待审核", assignee_label: "服务员", due_at: null, status: "pending_review", created_by: actorId, claimed_by: actorId, submissions: [{ id: "test-submission" }] }],
-      notes: [{ id: noteId, title: "验收便签", body: "直接跟手，失败回位", color: "yellow", x: 1100, y: 650, rotation: -2, created_at: date, author_id: actorId, pinned: true, pinned_at: date }],
+      notes: [
+        { id: noteId, title: "验收便签", body: "直接跟手，失败回位", color: "yellow", x: 1100, y: 650, rotation: -2, created_at: date, author_id: actorId, pinned: true, pinned_at: date },
+        { id: linkedNoteId, title: "连线目标", body: "验证端点同步", color: "blue", x: 820, y: 480, rotation: 1, created_at: date, author_id: actorId, pinned: false, pinned_at: null },
+      ],
       settings: { section_titles: {}, hidden_sections: [], is_public: true, background_path: "fixtures/custom-background.webp", note_texture_path: null }, events: [],
     };
     await context.route(`${origin}/**`, async (route) => {
@@ -108,6 +113,7 @@ try {
       else if (path === "/auth/v1/user") result = user;
       else if (path.endsWith("/campaign_members")) result = [campaignId, deniedId].map((id) => ({ campaign_id: id, role: "gm", character_name: "验收店长", job_title: "店长", joined_at: date, campaign: { name: id === campaignId ? name : "不可访问的战役", join_code: "TEST00", status: "active" } }));
       else if (path.endsWith("/list_public_campaigns")) result = [{ id: campaignId, name, burger_index: 5, published_at: date, message_count: 0 }];
+      else if (path.endsWith("/get_note_links")) result = [{ id: noteLinkId, from_note_id: noteId, to_note_id: linkedNoteId }];
       else if (path.endsWith("/get_campaign_board") || path.endsWith("/get_public_campaign_board")) {
         boardRequests++;
         if (body.p_campaign_id === deniedId) { status = 400; result = { message: "FORBIDDEN" }; }
@@ -174,6 +180,7 @@ try {
 
     if (scenario.width > 1024) {
       const note = page.locator(`[data-note-id="${noteId}"]`);
+      const link = page.locator(`.note-link-line[data-from-note-id="${noteId}"]`);
       const position = () => note.evaluate((element) => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)]);
       const initial = await position();
       const box = await note.boundingBox();
@@ -181,6 +188,12 @@ try {
       await page.mouse.down();
       check(await note.evaluate((element) => element.classList.contains("is-dragging")), "note lifts during direct manipulation");
       await page.mouse.move(box.x + box.width / 2 - 40, box.y + box.height / 2 - 30, { steps: 3 });
+      const dragged = await position();
+      const linkStart = await link.evaluate((element) => [Number(element.getAttribute("x1")), Number(element.getAttribute("y1"))]);
+      check(
+        Math.abs(linkStart[0] - (dragged[0] + 138)) < 0.1 && Math.abs(linkStart[1] - (dragged[1] + 16.5)) < 0.1,
+        "linked line follows the note before pointer release",
+      );
       rejectMove = true;
       await page.mouse.up();
       await page.waitForFunction(({ noteId, initial }) => {
@@ -188,7 +201,12 @@ try {
         return Number.parseFloat(note.style.left) === initial[0] && Number.parseFloat(note.style.top) === initial[1] && !note.getAnimations().length;
       }, { noteId, initial });
       check(JSON.stringify(await position()) === JSON.stringify(initial), "failed move restores server position");
-      check(await note.evaluate((element) => getComputedStyle(element).zIndex) === "10", "failed move restores pinned layer");
+      const rolledBackLink = await link.evaluate((element) => [Number(element.getAttribute("x1")), Number(element.getAttribute("y1"))]);
+      check(
+        rolledBackLink[0] === initial[0] + 138 && rolledBackLink[1] === initial[1] + 16.5,
+        "failed move restores the linked line endpoint",
+      );
+      check(await note.evaluate((element) => getComputedStyle(element).zIndex) === "1000", "failed move restores pinned layer");
       await note.focus();
       await page.keyboard.press("Enter");
       const composer = page.getByRole("dialog", { name: "编辑便签", exact: true });

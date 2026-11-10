@@ -119,11 +119,29 @@ export function BoardScene({
   // 连线的锚点固定在便签顶部的图钉上，所以只跟 x 和固定偏移有关。
   const NOTE_WIDTH = 276;
   const PIN_Y = 16.5;
-  const pinPoint = (note: BoardNote) => ({
+  const pinPoint = (note: Pick<BoardNote, "x" | "y">) => ({
     x: note.x + NOTE_WIDTH / 2,
     y: note.y + PIN_Y,
   });
   const boardRef = useRef<HTMLElement>(null);
+  const updateNoteLinkPosition = (noteId: string, x: number, y: number) => {
+    const element = boardRef.current;
+    if (!element) return;
+    const point = pinPoint({ x, y });
+    const lines = element.querySelectorAll<SVGLineElement>(
+      "[data-from-note-id], [data-to-note-id]",
+    );
+    lines.forEach((line) => {
+      if (line.dataset.fromNoteId === noteId) {
+        line.setAttribute("x1", String(point.x));
+        line.setAttribute("y1", String(point.y));
+      }
+      if (line.dataset.toNoteId === noteId) {
+        line.setAttribute("x2", String(point.x));
+        line.setAttribute("y2", String(point.y));
+      }
+    });
+  };
   const [linking, setLinking] = useState<{
     fromId: string;
     x: number;
@@ -266,6 +284,8 @@ export function BoardScene({
                 <line
                   key={link.id}
                   className="note-link-hit"
+                  data-from-note-id={link.fromNoteId}
+                  data-to-note-id={link.toNoteId}
                   x1={a.x}
                   y1={a.y}
                   x2={b.x}
@@ -295,6 +315,8 @@ export function BoardScene({
                 <line
                   key={link.id}
                   className="note-link-line"
+                  data-from-note-id={link.fromNoteId}
+                  data-to-note-id={link.toNoteId}
                   x1={a.x}
                   y1={a.y}
                   x2={b.x}
@@ -310,6 +332,7 @@ export function BoardScene({
                 return (
                   <line
                     className="note-link-line is-preview"
+                    data-from-note-id={linking.fromId}
                     x1={a.x}
                     y1={a.y}
                     x2={linking.x}
@@ -422,6 +445,7 @@ export function BoardScene({
                     }
                     onEdit={onEditNote}
                     onMove={onMoveNote}
+                    onPositionPreview={updateNoteLinkPosition}
                     onLayerChange={onNoteLayer}
                     canLink={canUpdateSharedBoard}
                     linkingFrom={linking?.fromId === note.id}

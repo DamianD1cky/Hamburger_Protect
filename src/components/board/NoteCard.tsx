@@ -19,6 +19,7 @@ interface NoteCardProps {
   noteTextureUrl: string | null;
   onEdit: (note: BoardNote, element: HTMLElement) => void;
   onMove: (noteId: string, x: number, y: number) => Promise<unknown>;
+  onPositionPreview: (noteId: string, x: number, y: number) => void;
   onLayerChange: (noteId: string, layer: number) => Promise<unknown>;
   /** 允许从这张便签发起点/终点连线。 */
   canLink: boolean;
@@ -34,6 +35,7 @@ export function NoteCard({
   noteTextureUrl,
   onEdit,
   onMove,
+  onPositionPreview,
   onLayerChange,
   canLink,
   linkingFrom,
@@ -98,6 +100,7 @@ export function NoteCard({
         );
       }
     }
+    onPositionPreview(note.id, note.x, note.y);
     dragRef.current.pointerId = -1;
     dragRef.current.moved = false;
     if (escapeListener.current) {
@@ -167,8 +170,11 @@ export function NoteCard({
       }
     }
     if (!drag.moved) return;
-    event.currentTarget.style.left = clamp(drag.originX + dx, 18, 1172) + "px";
-    event.currentTarget.style.top = clamp(drag.originY + dy, 110, 980) + "px";
+    const x = clamp(drag.originX + dx, 18, 1172);
+    const y = clamp(drag.originY + dy, 110, 980);
+    event.currentTarget.style.left = x + "px";
+    event.currentTarget.style.top = y + "px";
+    onPositionPreview(note.id, x, y);
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLElement>) => {
@@ -191,6 +197,7 @@ export function NoteCard({
       playFeedback(event.currentTarget, "is-settling");
       const x = Math.round(Number.parseFloat(event.currentTarget.style.left));
       const y = Math.round(Number.parseFloat(event.currentTarget.style.top));
+      onPositionPreview(note.id, x, y);
       // If the save fails, roll back to the server coordinates instead of
       // leaving the note stranded at the dropped position.
       void onMove(note.id, x, y)
