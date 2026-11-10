@@ -1,6 +1,8 @@
 import type {
   CampaignBoard,
   BoardNoteLink,
+  BoardSticker,
+  PinColor,
   ActivityPage,
   ResourceDraft,
   ChecklistDraft,
@@ -66,11 +68,30 @@ export interface CampaignRepository {
     noteId: string,
     pinned: boolean,
   ): Promise<CampaignBoard>;
-  setNoteLayer(
+  moveNoteLayer(
     campaignId: string,
     noteId: string,
-    layer: number,
+    direction: -1 | 1,
   ): Promise<CampaignBoard>;
+  setNotePinColor(
+    campaignId: string,
+    noteId: string,
+    color: PinColor,
+  ): Promise<CampaignBoard>;
+  createBoardSticker(
+    campaignId: string,
+    emoji: string,
+    x: number,
+    y: number,
+    rotation: number,
+  ): Promise<BoardSticker>;
+  moveBoardSticker(
+    campaignId: string,
+    stickerId: string,
+    x: number,
+    y: number,
+  ): Promise<BoardSticker>;
+  deleteBoardSticker(campaignId: string, stickerId: string): Promise<string>;
   uploadNotePhoto(campaignId: string, file: File): Promise<string>;
   createNoteLink(
     campaignId: string,

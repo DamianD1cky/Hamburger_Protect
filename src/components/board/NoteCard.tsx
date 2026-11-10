@@ -1,12 +1,13 @@
 import {
   useEffect,
   useRef,
+  useState,
   type KeyboardEvent,
   type PointerEvent,
   type RefObject,
 } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
-import type { BoardNote } from "../../features/campaign/domain/types";
+import { ChevronDown, ChevronUp, Palette } from "lucide-react";
+import type { BoardNote, PinColor } from "../../features/campaign/domain/types";
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -19,7 +20,8 @@ interface NoteCardProps {
   onEdit: (note: BoardNote, element: HTMLElement) => void;
   onMove: (noteId: string, x: number, y: number) => Promise<unknown>;
   onPositionPreview: (noteId: string, x: number, y: number) => void;
-  onLayerChange: (noteId: string, layer: number) => Promise<unknown>;
+  onLayerChange: (noteId: string, direction: -1 | 1) => Promise<unknown>;
+  onPinColorChange: (noteId: string, color: PinColor) => Promise<unknown>;
   /** 允许从这张便签发起点/终点连线。 */
   canLink: boolean;
   /** 正在从这张便签拉线。 */
@@ -35,14 +37,15 @@ export function NoteCard({
   onEdit,
   onMove,
   onPositionPreview,
+  onPinColorChange,
   onLayerChange,
   canLink,
   linkingFrom,
   onPinClick,
 }: NoteCardProps) {
-  // pinned 永远压在最上面，其余按 layer 叠；拖拽时再临时抬高。
-  const baseZ = (note.pinned ? 1000 : 50) + (note.layer ?? 0);
-  const dragZ = baseZ + 200;
+  const baseZ = 100 + note.layer;
+  const dragZ = 1300;
+  const [pinPickerOpen, setPinPickerOpen] = useState(false);
   const elementRef = useRef<HTMLElement>(null);
   const dragRef = useRef({
     pointerId: -1,
@@ -224,6 +227,7 @@ export function NoteCard({
       data-note-id={note.id}
       data-color={note.color}
       data-pinned={note.pinned}
+      data-pin-color={note.pinColor}
       data-photo={note.imageUrl || note.imagePath ? "true" : undefined}
       data-linking={linkingFrom ? "true" : undefined}
       role={canEdit ? "button" : undefined}
@@ -232,7 +236,7 @@ export function NoteCard({
       style={{
         left: note.x,
         top: note.y,
-        zIndex: baseZ,
+        zIndex: pinPickerOpen ? 1250 : baseZ,
         transform: "rotate(" + note.rotation + "deg)",
         backgroundImage: noteTextureUrl ? `url(${noteTextureUrl})` : undefined,
       }}
@@ -279,11 +283,46 @@ export function NoteCard({
       {canEdit && (
         <footer className="note-meta">
           <span className="note-layer-actions">
+            <span className="note-pin-color-control">
+              <button
+                type="button"
+                className="note-pin-color-trigger"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setPinPickerOpen((open) => !open);
+                }}
+                aria-label="更改图钉颜色"
+                title="图钉颜色"
+                aria-expanded={pinPickerOpen}
+              >
+                <Palette aria-hidden="true" />
+              </button>
+              {pinPickerOpen && (
+                <span className="note-pin-swatches" aria-label="选择图钉颜色">
+                  {(["red", "blue", "green", "yellow", "black"] as PinColor[]).map(
+                    (color) => (
+                      <button
+                        type="button"
+                        key={color}
+                        data-pin-color={color}
+                        data-selected={note.pinColor === color || undefined}
+                        aria-label={`图钉颜色：${color}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setPinPickerOpen(false);
+                          void onPinColorChange(note.id, color);
+                        }}
+                      />
+                    ),
+                  )}
+                </span>
+              )}
+            </span>
             <button
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                void onLayerChange(note.id, note.layer + 1);
+                void onLayerChange(note.id, 1);
               }}
               aria-label="上移一层"
               title="上移一层"
@@ -294,7 +333,7 @@ export function NoteCard({
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                void onLayerChange(note.id, note.layer - 1);
+                void onLayerChange(note.id, -1);
               }}
               aria-label="下移一层"
               title="下移一层"

@@ -90,6 +90,7 @@ try {
     let releaseCreateLink;
     let createLinkGate = null;
     let deleteLinkRequests = 0;
+    let boardStickers = [];
     let noteLinks = [
       {
         id: noteLinkId,
@@ -104,9 +105,9 @@ try {
       resources: [], checklist_categories: [], checklist_items: [],
       quests: [{ id: "test-quest", title: "验收任务", body: "提交后等待审核", assignee_label: "服务员", due_at: null, status: "pending_review", created_by: actorId, claimed_by: actorId, submissions: [{ id: "test-submission" }] }],
       notes: [
-        { id: noteId, title: "验收便签", body: "直接跟手，失败回位", color: "yellow", x: 1100, y: 650, rotation: -2, created_at: date, author_id: actorId, pinned: true, pinned_at: date },
-        { id: linkedNoteId, title: "连线目标", body: "验证端点同步", color: "blue", x: 820, y: 480, rotation: 1, created_at: date, author_id: actorId, pinned: false, pinned_at: null },
-        { id: newLinkedNoteId, title: "即时连线目标", body: "请求未完成也立即显示", color: "pink", x: 520, y: 820, rotation: -1, created_at: date, author_id: actorId, pinned: false, pinned_at: null },
+        { id: noteId, title: "验收便签", body: "直接跟手，失败回位", color: "yellow", x: 1100, y: 650, rotation: -2, created_at: date, author_id: actorId, pinned: true, pinned_at: date, layer: 1, pin_color: "red" },
+        { id: linkedNoteId, title: "连线目标", body: "验证端点同步", color: "blue", x: 820, y: 480, rotation: 1, created_at: date, author_id: actorId, pinned: false, pinned_at: null, layer: 2, pin_color: "green" },
+        { id: newLinkedNoteId, title: "即时连线目标", body: "请求未完成也立即显示", color: "pink", x: 520, y: 820, rotation: -1, created_at: date, author_id: actorId, pinned: false, pinned_at: null, layer: 3, pin_color: "yellow" },
       ],
       settings: { section_titles: {}, hidden_sections: [], is_public: true, background_path: "fixtures/custom-background.webp", note_texture_path: null }, events: [],
     };
@@ -131,6 +132,7 @@ try {
       else if (path.endsWith("/campaign_members")) result = [campaignId, deniedId].map((id) => ({ campaign_id: id, role: "gm", character_name: "验收店长", job_title: "店长", joined_at: date, campaign: { name: id === campaignId ? name : "不可访问的战役", join_code: "TEST00", status: "active" } }));
       else if (path.endsWith("/list_public_campaigns")) result = [{ id: campaignId, name, burger_index: 5, published_at: date, message_count: 0 }];
       else if (path.endsWith("/get_note_links")) result = noteLinks;
+      else if (path.endsWith("/get_board_stickers")) result = boardStickers;
       else if (path.endsWith("/create_note_link")) {
         if (createLinkGate) await createLinkGate;
         noteLinks.push({
@@ -148,6 +150,35 @@ try {
       } else if (path.endsWith("/delete_note_link")) {
         deleteLinkRequests++;
         noteLinks = noteLinks.filter((link) => link.id !== body.p_id);
+        result = body.p_id;
+      }
+      else if (path.endsWith("/set_note_pin_color")) {
+        board.notes = board.notes.map((note) => note.id === body.p_id ? { ...note, pin_color: body.p_color } : note);
+        result = body.p_color;
+      }
+      else if (path.endsWith("/move_note_layer")) {
+        const ordered = [...board.notes].sort((left, right) => left.layer - right.layer);
+        const index = ordered.findIndex((note) => note.id === body.p_id);
+        const adjacent = ordered[index + body.p_direction];
+        if (adjacent) {
+          const current = ordered[index];
+          const layer = current.layer;
+          current.layer = adjacent.layer;
+          adjacent.layer = layer;
+        }
+        result = ordered.map(({ id, layer }) => ({ id, layer }));
+      }
+      else if (path.endsWith("/create_board_sticker")) {
+        const sticker = { id: `sticker-${boardStickers.length + 1}`, campaign_id: campaignId, emoji: body.p_emoji, x: body.p_x, y: body.p_y, rotation: body.p_rotation, created_by: actorId };
+        boardStickers.push(sticker);
+        result = sticker;
+      }
+      else if (path.endsWith("/move_board_sticker")) {
+        boardStickers = boardStickers.map((sticker) => sticker.id === body.p_id ? { ...sticker, x: body.p_x, y: body.p_y } : sticker);
+        result = boardStickers.find((sticker) => sticker.id === body.p_id);
+      }
+      else if (path.endsWith("/delete_board_sticker")) {
+        boardStickers = boardStickers.filter((sticker) => sticker.id !== body.p_id);
         result = body.p_id;
       }
       else if (path.endsWith("/get_campaign_board") || path.endsWith("/get_public_campaign_board")) {
@@ -232,9 +263,20 @@ try {
       await page.mouse.move(box.x + box.width / 2 - 40, box.y + box.height / 2 - 30, { steps: 3 });
       const dragged = await position();
       const linkStart = await link.evaluate((element) => [Number(element.getAttribute("x1")), Number(element.getAttribute("y1"))]);
+      const pinCap = page.locator(`.note-pin-cap[data-pin-note-id="${noteId}"]`);
+      const capPosition = await pinCap.evaluate((element) => [Number(element.getAttribute("cx")), Number(element.getAttribute("cy"))]);
       check(
         Math.abs(linkStart[0] - (dragged[0] + 138)) < 0.1 && Math.abs(linkStart[1] - (dragged[1] + 16.5)) < 0.1,
         "linked line follows the note before pointer release",
+      );
+      check(
+        JSON.stringify(capPosition) === JSON.stringify(linkStart),
+        "pin cap follows the same live endpoint as the line",
+      );
+      check(
+        await page.locator(".note-pin-caps").evaluate((element) => Number(getComputedStyle(element).zIndex)) >
+          await page.locator(".note-links").evaluate((element) => Number(getComputedStyle(element).zIndex)),
+        "pin caps render above the red string",
       );
       rejectMove = true;
       await page.mouse.up();
@@ -248,7 +290,7 @@ try {
         rolledBackLink[0] === initial[0] + 138 && rolledBackLink[1] === initial[1] + 16.5,
         "failed move restores the linked line endpoint",
       );
-      check(await note.evaluate((element) => getComputedStyle(element).zIndex) === "1000", "failed move restores pinned layer");
+      check(await note.evaluate((element) => getComputedStyle(element).zIndex) === "101", "failed move restores the global note layer");
       rejectMove = false;
 
       delayedMoveId = noteId;
@@ -301,6 +343,47 @@ try {
           Number.parseFloat(second.style.top) === secondSettled[1];
       }, { noteId, linkedNoteId, firstMoved, secondSettled });
 
+      await note.getByRole("button", { name: "上移一层", exact: true }).click();
+      await page.waitForFunction(({ noteId, linkedNoteId }) =>
+        getComputedStyle(document.querySelector(`[data-note-id="${noteId}"]`)).zIndex === "102" &&
+        getComputedStyle(document.querySelector(`[data-note-id="${linkedNoteId}"]`)).zIndex === "101",
+      { noteId, linkedNoteId });
+      check(
+        board.notes.find((item) => item.id === noteId).layer === 2 && board.notes.find((item) => item.id === linkedNoteId).layer === 1,
+        "global layer controls swap adjacent notes without duplicate levels",
+      );
+      await note.getByRole("button", { name: "下移一层", exact: true }).click();
+      await page.waitForFunction((noteId) => getComputedStyle(document.querySelector(`[data-note-id="${noteId}"]`)).zIndex === "101", noteId);
+
+      await note.getByRole("button", { name: "更改图钉颜色", exact: true }).click();
+      await note.getByRole("button", { name: "图钉颜色：blue", exact: true }).click();
+      await page.waitForFunction((noteId) => document.querySelector(`[data-note-id="${noteId}"]`)?.dataset.pinColor === "blue", noteId);
+      check(await pinCap.getAttribute("fill") === "#2785d8", "pin color updates the cap above the connection");
+
+      await page.getByRole("button", { name: "添加 Emoji 贴纸", exact: true }).click();
+      await page.getByRole("button", { name: "添加贴纸 ⭐", exact: true }).click();
+      const emojiSticker = page.locator('[data-sticker-id="sticker-1"]');
+      await emojiSticker.waitFor();
+      const stickerInitial = await emojiSticker.evaluate((element) => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)]);
+      const stickerBox = await emojiSticker.boundingBox();
+      await page.mouse.move(stickerBox.x + stickerBox.width / 2, stickerBox.y + stickerBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(stickerBox.x + stickerBox.width / 2 + 45, stickerBox.y + stickerBox.height / 2 + 35, { steps: 3 });
+      await page.mouse.up();
+      await page.waitForFunction(({ stickerInitial }) => {
+        const sticker = document.querySelector('[data-sticker-id="sticker-1"]');
+        return Number.parseFloat(sticker.style.left) !== stickerInitial[0] &&
+          Number.parseFloat(sticker.style.top) !== stickerInitial[1];
+      }, { stickerInitial });
+      check(boardStickers[0].x !== stickerInitial[0] && boardStickers[0].y !== stickerInitial[1], "emoji sticker drag persists its board position");
+      if (scenario.label === "desktop") {
+        await page.screenshot({ path: join(screenshots, "desktop-sticker.png") });
+      }
+      await emojiSticker.hover();
+      await page.getByRole("button", { name: "删除贴纸 ⭐", exact: true }).click();
+      await emojiSticker.waitFor({ state: "hidden" });
+      check(boardStickers.length === 0, "emoji sticker can be explicitly removed");
+
       const linkHit = page.locator(`.note-link-hit[data-link-id="${noteLinkId}"]`);
       await linkHit.click({ force: true });
       check(deleteLinkRequests === 0, "a single line click never deletes the connection");
@@ -309,10 +392,12 @@ try {
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: "删除连线", exact: true }).waitFor({ state: "hidden" });
 
+      await note.getByRole("button", { name: "上移一层", exact: true }).click();
+      await page.waitForFunction((noteId) => getComputedStyle(document.querySelector(`[data-note-id="${noteId}"]`)).zIndex === "102", noteId);
       createLinkGate = new Promise((resolve) => { releaseCreateLink = resolve; });
       const newLinkedNote = page.locator(`[data-note-id="${newLinkedNoteId}"]`);
-      await note.locator(".note-pin").click({ force: true });
-      await newLinkedNote.locator(".note-pin").click({ force: true });
+      await note.locator(".note-pin").click();
+      await newLinkedNote.locator(".note-pin").click();
       const pendingLine = page.locator('.note-link-line[data-link-id^="pending-"]');
       await pendingLine.waitFor();
       check(await pendingLine.isVisible(), "a new connection appears before its request completes");

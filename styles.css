@@ -894,6 +894,8 @@ button {
 }
 
 .user-note {
+  --pin-fill: #e72b3c;
+  --pin-stroke: #71101a;
   position: absolute;
   display: flex;
   width: 276px;
@@ -948,12 +950,29 @@ button {
   left: 50%;
   width: 17px;
   height: 17px;
-  border: 3px solid rgba(113, 15, 26, 0.7);
+  border: 3px solid var(--pin-stroke);
   border-radius: 50%;
-  background: #e72b3c;
+  background: var(--pin-fill);
   box-shadow: 2px 4px 0 rgba(0, 0, 0, 0.22);
   content: "";
   transform: translateX(-50%);
+}
+
+.user-note[data-pin-color="blue"] {
+  --pin-fill: #2785d8;
+  --pin-stroke: #164a76;
+}
+.user-note[data-pin-color="green"] {
+  --pin-fill: #36a467;
+  --pin-stroke: #1d5f3b;
+}
+.user-note[data-pin-color="yellow"] {
+  --pin-fill: #f1c933;
+  --pin-stroke: #806a16;
+}
+.user-note[data-pin-color="black"] {
+  --pin-fill: #343536;
+  --pin-stroke: #101112;
 }
 
 .user-note[data-color="yellow"] {
@@ -5457,6 +5476,44 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   height: 15px;
 }
 
+.note-pin-color-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.note-pin-swatches {
+  position: absolute;
+  z-index: 5;
+  right: -2px;
+  bottom: 26px;
+  display: flex;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid rgba(43, 40, 32, 0.3);
+  border-radius: 4px;
+  background: #fffdf3;
+  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.2);
+}
+
+.note-layer-actions .note-pin-swatches button {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: 0 0 0 1px rgba(43, 40, 32, 0.35);
+}
+
+.note-layer-actions .note-pin-swatches button[data-selected="true"] {
+  box-shadow: 0 0 0 2px #2b2820;
+}
+
+.note-pin-swatches [data-pin-color="red"] { --swatch: #e72b3c; }
+.note-pin-swatches [data-pin-color="blue"] { --swatch: #2785d8; }
+.note-pin-swatches [data-pin-color="green"] { --swatch: #36a467; }
+.note-pin-swatches [data-pin-color="yellow"] { --swatch: #f1c933; }
+.note-pin-swatches [data-pin-color="black"] { --swatch: #343536; }
+
 /* ------------------------------------------------------------------
    编辑器里的照片选择
    ------------------------------------------------------------------ */
@@ -5545,6 +5602,17 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   height: 100%;
   overflow: visible;
   pointer-events: none;
+}
+
+.note-pin-caps {
+  position: absolute;
+  z-index: 1200;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(2px 4px 0 rgba(0, 0, 0, 0.22));
 }
 
 .note-link-line {
@@ -5663,4 +5731,130 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 .note-link-delete svg {
   width: 16px;
   height: 16px;
+}
+
+/* ------------------------------------------------------------------
+   Emoji 公告牌贴纸
+   ------------------------------------------------------------------ */
+.board-emoji-sticker {
+  position: absolute;
+  z-index: 40;
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  filter: drop-shadow(3px 5px 1px rgba(0, 0, 0, 0.24));
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  font-size: 58px;
+  line-height: 1;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  transition: scale 140ms ease, filter 140ms ease;
+}
+
+.board-emoji-sticker.is-dragging {
+  z-index: 1250;
+  scale: 1.12;
+  filter: drop-shadow(7px 10px 2px rgba(0, 0, 0, 0.24));
+  cursor: grabbing;
+}
+
+.board-emoji-delete {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 2px solid #fffdf3;
+  border-radius: 50%;
+  background: #2d2c29;
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.board-emoji-sticker:hover .board-emoji-delete,
+.board-emoji-sticker:focus-within .board-emoji-delete {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.board-emoji-delete svg {
+  width: 13px;
+  height: 13px;
+}
+
+.sticker-actions {
+  position: absolute;
+  z-index: 1250;
+  right: 242px;
+  bottom: 46px;
+}
+
+.sticker-add {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  padding: 0;
+  border: 4px solid #fff7e7;
+  border-radius: 50%;
+  background: #24915b;
+  box-shadow:
+    0 0 0 4px rgba(22, 15, 10, 0.82),
+    7px 9px 0 rgba(0, 0, 0, 0.3);
+  color: #fff;
+  cursor: pointer;
+}
+
+.sticker-add:hover {
+  transform: scale(1.08) rotate(-5deg);
+}
+
+.sticker-add svg {
+  width: 30px;
+  height: 30px;
+  stroke-width: 2.6;
+}
+
+.sticker-picker {
+  position: absolute;
+  right: 0;
+  bottom: 82px;
+  display: grid;
+  grid-template-columns: repeat(4, 44px);
+  gap: 4px;
+  padding: 8px;
+  border: 2px solid rgba(46, 41, 35, 0.68);
+  border-radius: 6px;
+  background: #fffdf3;
+  box-shadow: 5px 7px 0 rgba(0, 0, 0, 0.24);
+}
+
+.sticker-picker button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  font-size: 28px;
+  cursor: pointer;
+}
+
+.sticker-picker button:hover {
+  background: rgba(36, 145, 91, 0.14);
 }

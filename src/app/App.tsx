@@ -774,7 +774,11 @@ function CampaignBoardWorkspace({
           }
           onTransitionQuest={transitionQuest}
           onMoveNote={campaign.moveNote}
-          onNoteLayer={campaign.setNoteLayer}
+          onNoteLayer={campaign.moveNoteLayer}
+          onNotePinColor={campaign.setNotePinColor}
+          onCreateSticker={campaign.createBoardSticker}
+          onMoveSticker={campaign.moveBoardSticker}
+          onDeleteSticker={campaign.deleteBoardSticker}
           onCreateNoteLink={campaign.createNoteLink}
           onDeleteNoteLink={campaign.deleteNoteLink}
           onUpdateNoteLinkLabel={campaign.updateNoteLinkLabel}

@@ -19,6 +19,7 @@
     "check:motion-ui": "node scripts/tests/motion-ui.mjs",
     "check:accounts": "node --test scripts/tests/accounts.mjs",
     "check:database": "node scripts/tests/database.mjs",
+    "check:board-objects": "node scripts/tests/board-objects.mjs",
     "check:migration": "node scripts/tests/migration.mjs",
     "migration": "node scripts/migration/cli.mjs",
     "migration:gm-passwords": "node scripts/migration/migrate-gm-passwords.mjs"

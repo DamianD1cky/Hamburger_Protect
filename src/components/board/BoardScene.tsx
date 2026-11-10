@@ -1,4 +1,4 @@
-import { List, Plus, Trash2 } from "lucide-react";
+import { List, Plus, SmilePlus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode, type Ref, type RefObject } from "react";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
@@ -16,6 +16,7 @@ import type {
   BoardNote,
   BoardNoteLink,
   CampaignBoard,
+  PinColor,
   CampaignSectionKey,
   Quest,
   QuestStatus,
@@ -30,6 +31,7 @@ import {
   type SectionActions,
 } from "./BoardSections";
 import { BoardClock } from "./BoardClock";
+import { EmojiSticker } from "./EmojiSticker";
 import { BoardModuleFrame } from "./BoardModuleFrame";
 import { BOARD_HEIGHT, BOARD_WIDTH } from "../../features/campaign/domain/boardModules";
 import { NoteCard } from "./NoteCard";
@@ -59,7 +61,11 @@ interface BoardSceneProps {
     source: HTMLElement,
   ) => Promise<void>;
   onMoveNote: (noteId: string, x: number, y: number) => Promise<unknown>;
-  onNoteLayer: (noteId: string, layer: number) => Promise<unknown>;
+  onNoteLayer: (noteId: string, direction: -1 | 1) => Promise<unknown>;
+  onNotePinColor: (noteId: string, color: PinColor) => Promise<unknown>;
+  onCreateSticker: (emoji: string, x: number, y: number, rotation: number) => Promise<unknown>;
+  onMoveSticker: (stickerId: string, x: number, y: number) => Promise<unknown>;
+  onDeleteSticker: (stickerId: string) => Promise<unknown>;
   onCreateNoteLink: (
     fromNoteId: string,
     toNoteId: string,
@@ -97,6 +103,10 @@ export function BoardScene({
   onMoveNote,
   onNoteLayer,
   onCreateNoteLink,
+  onNotePinColor,
+  onCreateSticker,
+  onMoveSticker,
+  onDeleteSticker,
   onDeleteNoteLink,
   onUpdateNoteLinkLabel,
   onEditSection,
@@ -110,6 +120,14 @@ export function BoardScene({
     board.viewer.role === "gm" && board.campaign.status === "active";
   const canUpdateSharedBoard =
     board.viewer.role !== "observer" && board.campaign.status === "active";
+  const pinColors: Record<PinColor, { fill: string; stroke: string }> = {
+    red: { fill: "#e72b3c", stroke: "#71101a" },
+    blue: { fill: "#2785d8", stroke: "#164a76" },
+    green: { fill: "#36a467", stroke: "#1d5f3b" },
+    yellow: { fill: "#f1c933", stroke: "#806a16" },
+    black: { fill: "#343536", stroke: "#101112" },
+  };
+  const stickerChoices = ["😀", "⭐", "🔥", "❤️", "⚠️", "✅", "❓", "💡", "👑", "🎲", "💀", "🍔"];
   const hidden = new Set(board.settings.hiddenSections);
   const title = (key: Parameters<typeof sectionTitle>[0]) =>
     sectionTitle(key, board.settings.sectionTitles);
@@ -151,6 +169,13 @@ export function BoardScene({
       }
     });
 
+    element
+      .querySelectorAll<SVGCircleElement>(".note-pin-cap[data-pin-note-id]")
+      .forEach((pin) => {
+        if (pin.dataset.pinNoteId !== noteId) return;
+        pin.setAttribute("cx", String(point.x));
+        pin.setAttribute("cy", String(point.y));
+      });
     const visualLines = new Map<string, SVGLineElement>();
     element
       .querySelectorAll<SVGLineElement>(".note-link-line[data-link-id]")
@@ -175,6 +200,7 @@ export function BoardScene({
         label.style.top = (y1 + y2) / 2 + "px";
       });
   };
+  const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
   const [linking, setLinking] = useState<{
     fromId: string;
     x: number;
@@ -203,6 +229,14 @@ export function BoardScene({
     ),
     ...pendingLinks,
   ];
+  const handleCreateSticker = (emoji: string) => {
+    const count = board.stickers.length;
+    const x = 610 + ((count * 137) % 560);
+    const y = 760 + ((count * 83) % 270);
+    const rotation = [-9, 7, -4, 11, 3][count % 5];
+    setStickerPickerOpen(false);
+    void onCreateSticker(emoji, x, y, rotation);
+  };
 
   useEffect(() => {
     if (!linking) return;
@@ -396,7 +430,18 @@ export function BoardScene({
           aria-label={board.campaign.name + " 公告板"}
           ref={boardRef}
         >
-                    {/* 命中层压在便签下面：点便签时不会被线抢走事件 */}
+          {board.stickers.map((sticker) => (
+            <EmojiSticker
+              key={sticker.id}
+              sticker={sticker}
+              viewScaleRef={viewScaleRef}
+              canEdit={canUpdateSharedBoard}
+              onMove={onMoveSticker}
+              onDelete={onDeleteSticker}
+            />
+          ))}
+
+          {/* 命中层压在便签下面：点便签时不会被线抢走事件 */}
           <svg
             className="note-links-hit"
             viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
@@ -429,7 +474,7 @@ export function BoardScene({
               );
             })}
           </svg>
-          {/* 视觉层盖在便签上面：红绳从一颗图钉直接连到另一颗 */}
+          {/* 红绳在便签上方，但端点会被最上层的图钉帽盖住。 */}
           <svg
             className="note-links"
             viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
@@ -472,6 +517,31 @@ export function BoardScene({
                   />
                 );
               })()}
+          </svg>
+
+          <svg
+            className="note-pin-caps"
+            viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            {board.notes.map((note) => {
+              const point = pinPoint(note);
+              const color = pinColors[note.pinColor];
+              return (
+                <circle
+                  key={note.id}
+                  className="note-pin-cap"
+                  data-pin-note-id={note.id}
+                  cx={point.x}
+                  cy={point.y}
+                  r="8.5"
+                  fill={color.fill}
+                  stroke={color.stroke}
+                  strokeWidth="3"
+                />
+              );
+            })}
           </svg>
 
           {/* 连线上的纸片：新建连线后自动出现，留空则不保留 */}
@@ -663,6 +733,7 @@ export function BoardScene({
                     onMove={onMoveNote}
                     onPositionPreview={updateNoteLinkPosition}
                     onLayerChange={onNoteLayer}
+                    onPinColorChange={onNotePinColor}
                     canLink={canUpdateSharedBoard}
                     linkingFrom={linking?.fromId === note.id}
                     onPinClick={handlePinClick}
@@ -694,6 +765,35 @@ export function BoardScene({
                 )}
               </div>
             </>
+          )}
+
+          {canUpdateSharedBoard && (
+            <div className="sticker-actions">
+              <button
+                className="sticker-add"
+                type="button"
+                onClick={() => setStickerPickerOpen((open) => !open)}
+                aria-label="添加 Emoji 贴纸"
+                title="添加 Emoji 贴纸"
+                aria-expanded={stickerPickerOpen}
+              >
+                <SmilePlus aria-hidden="true" />
+              </button>
+              {stickerPickerOpen && (
+                <div className="sticker-picker" aria-label="选择 Emoji 贴纸">
+                  {stickerChoices.map((emoji) => (
+                    <button
+                      type="button"
+                      key={emoji}
+                      aria-label={`添加贴纸 ${emoji}`}
+                      onClick={() => handleCreateSticker(emoji)}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </main>
 

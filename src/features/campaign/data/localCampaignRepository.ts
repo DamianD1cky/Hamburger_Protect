@@ -4,6 +4,8 @@ import type {
   CampaignBoard,
   BoardActivity,
   BoardNoteLink,
+  BoardSticker,
+  PinColor,
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
@@ -46,6 +48,7 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.settings.resourceTitles ??= {};
   board.settings.moduleLayout ??= {};
   board.noteLinks ??= [];
+  board.stickers ??= [];
   board.settings.isPublic ??= false;
   board.members ??= [
     {
@@ -71,10 +74,18 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.notes.forEach((note) => {
     note.pinned ??= false;
     note.pinnedAt ??= null;
+    note.pinColor ??= "red";
     note.authorName ??=
       board.members.find((member) => member.userId === note.authorId)
         ?.characterName ?? "未知员工";
   });
+  [...board.notes]
+    .sort((left, right) =>
+      left.layer - right.layer ||
+      left.createdAt.localeCompare(right.createdAt) ||
+      left.id.localeCompare(right.id),
+    )
+    .forEach((note, index) => (note.layer = index + 1));
   return board;
 }
 
@@ -134,6 +145,7 @@ function loadLegacyBoard(): CampaignBoard | null {
         pinnedAt: null,
         layer: Number(note.layer ?? 0),
         imagePath: null,
+        pinColor: "red",
       }));
     }
 
@@ -446,7 +458,8 @@ class LocalCampaignRepository implements CampaignRepository {
         authorName: board.viewer.displayName,
         pinned: false,
         pinnedAt: null,
-        layer: 0,
+        layer: Math.max(0, ...board.notes.map((item) => item.layer)) + 1,
+        pinColor: "red",
       });
     });
   }
@@ -533,16 +546,90 @@ class LocalCampaignRepository implements CampaignRepository {
     // 演示模式没有后端存储，直接用本地对象地址预览。
     return URL.createObjectURL(file);
   }
-  async setNoteLayer(
+  async moveNoteLayer(
     _campaignId: string,
     noteId: string,
-    layer: number,
+    direction: -1 | 1,
   ): Promise<CampaignBoard> {
-    return this.manage((board) => {
+    return this.updateAsMember((board) => {
       const note = board.notes.find((item) => item.id === noteId);
       if (!note) throw new Error("便签不存在");
-      note.layer = Math.max(-50, Math.min(50, layer));
+      if (board.viewer.role !== "gm" && note.authorId !== board.viewer.id) {
+        throw new Error("只能调整自己的便签");
+      }
+      const ordered = [...board.notes].sort(
+        (left, right) => left.layer - right.layer,
+      );
+      const index = ordered.findIndex((item) => item.id === noteId);
+      const adjacent = ordered[index + direction];
+      if (!adjacent) return;
+      const layer = note.layer;
+      note.layer = adjacent.layer;
+      adjacent.layer = layer;
     });
+  }
+
+  async setNotePinColor(
+    _campaignId: string,
+    noteId: string,
+    color: PinColor,
+  ): Promise<CampaignBoard> {
+    return this.updateAsMember((board) => {
+      const note = board.notes.find((item) => item.id === noteId);
+      if (!note) throw new Error("便签不存在");
+      if (board.viewer.role !== "gm" && note.authorId !== board.viewer.id) {
+        throw new Error("只能修改自己的便签");
+      }
+      note.pinColor = color;
+    });
+  }
+
+  async createBoardSticker(
+    _campaignId: string,
+    emoji: string,
+    x: number,
+    y: number,
+    rotation: number,
+  ): Promise<BoardSticker> {
+    let created: BoardSticker | undefined;
+    this.updateAsMember((board) => {
+      created = {
+        id: uid("sticker"),
+        emoji,
+        x: Math.max(0, Math.min(1395, x)),
+        y: Math.max(0, Math.min(1131, y)),
+        rotation: Math.max(-20, Math.min(20, rotation)),
+        createdBy: board.viewer.id,
+      };
+      board.stickers.push(created);
+    });
+    if (!created) throw new Error("贴纸创建失败");
+    return created;
+  }
+
+  async moveBoardSticker(
+    _campaignId: string,
+    stickerId: string,
+    x: number,
+    y: number,
+  ): Promise<BoardSticker> {
+    let moved: BoardSticker | undefined;
+    this.updateAsMember((board) => {
+      const sticker = board.stickers.find((item) => item.id === stickerId);
+      if (!sticker) throw new Error("贴纸不存在");
+      sticker.x = Math.max(0, Math.min(1395, x));
+      sticker.y = Math.max(0, Math.min(1131, y));
+      moved = { ...sticker };
+    });
+    if (!moved) throw new Error("贴纸不存在");
+    return moved;
+  }
+
+  async deleteBoardSticker(_campaignId: string, stickerId: string) {
+    this.updateAsMember((board) => {
+      board.stickers = board.stickers.filter((item) => item.id !== stickerId);
+    });
+    return stickerId;
   }
 
   async updateMemberProfile(_campaignId: string, draft: MemberProfileDraft) {

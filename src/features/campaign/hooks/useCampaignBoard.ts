@@ -12,6 +12,8 @@ import { cloneDefaultBoard, defaultBoard } from "../domain/defaults";
 import type {
   CampaignBoard,
   BoardNoteLink,
+  BoardSticker,
+  PinColor,
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
@@ -165,6 +167,78 @@ export function useCampaignBoard(
     return created;
   };
 
+  const setCachedSticker = (sticker: BoardSticker) => {
+    queryClient.setQueryData<CampaignBoard>(boardKey, (current) => {
+      if (!current) return current;
+      const exists = current.stickers.some((item) => item.id === sticker.id);
+      return {
+        ...current,
+        stickers: exists
+          ? current.stickers.map((item) =>
+              item.id === sticker.id ? sticker : item,
+            )
+          : [...current.stickers, sticker],
+      };
+    });
+  };
+
+  const createBoardSticker = async (
+    emoji: string,
+    x: number,
+    y: number,
+    rotation: number,
+  ) => {
+    const created = await repository.createBoardSticker(
+      campaignId,
+      emoji,
+      x,
+      y,
+      rotation,
+    );
+    setCachedSticker(created);
+    return created;
+  };
+
+  const moveBoardSticker = async (stickerId: string, x: number, y: number) => {
+    const previous = queryClient
+      .getQueryData<CampaignBoard>(boardKey)
+      ?.stickers.find((item) => item.id === stickerId);
+    if (previous) setCachedSticker({ ...previous, x, y });
+    try {
+      const moved = await repository.moveBoardSticker(
+        campaignId,
+        stickerId,
+        x,
+        y,
+      );
+      setCachedSticker(moved);
+      return moved;
+    } catch (error) {
+      if (previous) setCachedSticker(previous);
+      throw error;
+    }
+  };
+
+  const deleteBoardSticker = async (stickerId: string) => {
+    const previous = queryClient
+      .getQueryData<CampaignBoard>(boardKey)
+      ?.stickers.find((item) => item.id === stickerId);
+    queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
+      current
+        ? {
+            ...current,
+            stickers: current.stickers.filter((item) => item.id !== stickerId),
+          }
+        : current,
+    );
+    try {
+      return await repository.deleteBoardSticker(campaignId, stickerId);
+    } catch (error) {
+      if (previous) setCachedSticker(previous);
+      throw error;
+    }
+  };
+
   return {
     board,
     error: query.error,
@@ -203,10 +277,15 @@ export function useCampaignBoard(
       commit(() => repository.deleteNote(campaignId, noteId)),
     setNotePinned: (noteId: string, pinned: boolean) =>
       commit(() => repository.setNotePinned(campaignId, noteId, pinned)),
-    setNoteLayer: (noteId: string, layer: number) =>
-      commit(() => repository.setNoteLayer(campaignId, noteId, layer)),
+    moveNoteLayer: (noteId: string, direction: -1 | 1) =>
+      commit(() => repository.moveNoteLayer(campaignId, noteId, direction)),
+    setNotePinColor: (noteId: string, color: PinColor) =>
+      commit(() => repository.setNotePinColor(campaignId, noteId, color)),
     uploadNotePhoto: (file: File) =>
       repository.uploadNotePhoto(campaignId, file),
+    createBoardSticker,
+    moveBoardSticker,
+    deleteBoardSticker,
     createNoteLink,
     deleteNoteLink: (linkId: string) =>
       commit(() => repository.deleteNoteLink(campaignId, linkId)),

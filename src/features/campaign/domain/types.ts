@@ -15,6 +15,7 @@ export type QuestStatus =
   | "completed"
   | "failed";
 export type ResourceStatus = "ok" | "low" | "out";
+export type PinColor = "red" | "blue" | "green" | "yellow" | "black";
 export type NoteColor = "yellow" | "pink" | "blue" | "green";
 
 export interface CampaignSummary {
@@ -88,8 +89,9 @@ export interface BoardNote {
   authorName: string;
   pinned: boolean;
   pinnedAt: string | null;
-  /** 图层顺序，与 pinned 并行：pinned 永远在最上，其余按 layer 叠。 */
+  /** 战役内全局唯一的便签层级。 */
   layer: number;
+  pinColor: PinColor;
   /** 便签照片的存储路径。 */
   imagePath: string | null;
   /** 由 imagePath 换来的临时访问地址。 */
@@ -102,6 +104,15 @@ export interface BoardNoteLink {
   toNoteId: string;
   /** 线上的纸片文字；为空则不显示纸片。 */
   label: string | null;
+}
+
+export interface BoardSticker {
+  id: string;
+  emoji: string;
+  x: number;
+  y: number;
+  rotation: number;
+  createdBy: string;
 }
 
 export interface BoardActivity {
@@ -168,6 +179,7 @@ export interface CampaignBoard {
   noteLinks: BoardNoteLink[];
   settings: CampaignSettings;
   activities: BoardActivity[];
+  stickers: BoardSticker[];
   hasMoreActivity: boolean;
 }
 

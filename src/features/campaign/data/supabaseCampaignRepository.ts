@@ -3,6 +3,8 @@ import type {
   CampaignBoard,
   BoardActivity,
   BoardNoteLink,
+  BoardSticker,
+  PinColor,
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
@@ -28,6 +30,15 @@ interface RemoteNoteLink {
   to_note_id: string;
   label?: string | null;
 }
+interface RemoteBoardSticker {
+  id: string;
+  emoji: string;
+  x: number;
+  y: number;
+  rotation: number;
+  created_by: string;
+}
+
 
 interface RemoteBoard {
   id: string;
@@ -84,6 +95,7 @@ interface RemoteBoard {
     pinned_at: string | null;
     layer?: number | null;
     image_path?: string | null;
+    pin_color?: PinColor | null;
   }>;
   settings: {
     section_titles: Partial<Record<CampaignSectionKey, string>>;
@@ -185,6 +197,24 @@ async function loadNoteLinks(campaignId: string): Promise<BoardNoteLink[]> {
   }
 }
 
+async function loadBoardStickers(campaignId: string): Promise<BoardSticker[]> {
+  try {
+    const data = await rpc<RemoteBoardSticker[] | null>("get_board_stickers", {
+      p_campaign_id: campaignId,
+    });
+    return (data ?? []).map((sticker) => ({
+      id: sticker.id,
+      emoji: sticker.emoji,
+      x: sticker.x,
+      y: sticker.y,
+      rotation: sticker.rotation,
+      createdBy: sticker.created_by,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 async function toBoard(
   remote: RemoteBoard,
   events: RemoteActivity[],
@@ -198,9 +228,10 @@ async function toBoard(
   if (!publicView && !user) throw new Error("AUTH_REQUIRED");
   if (!publicView && !viewer)
     throw new Error("Current user is not a campaign member");
-  const [backgroundUrl, noteTextureUrl] = await Promise.all([
+  const [backgroundUrl, noteTextureUrl, stickers] = await Promise.all([
     signedMediaUrl(remote.settings.background_path, publicView),
     signedMediaUrl(remote.settings.note_texture_path, publicView),
+    loadBoardStickers(remote.id),
   ]);
   return {
     campaign: {
@@ -280,6 +311,7 @@ async function toBoard(
         pinned: note.pinned,
         pinnedAt: note.pinned_at,
         layer: note.layer ?? 0,
+        pinColor: note.pin_color ?? "red",
         imagePath: note.image_path ?? null,
         imageUrl: note.image_path
           ? await signedMediaUrl(note.image_path, publicView)
@@ -287,6 +319,7 @@ async function toBoard(
       })),
     ),
     noteLinks: await loadNoteLinks(remote.id),
+    stickers,
     settings: {
       sectionTitles: remote.settings.section_titles ?? {},
       sectionColors: remote.settings.section_colors ?? {},
@@ -492,13 +525,71 @@ class SupabaseCampaignRepository implements CampaignRepository {
     if (upload.error) throw new Error("照片上传失败");
     return path;
   }
-  async setNoteLayer(campaignId: string, id: string, layer: number) {
-    await rpc("set_note_layer", {
+  async moveNoteLayer(campaignId: string, id: string, direction: -1 | 1) {
+    await rpc("move_note_layer", {
       p_campaign_id: campaignId,
       p_id: id,
-      p_layer: layer,
+      p_direction: direction,
     });
     return this.getBoard(campaignId);
+  }
+  async setNotePinColor(campaignId: string, id: string, color: PinColor) {
+    await rpc("set_note_pin_color", {
+      p_campaign_id: campaignId,
+      p_id: id,
+      p_color: color,
+    });
+    return this.getBoard(campaignId);
+  }
+  async createBoardSticker(
+    campaignId: string,
+    emoji: string,
+    x: number,
+    y: number,
+    rotation: number,
+  ) {
+    const sticker = await rpc<RemoteBoardSticker>("create_board_sticker", {
+      p_campaign_id: campaignId,
+      p_emoji: emoji,
+      p_x: x,
+      p_y: y,
+      p_rotation: rotation,
+    });
+    return {
+      id: sticker.id,
+      emoji: sticker.emoji,
+      x: sticker.x,
+      y: sticker.y,
+      rotation: sticker.rotation,
+      createdBy: sticker.created_by,
+    };
+  }
+  async moveBoardSticker(
+    campaignId: string,
+    id: string,
+    x: number,
+    y: number,
+  ) {
+    const sticker = await rpc<RemoteBoardSticker>("move_board_sticker", {
+      p_campaign_id: campaignId,
+      p_id: id,
+      p_x: x,
+      p_y: y,
+    });
+    return {
+      id: sticker.id,
+      emoji: sticker.emoji,
+      x: sticker.x,
+      y: sticker.y,
+      rotation: sticker.rotation,
+      createdBy: sticker.created_by,
+    };
+  }
+  async deleteBoardSticker(campaignId: string, id: string) {
+    return rpc<string>("delete_board_sticker", {
+      p_campaign_id: campaignId,
+      p_id: id,
+    });
   }
   async moveNote(campaignId: string, id: string, x: number, y: number) {
     await rpc("move_note", {
