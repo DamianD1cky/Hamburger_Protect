@@ -9,6 +9,7 @@ dist
 !.env.example
 *.tsbuildinfo
 coverage
+.screenshots/
 .nhost
 .secrets
 
