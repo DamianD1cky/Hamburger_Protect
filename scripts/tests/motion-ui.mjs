@@ -91,6 +91,7 @@ try {
     let createLinkGate = null;
     let deleteLinkRequests = 0;
     let boardStickers = [];
+    let rejectSticker = false;
     let noteLinks = [
       {
         id: noteLinkId,
@@ -152,9 +153,11 @@ try {
         noteLinks = noteLinks.filter((link) => link.id !== body.p_id);
         result = body.p_id;
       }
-      else if (path.endsWith("/set_note_pin_color")) {
-        board.notes = board.notes.map((note) => note.id === body.p_id ? { ...note, pin_color: body.p_color } : note);
-        result = body.p_color;
+      else if (path.endsWith("/save_note")) {
+        board.notes = board.notes.map((note) => note.id === body.p_id
+          ? { ...note, title: body.p_title, body: body.p_body, color: body.p_color, pin_color: body.p_pin_color }
+          : note);
+        result = body.p_id;
       }
       else if (path.endsWith("/move_note_layer")) {
         const ordered = [...board.notes].sort((left, right) => left.layer - right.layer);
@@ -169,9 +172,14 @@ try {
         result = ordered.map(({ id, layer }) => ({ id, layer }));
       }
       else if (path.endsWith("/create_board_sticker")) {
-        const sticker = { id: `sticker-${boardStickers.length + 1}`, campaign_id: campaignId, emoji: body.p_emoji, x: body.p_x, y: body.p_y, rotation: body.p_rotation, created_by: actorId };
-        boardStickers.push(sticker);
-        result = sticker;
+        if (rejectSticker) {
+          status = 404;
+          result = { code: "PGRST202", message: "Could not find the function public.create_board_sticker" };
+        } else {
+          const sticker = { id: `sticker-${boardStickers.length + 1}`, campaign_id: campaignId, emoji: body.p_emoji, x: body.p_x, y: body.p_y, rotation: body.p_rotation, created_by: actorId };
+          boardStickers.push(sticker);
+          result = sticker;
+        }
       }
       else if (path.endsWith("/move_board_sticker")) {
         boardStickers = boardStickers.map((sticker) => sticker.id === body.p_id ? { ...sticker, x: body.p_x, y: body.p_y } : sticker);
@@ -355,13 +363,35 @@ try {
       await note.getByRole("button", { name: "下移一层", exact: true }).click();
       await page.waitForFunction((noteId) => getComputedStyle(document.querySelector(`[data-note-id="${noteId}"]`)).zIndex === "101", noteId);
 
-      await note.getByRole("button", { name: "更改图钉颜色", exact: true }).click();
-      await note.getByRole("button", { name: "图钉颜色：blue", exact: true }).click();
+      await note.focus();
+      await page.keyboard.press("Enter");
+      const colorEditor = page.getByRole("dialog", { name: "编辑便签", exact: true });
+      await colorEditor.waitFor();
+      check(await colorEditor.getByRole("group", { name: "便签颜色", exact: true }).isVisible(), "note color and pin color share the note editor");
+      await colorEditor.getByRole("radio", { name: "图钉蓝色", exact: true }).locator("..").click();
+      check(await note.getAttribute("data-pin-color") === "red", "unsaved pin color remains in the draft");
+      await colorEditor.getByRole("button", { name: "取消", exact: true }).click();
+      await colorEditor.waitFor({ state: "hidden" });
+      check(await note.getAttribute("data-pin-color") === "red", "cancelling the editor does not change the pin");
+      await note.focus();
+      await page.keyboard.press("Enter");
+      await colorEditor.waitFor();
+      check(await colorEditor.getByRole("radio", { name: "图钉红色", exact: true }).isChecked(), "reopening the editor restores the persisted pin color");
+      await colorEditor.getByRole("radio", { name: "图钉蓝色", exact: true }).locator("..").click();
+      if (scenario.label === "desktop") {
+        await colorEditor.screenshot({ path: join(screenshots, "desktop-note-colors.png") });
+      }
+      await colorEditor.getByRole("button", { name: "保存", exact: true }).click();
+      await colorEditor.waitFor({ state: "hidden" });
       await page.waitForFunction((noteId) => document.querySelector(`[data-note-id="${noteId}"]`)?.dataset.pinColor === "blue", noteId);
       check(await pinCap.getAttribute("fill") === "#2785d8", "pin color updates the cap above the connection");
 
       await page.getByRole("button", { name: "添加 Emoji 贴纸", exact: true }).click();
       await page.getByRole("button", { name: "添加贴纸 ⭐", exact: true }).click();
+      check(boardStickers.length === 0, "choosing an emoji waits for a board placement");
+      check(await page.getByText("点击公告板放置，Esc 取消", { exact: true }).isVisible(), "sticker placement explains the next action");
+      const boardBox = await page.locator(".board").boundingBox();
+      await page.mouse.click(boardBox.x + boardBox.width * 0.48, boardBox.y + boardBox.height * 0.65);
       const emojiSticker = page.locator('[data-sticker-id="sticker-1"]');
       await emojiSticker.waitFor();
       const stickerInitial = await emojiSticker.evaluate((element) => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)]);
@@ -383,6 +413,16 @@ try {
       await page.getByRole("button", { name: "删除贴纸 ⭐", exact: true }).click();
       await emojiSticker.waitFor({ state: "hidden" });
       check(boardStickers.length === 0, "emoji sticker can be explicitly removed");
+
+      rejectSticker = true;
+      await page.getByRole("button", { name: "添加 Emoji 贴纸", exact: true }).click();
+      await page.getByRole("button", { name: "添加贴纸 ⭐", exact: true }).click();
+      await page.mouse.click(boardBox.x + boardBox.width * 0.48, boardBox.y + boardBox.height * 0.65);
+      await page.locator(".sticker-error").waitFor();
+      check(await page.locator(".sticker-error").textContent() === "服务器尚未部署此功能所需的数据库更新，请更新后重试。", "missing cloud migration surfaces an actionable sticker error");
+      check(boardStickers.length === 0 && await emojiSticker.count() === 0, "a rejected sticker never appears as a saved sticker");
+      rejectSticker = false;
+      await page.getByRole("button", { name: "添加 Emoji 贴纸", exact: true }).click();
 
       const linkHit = page.locator(`.note-link-hit[data-link-id="${noteLinkId}"]`);
       await linkHit.click({ force: true });
@@ -423,6 +463,17 @@ try {
       await page.keyboard.press("Escape");
       await composer.waitFor({ state: "hidden" });
       check(await note.evaluate((element) => document.activeElement === element), "origin dialog restores keyboard focus");
+    } else {
+      await page.locator(`[data-note-id="${noteId}"]`).focus();
+      await page.keyboard.press("Enter");
+      const mobileEditor = page.getByRole("dialog", { name: "编辑便签", exact: true });
+      await mobileEditor.waitFor();
+      check(await mobileEditor.getByRole("group", { name: "图钉颜色", exact: true }).isVisible(), "mobile note editor exposes pin colors");
+      const colorBox = await mobileEditor.locator(".pin-color-field").boundingBox();
+      check(colorBox.x >= 0 && colorBox.x + colorBox.width <= scenario.width, "mobile pin colors fit within the viewport");
+      await mobileEditor.screenshot({ path: join(screenshots, "mobile-note-colors.png") });
+      await mobileEditor.getByRole("button", { name: "取消", exact: true }).click();
+      await mobileEditor.waitFor({ state: "hidden" });
     }
     check(!await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), "viewport has no horizontal overflow");
     await page.waitForFunction(() => [...document.querySelectorAll(".motion-text-value")].every((element) => !element.getAnimations().length));

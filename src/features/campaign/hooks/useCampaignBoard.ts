@@ -13,7 +13,6 @@ import type {
   CampaignBoard,
   BoardNoteLink,
   BoardSticker,
-  PinColor,
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
@@ -279,8 +278,6 @@ export function useCampaignBoard(
       commit(() => repository.setNotePinned(campaignId, noteId, pinned)),
     moveNoteLayer: (noteId: string, direction: -1 | 1) =>
       commit(() => repository.moveNoteLayer(campaignId, noteId, direction)),
-    setNotePinColor: (noteId: string, color: PinColor) =>
-      commit(() => repository.setNotePinColor(campaignId, noteId, color)),
     uploadNotePhoto: (file: File) =>
       repository.uploadNotePhoto(campaignId, file),
     createBoardSticker,

@@ -1,13 +1,12 @@
 import {
   useEffect,
   useRef,
-  useState,
   type KeyboardEvent,
   type PointerEvent,
   type RefObject,
 } from "react";
-import { ChevronDown, ChevronUp, Palette } from "lucide-react";
-import type { BoardNote, PinColor } from "../../features/campaign/domain/types";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import type { BoardNote } from "../../features/campaign/domain/types";
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -21,7 +20,6 @@ interface NoteCardProps {
   onMove: (noteId: string, x: number, y: number) => Promise<unknown>;
   onPositionPreview: (noteId: string, x: number, y: number) => void;
   onLayerChange: (noteId: string, direction: -1 | 1) => Promise<unknown>;
-  onPinColorChange: (noteId: string, color: PinColor) => Promise<unknown>;
   /** 允许从这张便签发起点/终点连线。 */
   canLink: boolean;
   /** 正在从这张便签拉线。 */
@@ -37,7 +35,6 @@ export function NoteCard({
   onEdit,
   onMove,
   onPositionPreview,
-  onPinColorChange,
   onLayerChange,
   canLink,
   linkingFrom,
@@ -45,7 +42,6 @@ export function NoteCard({
 }: NoteCardProps) {
   const baseZ = 100 + note.layer;
   const dragZ = 1300;
-  const [pinPickerOpen, setPinPickerOpen] = useState(false);
   const elementRef = useRef<HTMLElement>(null);
   const dragRef = useRef({
     pointerId: -1,
@@ -236,7 +232,7 @@ export function NoteCard({
       style={{
         left: note.x,
         top: note.y,
-        zIndex: pinPickerOpen ? 1250 : baseZ,
+        zIndex: baseZ,
         transform: "rotate(" + note.rotation + "deg)",
         backgroundImage: noteTextureUrl ? `url(${noteTextureUrl})` : undefined,
       }}
@@ -283,41 +279,6 @@ export function NoteCard({
       {canEdit && (
         <footer className="note-meta">
           <span className="note-layer-actions">
-            <span className="note-pin-color-control">
-              <button
-                type="button"
-                className="note-pin-color-trigger"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setPinPickerOpen((open) => !open);
-                }}
-                aria-label="更改图钉颜色"
-                title="图钉颜色"
-                aria-expanded={pinPickerOpen}
-              >
-                <Palette aria-hidden="true" />
-              </button>
-              {pinPickerOpen && (
-                <span className="note-pin-swatches" aria-label="选择图钉颜色">
-                  {(["red", "blue", "green", "yellow", "black"] as PinColor[]).map(
-                    (color) => (
-                      <button
-                        type="button"
-                        key={color}
-                        data-pin-color={color}
-                        data-selected={note.pinColor === color || undefined}
-                        aria-label={`图钉颜色：${color}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setPinPickerOpen(false);
-                          void onPinColorChange(note.id, color);
-                        }}
-                      />
-                    ),
-                  )}
-                </span>
-              )}
-            </span>
             <button
               type="button"
               onClick={(event) => {

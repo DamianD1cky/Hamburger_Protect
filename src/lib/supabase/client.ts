@@ -22,6 +22,11 @@ export async function rpc<T>(
   args: Record<string, unknown> = {},
 ): Promise<T> {
   const { data, error } = await requireSupabase().rpc(name, args);
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.code === "PGRST202") {
+      throw new Error("服务器尚未部署此功能所需的数据库更新，请更新后重试。");
+    }
+    throw new Error(error.message);
+  }
   return data as T;
 }

@@ -1,5 +1,5 @@
 import { List, Plus, SmilePlus, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode, type Ref, type RefObject } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode, type Ref, type RefObject } from "react";
 import sceneUrl from "../../../assets/scene.webp";
 import stickerTopLeft from "../../../assets/stickers/tl.webp";
 import stickerTopRight from "../../../assets/stickers/tr.webp";
@@ -62,7 +62,6 @@ interface BoardSceneProps {
   ) => Promise<void>;
   onMoveNote: (noteId: string, x: number, y: number) => Promise<unknown>;
   onNoteLayer: (noteId: string, direction: -1 | 1) => Promise<unknown>;
-  onNotePinColor: (noteId: string, color: PinColor) => Promise<unknown>;
   onCreateSticker: (emoji: string, x: number, y: number, rotation: number) => Promise<unknown>;
   onMoveSticker: (stickerId: string, x: number, y: number) => Promise<unknown>;
   onDeleteSticker: (stickerId: string) => Promise<unknown>;
@@ -103,7 +102,6 @@ export function BoardScene({
   onMoveNote,
   onNoteLayer,
   onCreateNoteLink,
-  onNotePinColor,
   onCreateSticker,
   onMoveSticker,
   onDeleteSticker,
@@ -201,6 +199,12 @@ export function BoardScene({
       });
   };
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
+  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
+  const [stickerPlacement, setStickerPlacement] = useState<{ x: number; y: number } | null>(null);
+  const [stickerSaving, setStickerSaving] = useState(false);
+  const [stickerError, setStickerError] = useState("");
+  const stickerSavingRef = useRef(false);
+  const suppressStickerClick = useRef(false);
   const [linking, setLinking] = useState<{
     fromId: string;
     x: number;
@@ -229,14 +233,59 @@ export function BoardScene({
     ),
     ...pendingLinks,
   ];
-  const handleCreateSticker = (emoji: string) => {
-    const count = board.stickers.length;
-    const x = 610 + ((count * 137) % 560);
-    const y = 760 + ((count * 83) % 270);
-    const rotation = [-9, 7, -4, 11, 3][count % 5];
+  const chooseSticker = (emoji: string) => {
+    setStickerError("");
+    setLinking(null);
+    setSelectedEmoji(emoji);
+    setStickerPlacement(null);
     setStickerPickerOpen(false);
-    void onCreateSticker(emoji, x, y, rotation);
   };
+  const stickerPoint = (event: PointerEvent<HTMLElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const scale = viewScaleRef.current || 1;
+    return {
+      x: Math.round(Math.max(0, Math.min(BOARD_WIDTH - 72, (event.clientX - rect.left) / scale - 36))),
+      y: Math.round(Math.max(0, Math.min(BOARD_HEIGHT - 72, (event.clientY - rect.top) / scale - 36))),
+    };
+  };
+  const placeSticker = (event: PointerEvent<HTMLElement>) => {
+    if (!selectedEmoji || (event.target as HTMLElement).closest(".sticker-actions")) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressStickerClick.current = true;
+    if (stickerSavingRef.current) return;
+    const point = stickerPoint(event);
+    setStickerPlacement(point);
+    stickerSavingRef.current = true;
+    setStickerSaving(true);
+    void onCreateSticker(selectedEmoji, point.x, point.y, 0)
+      .then(() => {
+        setSelectedEmoji(null);
+        setStickerPlacement(null);
+      })
+      .catch((error: unknown) => {
+        setStickerError(error instanceof Error ? error.message : "贴纸保存失败，请重试。");
+        setSelectedEmoji(null);
+        setStickerPlacement(null);
+        setStickerPickerOpen(true);
+      })
+      .finally(() => {
+        stickerSavingRef.current = false;
+        setStickerSaving(false);
+      });
+  };
+
+  useEffect(() => {
+    if (!selectedEmoji) return;
+    const onEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || stickerSavingRef.current) return;
+      setSelectedEmoji(null);
+      setStickerPlacement(null);
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [selectedEmoji]);
 
   useEffect(() => {
     if (!linking) return;
@@ -429,7 +478,29 @@ export function BoardScene({
           className="board"
           aria-label={board.campaign.name + " 公告板"}
           ref={boardRef}
+          data-placing-sticker={selectedEmoji ? "true" : undefined}
+          onPointerDownCapture={placeSticker}
+          onClickCapture={(event) => {
+            if (!suppressStickerClick.current) return;
+            suppressStickerClick.current = false;
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onPointerMoveCapture={(event) => {
+            if (!selectedEmoji || stickerSavingRef.current) return;
+            if ((event.target as HTMLElement).closest(".sticker-actions")) return;
+            setStickerPlacement(stickerPoint(event));
+          }}
         >
+          {selectedEmoji && stickerPlacement && (
+            <div
+              className="board-emoji-placement"
+              style={{ left: stickerPlacement.x, top: stickerPlacement.y }}
+              aria-hidden="true"
+            >
+              {selectedEmoji}
+            </div>
+          )}
           {board.stickers.map((sticker) => (
             <EmojiSticker
               key={sticker.id}
@@ -733,7 +804,6 @@ export function BoardScene({
                     onMove={onMoveNote}
                     onPositionPreview={updateNoteLinkPosition}
                     onLayerChange={onNoteLayer}
-                    onPinColorChange={onNotePinColor}
                     canLink={canUpdateSharedBoard}
                     linkingFrom={linking?.fromId === note.id}
                     onPinClick={handlePinClick}
@@ -772,21 +842,32 @@ export function BoardScene({
               <button
                 className="sticker-add"
                 type="button"
-                onClick={() => setStickerPickerOpen((open) => !open)}
+                onClick={() => {
+                  setSelectedEmoji(null);
+                  setStickerPlacement(null);
+                  setStickerPickerOpen((open) => !open);
+                }}
                 aria-label="添加 Emoji 贴纸"
                 title="添加 Emoji 贴纸"
                 aria-expanded={stickerPickerOpen}
+                disabled={stickerSaving}
               >
                 <SmilePlus aria-hidden="true" />
               </button>
+              {selectedEmoji && (
+                <span className="sticker-placement-status" role="status">
+                  {stickerSaving ? "正在保存贴纸…" : "点击公告板放置，Esc 取消"}
+                </span>
+              )}
               {stickerPickerOpen && (
                 <div className="sticker-picker" aria-label="选择 Emoji 贴纸">
+                  {stickerError && <p className="sticker-error" role="alert">{stickerError}</p>}
                   {stickerChoices.map((emoji) => (
                     <button
                       type="button"
                       key={emoji}
                       aria-label={`添加贴纸 ${emoji}`}
-                      onClick={() => handleCreateSticker(emoji)}
+                      onClick={() => chooseSticker(emoji)}
                     >
                       {emoji}
                     </button>

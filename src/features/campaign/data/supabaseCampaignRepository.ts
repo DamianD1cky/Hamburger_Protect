@@ -476,6 +476,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_y: 605 + (count % 3) * 168,
       p_rotation: [-2.4, 1.8, -0.8][count % 3],
       p_image_path: draft.imagePath ?? null,
+      p_pin_color: draft.pinColor,
     });
     return this.getBoard(campaignId);
   }
@@ -530,14 +531,6 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_campaign_id: campaignId,
       p_id: id,
       p_direction: direction,
-    });
-    return this.getBoard(campaignId);
-  }
-  async setNotePinColor(campaignId: string, id: string, color: PinColor) {
-    await rpc("set_note_pin_color", {
-      p_campaign_id: campaignId,
-      p_id: id,
-      p_color: color,
     });
     return this.getBoard(campaignId);
   }

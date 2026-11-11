@@ -5,7 +5,6 @@ import type {
   BoardActivity,
   BoardNoteLink,
   BoardSticker,
-  PinColor,
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
@@ -459,7 +458,7 @@ class LocalCampaignRepository implements CampaignRepository {
         pinned: false,
         pinnedAt: null,
         layer: Math.max(0, ...board.notes.map((item) => item.layer)) + 1,
-        pinColor: "red",
+        pinColor: draft.pinColor,
       });
     });
   }
@@ -566,21 +565,6 @@ class LocalCampaignRepository implements CampaignRepository {
       const layer = note.layer;
       note.layer = adjacent.layer;
       adjacent.layer = layer;
-    });
-  }
-
-  async setNotePinColor(
-    _campaignId: string,
-    noteId: string,
-    color: PinColor,
-  ): Promise<CampaignBoard> {
-    return this.updateAsMember((board) => {
-      const note = board.notes.find((item) => item.id === noteId);
-      if (!note) throw new Error("便签不存在");
-      if (board.viewer.role !== "gm" && note.authorId !== board.viewer.id) {
-        throw new Error("只能修改自己的便签");
-      }
-      note.pinColor = color;
     });
   }
 

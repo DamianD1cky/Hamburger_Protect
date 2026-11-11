@@ -2,7 +2,6 @@ import type {
   CampaignBoard,
   BoardNoteLink,
   BoardSticker,
-  PinColor,
   ActivityPage,
   ResourceDraft,
   ChecklistDraft,
@@ -72,11 +71,6 @@ export interface CampaignRepository {
     campaignId: string,
     noteId: string,
     direction: -1 | 1,
-  ): Promise<CampaignBoard>;
-  setNotePinColor(
-    campaignId: string,
-    noteId: string,
-    color: PinColor,
   ): Promise<CampaignBoard>;
   createBoardSticker(
     campaignId: string,

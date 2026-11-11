@@ -111,6 +111,40 @@ try {
   );
 
   await asUser(() =>
+    db.query(
+      "select public.save_note($1,'编辑后','新正文','green',100,100,0,$2,null,'yellow')",
+      [campaign, first],
+    ),
+  );
+  let savedNote = (
+    await db.query("select title,body,color,pin_color from public.notes where id=$1", [first])
+  ).rows[0];
+  assert.deepEqual(savedNote, { title: "编辑后", body: "新正文", color: "green", pin_color: "yellow" });
+  await assert.rejects(
+    asUser(() =>
+      db.query(
+        "select public.save_note($1,'不得保存','错误','pink',100,100,0,$2,null,'invalid')",
+        [campaign, first],
+      ),
+    ),
+    /INVALID_PIN_COLOR/,
+  );
+  savedNote = (
+    await db.query("select title,pin_color from public.notes where id=$1", [first])
+  ).rows[0];
+  assert.deepEqual(savedNote, { title: "编辑后", pin_color: "yellow" });
+  await asUser(() =>
+    db.query(
+      "select public.save_note($1,'旧客户端编辑','正文','green',100,100,0,$2,null)",
+      [campaign, first],
+    ),
+  );
+  assert.equal(
+    (await db.query("select pin_color from public.notes where id=$1", [first])).rows[0].pin_color,
+    "yellow",
+  );
+
+  await asUser(() =>
     db.query("select public.move_note_layer($1,$2,1)", [campaign, first]),
   );
   notes = (
@@ -152,6 +186,8 @@ try {
     ).rows[0].count,
     0,
   );
+
+  await db.exec(await readFile("supabase/tests/note_pins_stickers_smoke.sql", "utf8"));
 
   console.log(
     `${migrations.length} migrations applied; pin colors, global note layers, and sticker CRUD passed.`,

@@ -1339,6 +1339,12 @@ button {
   background: #b9e7b2;
 }
 
+.pin-swatch-red { background: #e72b3c; }
+.pin-swatch-blue { background: #2785d8; }
+.pin-swatch-green { background: #36a467; }
+.pin-swatch-yellow { background: #f1c933; }
+.pin-swatch-black { background: #343536; }
+
 .color-field input:checked + .swatch {
   box-shadow:
     0 0 0 3px #f4f1e5,
@@ -5476,44 +5482,6 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   height: 15px;
 }
 
-.note-pin-color-control {
-  position: relative;
-  display: inline-flex;
-}
-
-.note-pin-swatches {
-  position: absolute;
-  z-index: 5;
-  right: -2px;
-  bottom: 26px;
-  display: flex;
-  gap: 5px;
-  padding: 6px;
-  border: 1px solid rgba(43, 40, 32, 0.3);
-  border-radius: 4px;
-  background: #fffdf3;
-  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.2);
-}
-
-.note-layer-actions .note-pin-swatches button {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  border-radius: 50%;
-  background: var(--swatch);
-  box-shadow: 0 0 0 1px rgba(43, 40, 32, 0.35);
-}
-
-.note-layer-actions .note-pin-swatches button[data-selected="true"] {
-  box-shadow: 0 0 0 2px #2b2820;
-}
-
-.note-pin-swatches [data-pin-color="red"] { --swatch: #e72b3c; }
-.note-pin-swatches [data-pin-color="blue"] { --swatch: #2785d8; }
-.note-pin-swatches [data-pin-color="green"] { --swatch: #36a467; }
-.note-pin-swatches [data-pin-color="yellow"] { --swatch: #f1c933; }
-.note-pin-swatches [data-pin-color="black"] { --swatch: #343536; }
-
 /* ------------------------------------------------------------------
    编辑器里的照片选择
    ------------------------------------------------------------------ */
@@ -5755,6 +5723,46 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   touch-action: none;
   user-select: none;
   transition: scale 140ms ease, filter 140ms ease;
+}
+
+.board[data-placing-sticker="true"],
+.board[data-placing-sticker="true"] * {
+  cursor: crosshair;
+}
+
+.board-emoji-placement {
+  position: absolute;
+  z-index: 1250;
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border: 2px dashed #fffdf3;
+  border-radius: 8px;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  font-size: 58px;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.sticker-placement-status {
+  position: absolute;
+  right: 0;
+  bottom: 80px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: #fffdf3;
+  color: #2d2c29;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+.sticker-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #9f1d27;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 .board-emoji-sticker.is-dragging {

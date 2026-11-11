@@ -775,10 +775,27 @@ function CampaignBoardWorkspace({
           onTransitionQuest={transitionQuest}
           onMoveNote={campaign.moveNote}
           onNoteLayer={campaign.moveNoteLayer}
-          onNotePinColor={campaign.setNotePinColor}
-          onCreateSticker={campaign.createBoardSticker}
-          onMoveSticker={campaign.moveBoardSticker}
-          onDeleteSticker={campaign.deleteBoardSticker}
+          onCreateSticker={async (emoji, x, y, rotation) => {
+            const created = await campaign.createBoardSticker(emoji, x, y, rotation);
+            showToast("贴纸已贴上公告板");
+            return created;
+          }}
+          onMoveSticker={async (id, x, y) => {
+            try {
+              return await campaign.moveBoardSticker(id, x, y);
+            } catch (error) {
+              showToast(error instanceof Error ? error.message : "贴纸移动失败，请重试。");
+              throw error;
+            }
+          }}
+          onDeleteSticker={async (id) => {
+            try {
+              return await campaign.deleteBoardSticker(id);
+            } catch (error) {
+              showToast(error instanceof Error ? error.message : "贴纸删除失败，请重试。");
+              throw error;
+            }
+          }}
           onCreateNoteLink={campaign.createNoteLink}
           onDeleteNoteLink={campaign.deleteNoteLink}
           onUpdateNoteLinkLabel={campaign.updateNoteLinkLabel}

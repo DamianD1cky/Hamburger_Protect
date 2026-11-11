@@ -111,7 +111,7 @@ export function EmojiSticker({
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
-            void onDelete(sticker.id);
+            void onDelete(sticker.id).catch(() => undefined);
           }}
         >
           <X aria-hidden="true" />

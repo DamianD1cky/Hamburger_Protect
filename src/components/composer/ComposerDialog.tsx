@@ -5,6 +5,7 @@ import type {
   ComposerTarget,
   NoteColor,
   NoteDraft,
+  PinColor,
   QuestDraft,
 } from "../../features/campaign/domain/types";
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
@@ -34,6 +35,13 @@ const colors: Array<{ value: NoteColor; label: string }> = [
   { value: "blue", label: "蓝色" },
   { value: "green", label: "绿色" },
 ];
+const pinColors: Array<{ value: PinColor; label: string }> = [
+  { value: "red", label: "红色" },
+  { value: "blue", label: "蓝色" },
+  { value: "green", label: "绿色" },
+  { value: "yellow", label: "黄色" },
+  { value: "black", label: "黑色" },
+];
 
 // Mounted per opening: background synchronization must never reset an unsaved draft.
 export function ComposerDialog({
@@ -59,6 +67,7 @@ export function ComposerDialog({
   const [assigneeName, setAssigneeName] = useState(quest?.assigneeName ?? "");
   const [due, setDue] = useState(quest?.due ?? "");
   const [color, setColor] = useState<NoteColor>(note?.color ?? "yellow");
+  const [pinColor, setPinColor] = useState<PinColor>(note?.pinColor ?? "red");
   const [photoPath, setPhotoPath] = useState<string | null>(note?.imagePath ?? null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -166,14 +175,19 @@ export function ComposerDialog({
             title: title.trim(),
             body: body.trim(),
             color,
+            pinColor,
             imagePath,
           },
           state.target?.id,
         );
       }
       requestClose();
-    } catch {
-      setError("保存失败，请检查网络或修改权限后重试。草稿已保留。");
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? `${error.message} 草稿已保留。`
+          : "保存失败，请检查网络或修改权限后重试。草稿已保留。",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -305,6 +319,23 @@ export function ComposerDialog({
                         onChange={() => setColor(option.value)}
                       />
                       <span className={`swatch swatch-${option.value}`} />
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+              {kind === "note" && (
+                <fieldset className="color-field pin-color-field">
+                  <legend>图钉颜色</legend>
+                  {pinColors.map((option) => (
+                    <label key={option.value} title={option.label}>
+                      <input
+                        type="radio"
+                        name="pinColor"
+                        aria-label={`图钉${option.label}`}
+                        checked={pinColor === option.value}
+                        onChange={() => setPinColor(option.value)}
+                      />
+                      <span className={`swatch pin-swatch-${option.value}`} />
                     </label>
                   ))}
                 </fieldset>

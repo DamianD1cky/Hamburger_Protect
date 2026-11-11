@@ -221,6 +221,7 @@ export interface NoteDraft {
   title: string;
   body: string;
   color: NoteColor;
+  pinColor: PinColor;
   /** null 表示这张便签不带照片。 */
   imagePath: string | null;
 }
