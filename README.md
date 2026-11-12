@@ -1,227 +1,199 @@
 # Hamburger Protect
 
-一个围绕「保卫汉堡店」展开的多人跑团任务公告板。玩家是被困在汉○王门店的倒霉员工与顾客，需要在丧尸危机中维持营业、分配工作、记录行动并等待救援。
+一个面向多人跑团的实时任务公告板。GM 可以创建战役、组织玩家、发布任务和维护共享公告板；玩家可以领取任务、更新物资与检查项、提交工作记录，并通过便签和连线共同整理现场信息。
 
-## 在线访问
+代码采用 MIT License。仓库附带的原创美术资源采用 CC BY-NC 4.0，仅允许非商业使用。详见[许可说明](#许可)。
 
-<https://hamburger.damiandicky.site>
+## 在线体验
 
-备用入口：<https://hamburger-protect.vercel.app>
+- 正式站：<https://hamburger.damiandicky.site>
+- 备用入口：<https://hamburger-protect.vercel.app>
 
-## 玩法入口
+在线环境包含真实账号和共享数据。只想查看界面或参与开发时，建议先使用本地演示模式。
 
-所有人先注册一个账号（账号名 + 密码 + 昵称），用同一个账号游玩：
+## 主要功能
 
-- 员工：登录后填本场角色名、岗位、角色资料和班次码提交入店申请，GM 批准后，该战役会出现在「进行中的战役」列表。
-- GM / 值班店长：登录后在「GM / 店长」页申请成为 GM，站长批准后才能创建战役、管理公告板。
-- 账号与战役角色相互独立：同一个账号可以同时在一场战役担任员工、在其他战役担任 GM；进入公告板前显式选择本次使用的战役角色。
-- 参观公开房间同样需要先登录账号。
-- 同一账号同时只能在一个进行中的战役担任员工，但 GM 战役数量不受该约束。
-- 只有获批 GM 能发布任务、修改检查项内容并审核工作报告；玩家可以编辑物资和更新检查状态。
-- 战役结束后生成只读归档；包含玩家提交报告的完整快照仅本战役获批 GM 可读。
-
-## 账号设置与找回
-
-登录后可打开「账号设置」修改昵称、验证当前密码后更新密码，或退出其他设备。账号昵称与各战役角色名独立保存；普通「退出账号」只退出当前设备。
-
-新注册和修改密码采用至少 15 个字符的长口令；支持空格，按 Supabase bcrypt 的限制拒绝超过 72 个 UTF-8 字节的输入。已有账号仍可使用原密码登录。注册时需要确认密码，所有密码输入均支持显示 / 隐藏和密码管理器自动填充。
-
-账号资料最多缓存 30 秒，页面回到前台和轮询时会重新核对。数据库直接检查 profile 停用状态、Auth 封禁状态及匿名身份，权限不依赖客户端缓存。退出其他设备会撤销 refresh token，已经签发的 access token 在有效期结束前仍可能可用。
-
-当前账号使用 `账号名@gm.local` 虚拟邮箱，不能接收重置邮件。忘记密码应联系站长，通过原先已有的联系渠道核验账号归属后，由站长使用 Supabase Admin API 重置密码；不能仅凭同名角色或班次码认领账号。自助邮件找回需要另行接入真实邮箱验证与 SMTP，当前不提供假邮件找回入口。
-
-## 公告板交互动效
-
-编辑便签与任务时，桌面编辑器从触发位置展开并反向收回，关闭后恢复键盘焦点；手机使用全屏表单。便签拖拽在桌面与触摸屏上都保持直接跟手：手机上轻点便签仍是编辑，拖动超过 8px 才移动；松手短暂落位，保存失败则回到原坐标和置顶层级。移动端导航指示器与公告板区域移动保持一致。
-
-板面为 2144×1206（16∶9），向右扩展并保留旧物件坐标。公告板固定在自动适配的位置，不支持拖动空白处平移或手动缩放；窗口变化时重新适配真实板框。时钟与工具控件独立于画布缩放，手机区域导航按模块当前坐标聚焦。扩展区域的云端模块、贴纸写入需部署 `20261112010000_wide_board_geometry.sql`。
-
-汉堡屋指数、任务状态与计数、在岗人数和待审批数量采用 120 ms 淡出、220 ms 淡入的文字替换，连续更新合并为最新值；辅助技术读取的文字立即更新。时钟不增加此动画。进入战役时先并行加载组件与公告板数据，再通过原生 View Transition API 连接列表与公告板；失败留在原入口，支持重试。没有 API 或开启「减少动态效果」时直接切换。
-
-浏览器回归命令：`npm run check:motion-ui`。默认连接本地 Supabase 模式预览 `http://127.0.0.1:5174`，可通过 `HP_PREVIEW_URL` 指定地址、`CHROME_PATH` 指定 Chrome 路径。测试拦截 Auth/RPC 请求并使用独立夹具，不修改生产数据，覆盖桌面、手机、减少动态效果和 API 降级。测试截图保存在系统临时目录。
-
-## 术语约定
-
-同一个对象在不同语境下用不同的词，三者不混用：
-
-- **战役**：GM 开始的这一局游戏本体。用于生命周期与系统语境，如创建战役、战役名称、归档战役、战役已结束。
-- **房间**：战役的共享空间。用于公告板与管理语境，如房间配置、房间成员、房间图片、公开参观房间、移出房间。
-- **班次**：汉堡店世界观里的上班班次。用于加入与排班语境，如班次码、申请加入班次、入店申请、危机排班、在岗与离岗。
-
-## 本轮迭代能力
-
-- 任务状态明确区分可领取、已领取、待审核、需重试和已完成；GM 可审核通过或退回重试。
-- GM 可管理成员与入店申请，移出玩家后立即失权，未提交任务释放，玩家可重新申请。
-- 角色岗位改为自由填写；本人可维护角色名、岗位和最长 2000 字的角色资料。
-- 便签目录支持 GM 共享置顶；检查清单支持单层分类。
-- 房间配置包含战役名称、公开参观、成员和公告板外观；7 个区块的标题、底色和显隐直接改在公告板各自的标题旁（仅 GM 可见），物资区块的铅笔同时编辑三张便签的小标题。隐藏只收起区块，数据保留，顶栏的区块按钮可以把它们找回来。
-- 公告板外观由房间背景、板面材质、边框样式三层组成。背景支持门店、纯色、自定义图片以及铺满、完整显示、平铺、焦点和暗化；板面支持黑板、软木、纸张及自定义纹理；边框支持汉堡店、木框、金属和无边框。先预览，再点「保存共享配置」应用给成员和访客；取消不会上传或应用外观草稿。换主题保持便签、连线和贴纸坐标不变。
-- 外观图片支持 JPEG、PNG、WebP，选择时最大 20 MiB，上传前压缩并检查 5 MiB 存储上限。演示模式可保存内置主题，自定义图片需要 Supabase。旧背景路径自动映射为房间背景；新外观写入需部署 `20261112000000_layered_board_appearance.sql`。
-- 任意区块添加、复制、删除、游戏时间及社区串门尚未定义，不在本轮范围。
-
-## 站长审批 GM 权限
-
-1. 申请者在「GM / 店长」页点击申请成为 GM 后，把账号名告知站长。站长不需要申请者的密码。
-2. 站长登录 Supabase Dashboard，选择 **Hamburger-Protect → Table Editor → public.gm_access**。
-3. 根据 `account_name`（格式为 `账号名@gm.local`）和 `display_name` 核对申请者；`auth_user_id` 可核对对应认证账号。
-4. 编辑这条记录的 `status`，保存为 `approved`。页面会每 5 秒检查一次审批结果，获批后可创建班次或进入原有战役。
-5. 拒绝申请时设置 `rejected`，撤销已有授权时设置 `revoked`。可填写 `review_note` 向申请者说明原因；`reviewed_at` 会自动更新时间。
-
-GM 申请只在账号主动点击申请时建立，默认 `pending`；只读查询状态不会产生申请记录，重复申请不会覆盖已经批准、拒绝或撤销的结果。
-
-只有 Supabase 项目管理员可以审批；网站里的 GM 不能审批自己或他人。审批表对普通账号只开放自己的结果查询，没有写权限。创建战役和所有 GM 写入操作由后端检查授权，撤销权限对现有会话生效。
-
-更新前以匿名身份加入的老玩家已全部停用：档案停用、占位释放、待审申请取消，打开网站会被退出到签到处，需注册账号后用班次码重新申请加入；他们在原战役里留下的便签与工作记录仍保留为历史。
-
-## GM 审批玩家入店
-
-玩家提交班次码后先等待本班次 GM 审批。GM 登录公告板后，顶部「入店申请」按钮会显示待审批数量，点击按钮或点开「危机排班」即可查看角色名、岗位、申请时间和编号，填写可选备注并批准或拒绝。同名成员或申请会提示核对身份。
-
-批准后才创建正式成员，玩家页面每 5 秒检查一次结果并自动进入。未批准前无法读取或修改公告板；其他班次的 GM 无法查看或处理这条申请，玩家无法审批自己或查看其他申请。入店申请、批准、拒绝和撤回都会进入工作记录。
-
-同一账号每个班次只有一条申请，同一时间只能有一条待审批申请；重复提交不会重置批准或拒绝结果。玩家可以撤回尚未处理的申请再申请其他班次，班次归档会取消剩余待审批申请。更新前已加入的成员保留。
-
-该功能阻止持有班次码的人自动加入；账号由账号名 + 密码找回，GM 批准前仍需联系玩家核对身份。
-
-## 员工手册规则
-
-网站文案与默认内容来自 `assets/汉堡王员工手册.docx`，主要映射为：
-
-- 岗位自由：厨师、维修师、服务员、店长与顾客都可按现场情况行动。
-- 危机营业：未获批准不得擅自离岗，管理层失联时依据现场信息继续处理。
-- 创造性利用：厨房、前厅、仓库、维修区和休息室内的物资不局限于标签用途。
-- 员工安全：异常顾客不适用常规服务流程，危险行动优先评估人员安全。
-- 工作记录：任务提交相当于员工行动报告，需由 GM 审核。
-- 汉堡与士气：没有明确行动时，角色默认继续制作汉堡。
+- **多人战役**：GM 创建战役并审批玩家加入，同一账号可以在不同战役拥有不同角色。
+- **共享公告板**：16∶9 固定板面，支持桌面和手机自动适配。
+- **任务流程**：发布、领取、提交、审核、退回重试和完成归档。
+- **房间管理**：成员审批、角色资料、战役归档、公开参观和访客留言。
+- **自由便签**：创建、编辑、拖动、排序、换色、图钉、连线与关系说明。
+- **板面物件**：可移动业务模块、Emoji 贴纸和共享工作记录。
+- **分层主题**：房间背景、板面材质和边框独立配置，支持自定义图片。
+- **权限隔离**：Supabase Auth、PostgreSQL、RLS、受控 RPC 和私有 Storage。
+- **移动端导航**：手机按物资、任务、排班、防御和记录区域快速切换。
 
 ## 技术栈
 
-- Vite + React + TypeScript
+- React 19 + TypeScript + Vite
 - TanStack Query
-- Supabase Auth、PostgreSQL、受控 RPC、RLS 与私有 Storage（生产后端）
-- TanStack Query 每 5 秒轮询公告板
+- Supabase Auth + PostgreSQL + Storage
+- PostgreSQL RLS 与 `security definer` RPC
 - Vercel
 
-## 本地运行
+公告板采用固定世界坐标，窗口尺寸只影响视口适配，不改变便签、连线、贴纸和模块之间的空间关系。前端通过乐观更新保持拖动反馈，数据库使用原子操作避免并发保存覆盖其他物件的位置。
+
+## 快速开始
+
+要求：
+
+- Node.js 22
+- npm
+
+安装并启动：
 
 ```bash
 npm install
 npm run dev
 ```
 
-默认访问 <http://127.0.0.1:5173>。本地未配置后端时使用浏览器演示仓储；也可以明确配置 `VITE_BACKEND=local`。生产环境使用 `VITE_BACKEND=supabase`，连接或认证失败不会回退到本地数据。
+打开 <http://127.0.0.1:5173>。
 
-## Nhost 历史基线
+未配置 Supabase 时，开发环境自动使用浏览器内的演示仓储。也可以在 `.env.local` 中显式指定：
 
-Nhost 业务数据已经冻结，目录仅保留迁移审计、恢复基准与 Hasura metadata，不进入前端运行时：
-
-```text
-nhost/
-├── nhost.toml
-├── migrations/default/
-│   ├── 20261015000000_hamburger_protect_schema/
-│   └── 20261015010000_handbook_employee_roles/
-└── metadata/databases/default/
-    ├── tables/
-    └── functions/
+```dotenv
+VITE_BACKEND=local
 ```
 
-后端定义包含：
+演示模式适合界面开发，不提供真实账号、跨设备同步或自定义图片持久化。
 
-- 战役、成员岗位、任务、任务提交、留言、资源、检查项和事件日志
-- 统一的账号名 + 密码账号；GM 能力来自独立审批，不来自账号类型
-- PostgreSQL 约束保证同一账号只能有一个活跃玩家成员关系，同时允许其拥有多个 GM 成员关系
-- GM 专属建局、任务管理、审核和归档函数
-- 玩家专属加入、领取和提交任务函数
-- GM 可控制公开参观；访客只读查看公告板并通过独立留言区互动
-- Hasura `user` / `anonymous` 角色的行级、列级与关系权限
+## 连接 Supabase
 
-## 云端部署
-
-1. 使用 `npm run supabase:push` 将已评审迁移部署到已链接的 Supabase 项目，禁止对生产库执行重置。
-2. 先运行云端事务 smoke test；R10 使用 `npx supabase db query --linked --file supabase/tests/public_visits_smoke.sql`，再确认 `private.runtime` 的业务写入与公开状态。
-3. Vercel 配置 `VITE_BACKEND=supabase`、Supabase URL、publishable key 和 GM 账号域名。
-4. 运行 `npm run check`、`npm run check:database`、`npm run build` 和密钥扫描后部署前端。
-5. 生产域名为 <https://hamburger.damiandicky.site>；部署后验证桌面、手机、Auth 和 Storage 签名 URL。
-
-## 目录结构
-
-```text
-src/
-├── app/                         应用入口与状态编排
-├── components/board/            公告板视图组件
-├── components/composer/         任务/留言编辑器
-├── components/handbook/         员工手册速查
-├── features/access/             登录、建局、加入战役
-├── features/campaign/domain/    战役领域类型与状态机
-├── features/campaign/data/      本地与 Supabase 数据仓储
-├── features/campaign/hooks/     React 数据接口
-├── hooks/                       纯视图交互 Hook
-└── lib/supabase/                Supabase 客户端
-nhost/                           旧数据库迁移、配置与 Hasura metadata
-supabase/                        生产数据库迁移、测试与 Edge Functions
-```
-
-## 验证
+从模板创建本地环境文件：
 
 ```bash
-npm run check
-npm run check:accounts
-npm run check:database
-npm run check:migration
-npm run build
-npm run check:secrets
+cp .env.example .env.local
 ```
 
-## 开源仓库的密钥保护
-
-前端只配置 Supabase URL、publishable key 等公开标识。管理密钥、JWT 私钥、个人访问令牌和密码保存在本地忽略文件或云平台的 Secret 配置中；`VITE_` 前缀的变量会进入公开网页，不能存放凭据。
-
-本地安装 Gitleaks 后，运行 `npm run setup:security` 启用提交前与推送前检查，运行 `npm run check:secrets` 扫描全部 Git 历史。每个新克隆都需要执行一次设置。GitHub Actions 会扫描提交历史和公开文件，输出中的凭据全部脱敏。
-
-提交者邮箱也会公开。请在 GitHub 的 Settings → Emails 中复制隐私邮箱，使用 `git config --local user.email "你的 GitHub 隐私邮箱"` 配置本仓库。此设置只影响后续提交，无法删除旧提交中的邮箱。
-
-若凭据曾进入公开历史，应先在对应服务撤销或轮换，再处理 Git 历史；仅删除当前文件无法消除历史副本。
-
-
-## Supabase 接入与迁移
-
-Supabase 已承接生产读写，历史数据和 GM 身份已迁移。前端运行时只支持 Supabase；冻结的 Nhost 业务数据保留为迁移审计与恢复基准，不能直接承接当前业务写入。
-
-Supabase 前端公开配置：
+填写公开的前端配置：
 
 ```dotenv
 VITE_BACKEND=supabase
-VITE_SUPABASE_URL=你的项目 URL
-VITE_SUPABASE_PUBLISHABLE_KEY=你的 publishable key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 VITE_GM_ACCOUNT_DOMAIN=gm.local
 ```
 
-本地 Supabase CLI 提供的 anon key 可以填入同一公开 key 配置。管理 Secret、数据库连接和密码绝不能使用 `VITE_` 前缀。
-
-后端文件位于 `supabase/`，数据库基线包含 11 张业务表、独立 `profiles`、RLS、受控业务函数、原子日志和归档隐私。新实例默认关闭业务写入；部署 SQL 后仍需导入与核对数据，再显式开放。
-
-```bash
-npm run check
-npm run check:accounts
-npm run check:database
-npm run check:migration
-npm run build
-```
-
-数据库测试使用 PGlite 执行 PostgreSQL SQL，模拟 Supabase 可信 JWT 上下文，验证权限和业务状态。迁移测试验证快照校验、完整回滚、日志、微秒时间、identity 序列及 HTTP 身份验证。它们不替代云端 Auth、真实连接和并发事务验收。
-
-本地完整 Supabase 需要 Docker；当前可用 CLI：
+本地完整 Supabase 环境需要 Docker：
 
 ```bash
 npm run supabase:up
 npm run supabase:status
 ```
 
-部署时先通过 CLI 认证并链接到正确目标项目，再使用 `npm run supabase:push`。本地配置默认 PostgreSQL 17，目标数据库必须先实测版本与兼容性。不要对现有生产库运行重置命令。
+将项目部署到托管 Supabase 前，应先登录 CLI、链接自己的项目，再执行：
 
-迁移操作顺序、环境变量及回退限制见 [Supabase 运维步骤](supabase/OPERATIONS.md)。真实快照只保存到仓库外，工具默认拒绝覆盖文件、拒绝导入非空目标、拒绝在业务写入开放时导入。
+```bash
+npm run supabase:push
+```
 
-迁移后的站长审批位置为 Supabase Table Editor 的 `public.gm_access`；只修改目标身份对应记录的 `status` 和可选备注。账号身份保存在 `profiles`，授权仍来自 GM 审批表及战役成员关系，不能通过编辑用户 metadata 批准 GM。
+不要将 service role key、数据库密码、JWT 私钥或个人访问令牌写入 `VITE_*` 变量。`VITE_*` 会被打包进公开网页。
 
-原 Nhost 中 24 个带密码的 GM 已通过 bcrypt 哈希迁移保留原密码，账号名和审批状态不变；无需使用迁移初始密码。另有 1 个来源账号原本没有密码，继续按站长交接方式处理。
+生产迁移、云端 smoke test 和回退限制见 [Supabase 运维步骤](supabase/OPERATIONS.md)。
+
+## 常用命令
+
+| 命令 | 用途 |
+| --- | --- |
+| `npm run dev` | 启动开发服务器 |
+| `npm run build` | 类型检查并构建生产包 |
+| `npm run preview` | 预览生产构建 |
+| `npm run check` | TypeScript 检查 |
+| `npm run check:access-ui` | 账号入口浏览器回归 |
+| `npm run check:motion-ui` | 公告板桌面与移动端回归 |
+| `npm run check:accounts` | 账号领域测试 |
+| `npm run check:database` | PostgreSQL 权限与业务状态回归 |
+| `npm run check:board-objects` | 公告板物件与迁移回归 |
+| `npm run check:migration` | 历史迁移工具回归 |
+| `npm run check:secrets` | 扫描 Git 历史中的敏感信息 |
+
+浏览器回归默认连接 `http://127.0.0.1:5174`，可通过 `HP_PREVIEW_URL` 指定其他预览地址，通过 `CHROME_PATH` 指定 Chromium/Chrome。
+
+## 项目结构
+
+```text
+assets/                         项目美术与内容资源
+src/
+├── app/                        应用入口与状态编排
+├── components/board/           公告板视图和编辑器
+├── components/composer/        任务与留言编辑器
+├── components/handbook/        员工手册界面
+├── features/access/            账号、建局和加入战役
+├── features/campaign/domain/   战役领域模型
+├── features/campaign/data/     本地与 Supabase 仓储
+├── features/campaign/hooks/    查询、缓存与乐观更新
+├── hooks/                      视图交互 Hook
+└── lib/supabase/               Supabase 客户端
+supabase/
+├── migrations/                 PostgreSQL 增量迁移
+├── tests/                      云端事务 smoke test
+└── functions/                  Edge Functions
+nhost/                          冻结的历史迁移审计基线
+```
+
+`nhost/` 不参与当前前端运行时；新的后端变更应通过 `supabase/migrations/` 提交。
+
+## 安全
+
+- 前端只允许保存 Supabase URL 和 publishable key 等公开配置。
+- 本地凭据放在被 Git 忽略的环境文件或云平台 Secret 中。
+- 运行 `npm run setup:security` 可以安装本仓库的提交前敏感信息扫描。
+- GitHub Actions 会执行数据库检查和 Git 历史密钥扫描。
+- 发现安全问题时，请不要在公开 Issue 中粘贴凭据、用户数据或可利用细节。请通过仓库所有者公开的私密联系方式报告。
+
+如果凭据曾进入 Git 历史，应先在对应服务撤销或轮换；仅删除当前文件不能使旧凭据失效。
+
+## 参与贡献
+
+1. Fork 仓库并从 `main` 创建分支。
+2. 保持改动聚焦，数据库变更使用新的增量 migration。
+3. 为行为变化补充相应测试。
+4. 提交前至少运行：
+
+```bash
+npm run check
+npm run check:database
+npm run build
+```
+
+涉及公告板拖动、移动端布局或视图交互时，再运行：
+
+```bash
+npm run check:motion-ui
+```
+
+提交贡献即表示你有权提交相关内容，并同意你的代码贡献按 MIT License 发布。请勿提交无授权的图片、字体、音频、品牌素材或用户数据。
+
+## 许可
+
+这是一个**混合许可仓库**，不是所有文件都采用 MIT：
+
+### 源代码
+
+除下述美术资源和第三方内容外，源代码、SQL、配置及仓库原创技术文档采用 [MIT License](LICENSE)。
+
+MIT 允许商业使用、修改、分发和私有使用，但必须保留版权和许可声明。
+
+### 美术资源
+
+以下仓库附带的原创美术资源采用 [Creative Commons Attribution-NonCommercial 4.0 International](assets/LICENSE.md)：
+
+```text
+assets/felt.webp
+assets/room-kitchen-clean.jpg
+assets/scene-blur.jpg
+assets/scene.webp
+assets/stickers/*.webp
+```
+
+这些资源可以在遵守署名要求的前提下用于非商业项目，但**不得用于商业用途**。如需商业授权，必须事先取得版权所有者的单独书面许可。
+
+MIT 代码可以用于商业项目，但商业发行前必须替换或移除上述受限美术资源，包括页面背景、板面纹理、贴纸和 favicon。仅保留 MIT 声明不能解除美术资源的非商业限制。
+
+`assets/汉堡王员工手册.docx` 不属于 MIT 软件许可或上述美术许可的授权范围，不应作为可复用素材重新分发。运行时由用户上传的内容也不因进入本项目而改变其原有权利归属。
+
+第三方组件、图标和字体遵循各自许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 免责声明
+
+本项目是独立创作的跑团工具，与任何现实餐饮品牌及其关联公司不存在隶属、赞助或背书关系。所有第三方商标、品牌名称和标识归其各自权利人所有。
