@@ -2,6 +2,7 @@ import { cloneDefaultBoard } from "../domain/defaults";
 import type { CampaignRepository } from "../domain/repository";
 import { defaultBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
 import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../domain/boardGeometry";
+import type { BoardModuleKey, BoardModuleLayout } from "../domain/boardModules";
 import type {
   CampaignBoard,
   BoardActivity,
@@ -670,6 +671,21 @@ class LocalCampaignRepository implements CampaignRepository {
       board.settings.moduleLayout = draft.moduleLayout;
       board.settings.hiddenSections = draft.hiddenSections;
     });
+  }
+
+  async moveBoardModule(
+    _campaignId: string,
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+  ): Promise<BoardModuleLayout> {
+    const board = this.manage((current) => {
+      current.settings.moduleLayout = {
+        ...current.settings.moduleLayout,
+        [key]: { x, y },
+      };
+    });
+    return clone(board.settings.moduleLayout);
   }
 
   async setCampaignPublic(

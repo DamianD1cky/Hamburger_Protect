@@ -31,6 +31,7 @@ declare
   settings public.campaign_settings;
   positions jsonb;
   sticker jsonb;
+  moved_layout jsonb;
 begin
   select * into settings from public.campaign_settings where campaign_id = room;
   select jsonb_agg(jsonb_build_array(id,x,y) order by id) into positions from public.notes where campaign_id = room;
@@ -41,6 +42,11 @@ begin
   );
   if (select module_layout->'tasks'->>'x' from public.campaign_settings where campaign_id = room) <> '1550'
     then raise exception 'WIDE_MODULE_SAVE_FAILED'; end if;
+  moved_layout := public.move_board_module(room, 'activity', 1500, 800);
+  moved_layout := public.move_board_module(room, 'safety', 600, 580);
+  if moved_layout->'activity' <> '{"x":1500,"y":800}'::jsonb
+    or moved_layout->'safety' <> '{"x":600,"y":580}'::jsonb
+    then raise exception 'ATOMIC_MODULE_MOVE_LOST_POSITION'; end if;
   if (select appearance from public.campaign_settings where campaign_id = room) is distinct from settings.appearance
     then raise exception 'WIDE_BOARD_CHANGED_THEME'; end if;
   sticker := public.create_board_sticker(room, '⭐', 1900, 500, 0);

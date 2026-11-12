@@ -23,20 +23,33 @@ import type {
   QuestDraft,
   QuestStatus,
 } from "../domain/types";
+import type {
+  BoardModuleKey,
+  BoardModuleLayout,
+} from "../domain/boardModules";
 
 type PendingNoteMove = { revision: number; x: number; y: number };
+type PendingModuleMove = { revision: number; x: number; y: number };
 
-function withPendingNotePositions(
+function withPendingPositions(
   board: CampaignBoard,
-  pendingMoves: Map<string, PendingNoteMove>,
+  pendingNotes: Map<string, PendingNoteMove>,
+  pendingModules: Map<BoardModuleKey, PendingModuleMove>,
 ) {
-  if (!pendingMoves.size) return board;
+  if (!pendingNotes.size && !pendingModules.size) return board;
+  const moduleLayout = { ...board.settings.moduleLayout };
+  pendingModules.forEach(({ x, y }, key) => {
+    moduleLayout[key] = { x, y };
+  });
   return {
     ...board,
     notes: board.notes.map((note) => {
-      const pending = pendingMoves.get(note.id);
+      const pending = pendingNotes.get(note.id);
       return pending ? { ...note, x: pending.x, y: pending.y } : note;
     }),
+    settings: pendingModules.size
+      ? { ...board.settings, moduleLayout }
+      : board.settings,
   };
 }
 
@@ -76,12 +89,19 @@ export function useCampaignBoard(
     ? supabaseCampaignRepository
     : localCampaignRepository;
   const noteMoveRevisions = useRef(new Map<string, PendingNoteMove>());
+  const moduleMoveRevisions = useRef(
+    new Map<BoardModuleKey, PendingModuleMove>(),
+  );
   const options = campaignBoardQueryOptions(requestedCampaignId, publicView);
   const boardKey = options.queryKey;
   const query = useQuery({
     ...options,
     select: (data) =>
-      withPendingNotePositions(data, noteMoveRevisions.current),
+      withPendingPositions(
+        data,
+        noteMoveRevisions.current,
+        moduleMoveRevisions.current,
+      ),
     placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
     refetchInterval: cloudEnabled ? 5_000 : false,
     refetchIntervalInBackground: false,
@@ -89,15 +109,19 @@ export function useCampaignBoard(
   const board = query.data;
   const campaignId = board?.campaign.id ?? requestedCampaignId;
 
-  const mergePendingNotePositions = (next: CampaignBoard) => {
-    return withPendingNotePositions(next, noteMoveRevisions.current);
+  const mergePendingPositions = (next: CampaignBoard) => {
+    return withPendingPositions(
+      next,
+      noteMoveRevisions.current,
+      moduleMoveRevisions.current,
+    );
   };
 
   const commit = async (operation: () => Promise<CampaignBoard>) => {
     const next = await operation();
     if (cloudEnabled && getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId)
       throw new Error("登录账号已变更，请重新进入战役。");
-    queryClient.setQueryData(boardKey, mergePendingNotePositions(next));
+    queryClient.setQueryData(boardKey, mergePendingPositions(next));
     return next;
   };
 
@@ -110,6 +134,69 @@ export function useCampaignBoard(
       notes[noteIndex] = { ...notes[noteIndex], x, y };
       return { ...current, notes };
     });
+  };
+
+  const setCachedModulePosition = (
+    key: BoardModuleKey,
+    position: { x: number; y: number } | null,
+  ) => {
+    queryClient.setQueryData<CampaignBoard>(boardKey, (current) => {
+      if (!current) return current;
+      const moduleLayout: BoardModuleLayout = {
+        ...current.settings.moduleLayout,
+      };
+      if (position) moduleLayout[key] = position;
+      else delete moduleLayout[key];
+      return {
+        ...current,
+        settings: { ...current.settings, moduleLayout },
+      };
+    });
+  };
+
+  const moveBoardModule = async (
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+  ) => {
+    const revision =
+      (moduleMoveRevisions.current.get(key)?.revision ?? 0) + 1;
+    const previous =
+      queryClient.getQueryData<CampaignBoard>(boardKey)?.settings
+        .moduleLayout[key] ?? null;
+    moduleMoveRevisions.current.set(key, { revision, x, y });
+    await queryClient.cancelQueries({ queryKey: boardKey });
+    if (moduleMoveRevisions.current.get(key)?.revision === revision) {
+      setCachedModulePosition(key, { x, y });
+    }
+    try {
+      const saved = await repository.moveBoardModule(
+        campaignId,
+        key,
+        x,
+        y,
+      );
+      if (
+        cloudEnabled &&
+        getSupabaseAppSession()?.user.authUserId !==
+          session?.user.authUserId
+      ) {
+        throw new Error("登录账号已变更，请重新进入战役。");
+      }
+      if (moduleMoveRevisions.current.get(key)?.revision === revision) {
+        setCachedModulePosition(key, { x, y });
+      }
+      return saved;
+    } catch (error) {
+      if (moduleMoveRevisions.current.get(key)?.revision === revision) {
+        setCachedModulePosition(key, previous);
+      }
+      throw error;
+    } finally {
+      if (moduleMoveRevisions.current.get(key)?.revision === revision) {
+        moduleMoveRevisions.current.delete(key);
+      }
+    }
   };
 
   const moveNote = async (noteId: string, x: number, y: number) => {
@@ -318,6 +405,7 @@ export function useCampaignBoard(
       commit(() => repository.removeMember(campaignId, userId, note)),
     updateCampaignSettings: (draft: CampaignSettingsDraft) =>
       commit(() => repository.updateCampaignSettings(campaignId, draft)),
+    moveBoardModule,
     saveBoardAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles) =>
       commit(() => repository.saveBoardAppearance(campaignId, appearance, files)),
     setCampaignPublic: (isPublic: boolean) =>

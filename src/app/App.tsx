@@ -809,14 +809,7 @@ function CampaignBoardWorkspace({
               .catch(() => showToast("隐藏失败，请检查权限后重试"));
           }}
           moduleLayout={board.settings.moduleLayout}
-          onMoveModule={(key, x, y) =>
-            patchBoardSettings({
-              moduleLayout: {
-                ...board.settings.moduleLayout,
-                [key]: { x, y },
-              },
-            })
-          }
+          onMoveModule={campaign.moveBoardModule}
         />
       </Suspense>
 

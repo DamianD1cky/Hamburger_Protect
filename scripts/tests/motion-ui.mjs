@@ -96,6 +96,9 @@ try {
     let appearanceWrites = 0;
     let imageUploads = 0;
     let rejectAppearance = false;
+    let delayNextModuleMove = false;
+    let delayedModuleMoveGate = null;
+    let releaseDelayedModuleMove;
     let noteLinks = [
       {
         id: noteLinkId,
@@ -151,6 +154,17 @@ try {
         board.settings = { ...board.settings, section_titles: body.p_section_titles, hidden_sections: body.p_hidden_sections,
           module_layout: body.p_module_layout, section_colors: body.p_section_colors, resource_titles: body.p_resource_titles };
         result = board.settings;
+      }
+      else if (path.endsWith("/move_board_module")) {
+        if (delayNextModuleMove) {
+          delayNextModuleMove = false;
+          if (delayedModuleMoveGate) await delayedModuleMoveGate;
+        }
+        board.settings.module_layout = {
+          ...board.settings.module_layout,
+          [body.p_key]: { x: body.p_x, y: body.p_y },
+        };
+        result = board.settings.module_layout;
       }
       else if (path.endsWith("/update_board_appearance")) {
         if (rejectAppearance) { status = 400; result = { message: "主题保存失败" }; }
@@ -351,7 +365,7 @@ try {
         const box = await sign.boundingBox();
         const originX = await module.evaluate((element) => Number.parseFloat(element.style.left));
         const scale = (await cameraGeometry()).scale;
-        const saved = page.waitForResponse((response) => response.url().endsWith("/update_campaign_settings"));
+        const saved = page.waitForResponse((response) => response.url().endsWith("/move_board_module"));
         await page.mouse.move(box.x + 35, box.y + box.height / 2);
         await page.mouse.down();
         await page.mouse.move(box.x + 35 + (x - originX) * scale, box.y + box.height / 2, { steps: 6 });
@@ -415,6 +429,50 @@ try {
       const linkLabel = page.locator(`.note-link-label[data-link-id="${noteLinkId}"]`);
       const position = () => note.evaluate((element) => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)]);
       const linkedPosition = () => linkedNote.evaluate((element) => [Number.parseFloat(element.style.left), Number.parseFloat(element.style.top)]);
+      if (scenario.label === "desktop") {
+        const dragModule = async (key, x) => {
+          const module = page.locator(`[data-module="${key}"]`);
+          const sign = module.locator(".sign");
+          const box = await sign.boundingBox();
+          const originX = await module.evaluate((element) => Number.parseFloat(element.style.left));
+          const scale = (await cameraGeometry()).scale;
+          await page.mouse.move(box.x + 35, box.y + box.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(box.x + 35 + (x - originX) * scale, box.y + box.height / 2, { steps: 6 });
+          await page.mouse.up();
+        };
+        delayNextModuleMove = true;
+        delayedModuleMoveGate = new Promise((resolve) => { releaseDelayedModuleMove = resolve; });
+        const activitySaved = page.waitForResponse((response) =>
+          new URL(response.url()).pathname.endsWith("/move_board_module"));
+        await dragModule("activity", 1500);
+        const safetySaved = page.waitForResponse((response) =>
+          new URL(response.url()).pathname.endsWith("/move_board_module"));
+        await dragModule("safety", 600);
+        await safetySaved;
+        const noteSaved = page.waitForResponse((response) =>
+          new URL(response.url()).pathname.endsWith("/move_note"));
+        const noteBox = await note.boundingBox();
+        await page.mouse.move(noteBox.x + noteBox.width / 2, noteBox.y + noteBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(noteBox.x + noteBox.width / 2 + 35, noteBox.y + noteBox.height / 2 - 25, { steps: 4 });
+        await page.mouse.up();
+        await noteSaved;
+        releaseDelayedModuleMove();
+        await activitySaved;
+        delayedModuleMoveGate = null;
+        await page.evaluate(() => new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ));
+        const modulePositions = await page.evaluate(() => Object.fromEntries(
+          ["activity", "safety"].map((key) => {
+            const element = document.querySelector(`[data-module="${key}"]`);
+            return [key, Number.parseFloat(element.style.left)];
+          }),
+        ));
+        check(modulePositions.activity === 1500 && modulePositions.safety === 600,
+          "moving a note cannot roll back either recently moved module");
+      }
       const initial = await position();
       const box = await note.boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -454,40 +512,26 @@ try {
       rejectMove = false;
 
       const moveInventoryTo = async (x) => {
-        let reads = 0;
-        let finishReads;
-        const boardReads = new Promise((resolve) => { finishReads = resolve; });
-        const onResponse = (response) => {
-          if (!new URL(response.url()).pathname.endsWith("/get_campaign_board")) return;
-          reads++;
-          if (reads === 2) finishReads();
-        };
-        page.on("response", onResponse);
-        try {
-          const module = page.locator('[data-module="inventory"]');
-          const sign = module.locator(".sign");
-          const box = await sign.boundingBox();
-          const originX = await module.evaluate((element) => Number.parseFloat(element.style.left));
-          const scale = (await cameraGeometry()).scale;
-          const settingsSaved = page.waitForResponse((response) =>
-            new URL(response.url()).pathname.endsWith("/update_campaign_settings"),
-          );
-          await page.mouse.move(box.x + 35, box.y + box.height / 2);
-          await page.mouse.down();
-          await page.mouse.move(
-            box.x + 35 + (x - originX) * scale,
-            box.y + box.height / 2,
-            { steps: 6 },
-          );
-          await page.mouse.up();
-          await settingsSaved;
-          await boardReads;
-          await page.evaluate(() => new Promise((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(resolve)),
-          ));
-        } finally {
-          page.off("response", onResponse);
-        }
+        const module = page.locator('[data-module="inventory"]');
+        const sign = module.locator(".sign");
+        const box = await sign.boundingBox();
+        const originX = await module.evaluate((element) => Number.parseFloat(element.style.left));
+        const scale = (await cameraGeometry()).scale;
+        const settingsSaved = page.waitForResponse((response) =>
+          new URL(response.url()).pathname.endsWith("/move_board_module"),
+        );
+        await page.mouse.move(box.x + 35, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(
+          box.x + 35 + (x - originX) * scale,
+          box.y + box.height / 2,
+          { steps: 6 },
+        );
+        await page.mouse.up();
+        await settingsSaved;
+        await page.evaluate(() => new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ));
       };
 
       delayedMoveId = noteId;

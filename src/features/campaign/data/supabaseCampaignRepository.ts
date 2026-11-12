@@ -21,7 +21,7 @@ import type {
   ResourceStatus,
 } from "../domain/types";
 import { requireSupabase, rpc } from "../../../lib/supabase/client";
-import type { BoardModuleLayout } from "../domain/boardModules";
+import type { BoardModuleKey, BoardModuleLayout } from "../domain/boardModules";
 import {
   getSupabaseAppSession,
   requireSupabaseSession,
@@ -650,6 +650,19 @@ class SupabaseCampaignRepository implements CampaignRepository {
       hiddenSections: draft.hiddenSections,
     });
     return this.getBoard(campaignId);
+  }
+  async moveBoardModule(
+    campaignId: string,
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+  ) {
+    return rpc<BoardModuleLayout>("move_board_module", {
+      p_campaign_id: campaignId,
+      p_key: key,
+      p_x: x,
+      p_y: y,
+    });
   }
   async setCampaignPublic(campaignId: string, isPublic: boolean) {
     await rpc("set_campaign_public", {

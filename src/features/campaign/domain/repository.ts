@@ -13,6 +13,7 @@ import type {
   QuestStatus,
 } from "./types";
 import type { BoardAppearance, BoardAppearanceFiles } from "./boardAppearance";
+import type { BoardModuleKey, BoardModuleLayout } from "./boardModules";
 
 export interface CampaignRepository {
   getBoard(campaignId: string): Promise<CampaignBoard>;
@@ -112,6 +113,12 @@ export interface CampaignRepository {
     campaignId: string,
     draft: CampaignSettingsDraft,
   ): Promise<CampaignBoard>;
+  moveBoardModule(
+    campaignId: string,
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+  ): Promise<BoardModuleLayout>;
   saveBoardAppearance(
     campaignId: string,
     appearance: BoardAppearance,

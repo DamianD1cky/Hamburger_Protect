@@ -228,6 +228,26 @@ try {
     (await db.query("select module_layout from public.campaign_settings where campaign_id=$1", [campaign])).rows[0].module_layout,
     wideLayout,
   );
+  const movedActivity = (await asUser(() => db.query(
+    "select public.move_board_module($1,'activity',1500,800) layout",
+    [campaign],
+  ))).rows[0].layout;
+  assert.deepEqual(movedActivity, {
+    tasks: { x: 1550, y: 50 },
+    activity: { x: 1500, y: 800 },
+  });
+  const movedSafety = (await asUser(() => db.query(
+    "select public.move_board_module($1,'safety',600,580) layout",
+    [campaign],
+  ))).rows[0].layout;
+  assert.deepEqual(movedSafety, {
+    tasks: { x: 1550, y: 50 },
+    activity: { x: 1500, y: 800 },
+    safety: { x: 600, y: 580 },
+  }, "atomic module moves preserve positions written by other moves");
+  await assert.rejects(asUser(() => db.query(
+    "select public.move_board_module($1,'unknown',10,10)", [campaign],
+  )), /INVALID_MODULE_POSITION/);
   await assert.rejects(asUser(() => db.query(
     "select public.update_campaign_settings($1,'{}','{}',null,null,null,null,$2::jsonb)",
     [campaign, JSON.stringify({ tasks: { x: 2145, y: 50 } })],
