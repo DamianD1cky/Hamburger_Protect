@@ -54,6 +54,7 @@ try {
     const context = await browser.newContext({
       viewport: { width: scenario.width, height: scenario.height },
       reducedMotion: scenario.reduced ? "reduce" : "no-preference",
+      hasTouch: scenario.width <= 1024,
     });
     await context.addInitScript(({ authKey, session, unsupported }) => {
       localStorage.setItem(authKey, JSON.stringify(session));
@@ -92,6 +93,9 @@ try {
     let deleteLinkRequests = 0;
     let boardStickers = [];
     let rejectSticker = false;
+    let appearanceWrites = 0;
+    let imageUploads = 0;
+    let rejectAppearance = false;
     let noteLinks = [
       {
         id: noteLinkId,
@@ -115,16 +119,25 @@ try {
     await context.route(`${origin}/**`, async (route) => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
-      const body = request.postDataJSON();
+      const body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() : null;
       let result = [];
       let status = 200;
-      if (path.includes("/storage/v1/object/sign/campaign-media/")) {
+      if (path.includes("/storage/v1/object/campaign-media/") && request.method() === "POST") {
+        imageUploads++;
+        result = { Key: path.split("/storage/v1/object/")[1] };
+      } else if (path.includes("/storage/v1/object/sign/campaign-media/")) {
         if (request.method() === "GET") {
+          if (path.includes("broken-background")) {
+            await route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+            return;
+          }
           await route.fulfill({ contentType: "image/webp", body: backgroundImage });
           return;
         }
         result = {
-          signedURL: "/object/sign/campaign-media/fixtures/custom-background.webp?token=test",
+          signedURL: path.includes("broken-background")
+            ? "/object/sign/campaign-media/fixtures/broken-background.webp?token=test"
+            : "/object/sign/campaign-media/fixtures/custom-background.webp?token=test",
         };
       } else if (path.endsWith("/get_service_status")) result = "ready";
       else if (path.endsWith("/ensure_actor")) result = { id: actorId, display_name: "验收账号", disabled: false };
@@ -134,6 +147,20 @@ try {
       else if (path.endsWith("/list_public_campaigns")) result = [{ id: campaignId, name, burger_index: 5, published_at: date, message_count: 0 }];
       else if (path.endsWith("/get_note_links")) result = noteLinks;
       else if (path.endsWith("/get_board_stickers")) result = boardStickers;
+      else if (path.endsWith("/update_campaign_settings")) {
+        board.settings = { ...board.settings, section_titles: body.p_section_titles, hidden_sections: body.p_hidden_sections,
+          module_layout: body.p_module_layout, section_colors: body.p_section_colors, resource_titles: body.p_resource_titles };
+        result = board.settings;
+      }
+      else if (path.endsWith("/update_board_appearance")) {
+        if (rejectAppearance) { status = 400; result = { message: "主题保存失败" }; }
+        else {
+          appearanceWrites++;
+          board.settings.appearance = body.p_appearance;
+          board.settings.background_path = body.p_appearance.room.imagePath;
+          result = board.settings;
+        }
+      }
       else if (path.endsWith("/create_note_link")) {
         if (createLinkGate) await createLinkGate;
         noteLinks.push({
@@ -214,21 +241,142 @@ try {
     boardGate = null;
     await page.locator(".board").waitFor();
     await page.waitForFunction(() => !document.documentElement.dataset.campaignTransition);
-    check(
-      await page.locator('.world[data-has-custom-background="true"]').isVisible(),
-      "custom scene is marked after its signed image resolves",
-    );
-    const frameEdges = page.locator(".scene-frame > span");
-    check(await frameEdges.count() === 4, "custom scene preserves all four default frame edges");
-    check(
-      await frameEdges.evaluateAll((elements) =>
-        elements.every((element) => getComputedStyle(element).backgroundImage.includes("scene")),
-      ),
-      "preserved frame edges reuse the default scene artwork",
-    );
+    await page.waitForFunction(() => getComputedStyle(document.querySelector(".room-background.is-wallpaper")).backgroundImage !== "none");
+    check(await page.locator('.room-background.is-wallpaper[data-background-kind="image"]').count() === 1,
+      "legacy custom background becomes a screen wallpaper");
+    check(await page.locator('.world > .board-frame[data-frame="burger"]').count() === 1,
+      "legacy rooms keep an independent burger frame");
+    check(await page.locator('.board > .board-surface[data-surface="felt"]').count() === 1,
+      "legacy rooms keep their board material");
     const transitions = await page.evaluate(() => window.transitionLog);
     check(scenario.reduced || scenario.unsupported ? transitions.length === 0 : transitions[0]?.ready, "native transition is ready or safely bypassed");
     check(boardRequests === 1, "mounted board reuses prepared query data");
+
+    const settleView = async () => {
+      await page.waitForFunction(() => !document.querySelector(".world").getAnimations().length);
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    };
+    const cameraGeometry = () => page.evaluate(() => {
+      const world = document.querySelector(".world");
+      const viewport = document.querySelector(".viewport").getBoundingClientRect();
+      const board = document.querySelector(".board").getBoundingClientRect();
+      const frame = document.querySelector(".world > .board-frame").getBoundingClientRect();
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(world).transform);
+      return {
+        scale: matrix.a,
+        cx: (viewport.width / 2 - matrix.e) / matrix.a,
+        cy: (viewport.height / 2 - matrix.f) / matrix.a,
+        board: { x: board.x, y: board.y, width: board.width, height: board.height },
+        frameFits: frame.left >= viewport.left - 1 && frame.right <= viewport.right + 1 &&
+          frame.top >= viewport.top - 1 && frame.bottom <= viewport.bottom + 1,
+        area: board.width * board.height / (innerWidth * innerHeight) * 100,
+        notes: [...document.querySelectorAll(".user-note")].map((note) => [note.dataset.noteId, note.style.left, note.style.top]),
+      };
+    });
+    await settleView();
+    const originalView = await cameraGeometry();
+    check(Math.abs(originalView.board.width / originalView.board.height - 16 / 9) < 0.0001, "board is exactly 16:9");
+    check(originalView.frameFits, "overview fits the real frame inside the usable viewport");
+    if (scenario.label === "desktop") {
+      for (const [width, height] of [[1366, 768], [1920, 1080], [2560, 1080], [900, 1300], [768, 1024]]) {
+        await page.setViewportSize({ width, height });
+        await settleView();
+        const measured = await cameraGeometry();
+        check(measured.frameFits, `whole frame is visible at ${width}x${height}`);
+        check(JSON.stringify(measured.notes) === JSON.stringify(originalView.notes), "window resizing never rewrites note coordinates");
+        if (width === 1920) check(measured.area > 68, "desktop board uses more than 68% of page area");
+        if (width === 900) check(measured.scale > 0.38, "tablet overview has no artificial 38% cap");
+        console.log(`Board ${width}x${height}: ${measured.board.width.toFixed(1)}x${measured.board.height.toFixed(1)}, ${measured.area.toFixed(1)}% page area`);
+      }
+      await page.setViewportSize({ width: scenario.width, height: scenario.height });
+      await settleView();
+    }
+    check(await page.locator(".board-view-controls").count() === 0,
+      "manual board view controls are absent");
+    const boardPoint = async (x, y) => page.locator(".board").evaluate((element, point) => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.x + point.x / element.offsetWidth * rect.width, y: rect.y + point.y / element.offsetHeight * rect.height };
+    }, { x, y });
+    const blank = await boardPoint(1800, 500);
+    const fixedTransform = await page.locator(".world").evaluate((element) => element.style.transform);
+    await page.mouse.move(blank.x, blank.y);
+    await page.mouse.down();
+    await page.mouse.move(blank.x + 30, blank.y + 20, { steps: 3 });
+    await page.mouse.up();
+    check(await page.locator(".world").evaluate((element) => element.style.transform) === fixedTransform,
+      "dragging blank board space does not pan the board");
+    await page.mouse.move(blank.x, blank.y);
+    await page.mouse.wheel(0, -100);
+    check(await page.locator(".world").evaluate((element) => element.style.transform) === fixedTransform,
+      "mouse wheel does not zoom the board");
+    if (scenario.label === "mobile") {
+      const cdp = await context.newCDPSession(page);
+      const firstFinger = await boardPoint(1680, 450);
+      const secondFinger = await boardPoint(1960, 450);
+      const middle = { x: (firstFinger.x + secondFinger.x) / 2, y: firstFinger.y };
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [
+        { id: 1, ...firstFinger }, { id: 2, ...secondFinger },
+      ] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [
+        { id: 1, x: middle.x + (firstFinger.x - middle.x) * 1.5, y: middle.y },
+        { id: 2, x: middle.x + (secondFinger.x - middle.x) * 1.5, y: middle.y },
+      ] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      check(await page.locator(".world").evaluate((element) => element.style.transform) === fixedTransform,
+        "two-finger gesture does not zoom or pan the board");
+      await cdp.detach();
+    }
+    if (scenario.label === "desktop") {
+      const moveNoteTo = async (x) => {
+        const note = page.locator(`[data-note-id="${noteId}"]`);
+        const originX = await note.evaluate((element) => Number.parseFloat(element.style.left));
+        const box = await note.boundingBox();
+        const scale = (await cameraGeometry()).scale;
+        const saved = page.waitForResponse((response) => response.url().endsWith("/move_note"));
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2 + (x - originX) * scale, box.y + box.height / 2, { steps: 6 });
+        await page.mouse.up();
+        await saved;
+        await page.waitForFunction(({ id, x }) => Number.parseFloat(document.querySelector(`[data-note-id="${id}"]`).style.left) === x, { id: noteId, x });
+      };
+      await moveNoteTo(1800);
+      check(board.notes.find((note) => note.id === noteId).x === 1800, "note saves in the new right-hand area");
+      check(await page.locator(`.note-link-line[data-from-note-id="${noteId}"]`).getAttribute("x1") === "1938", "note link uses expanded world coordinates");
+      await moveNoteTo(1100);
+      const moveTasksTo = async (x) => {
+        const module = page.locator('[data-module="tasks"]');
+        const sign = module.locator(".sign");
+        await sign.hover();
+        const box = await sign.boundingBox();
+        const originX = await module.evaluate((element) => Number.parseFloat(element.style.left));
+        const scale = (await cameraGeometry()).scale;
+        const saved = page.waitForResponse((response) => response.url().endsWith("/update_campaign_settings"));
+        await page.mouse.move(box.x + 35, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + 35 + (x - originX) * scale, box.y + box.height / 2, { steps: 6 });
+        await page.mouse.up();
+        await saved;
+      };
+      await moveTasksTo(1550);
+      check(board.settings.module_layout.tasks.x === 1550, "module saves in the expanded board area");
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.locator(".focus-dock").getByRole("button", { name: "工作指示", exact: true }).click();
+      await settleView();
+      const focused = await page.locator('[data-module="tasks"]').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const viewport = document.querySelector(".viewport").getBoundingClientRect();
+        return Math.abs((rect.left + rect.right) / 2 - (viewport.left + viewport.right) / 2) < 1 &&
+          Math.abs((rect.top + rect.bottom) / 2 - (viewport.top + viewport.bottom) / 2) < 1;
+      });
+      check(focused, "mobile focus follows the moved module instead of old hardcoded coordinates");
+      await page.locator(".focus-dock").getByRole("button", { name: "公告板全览", exact: true }).click();
+      await settleView();
+      await page.setViewportSize({ width: scenario.width, height: scenario.height });
+      await settleView();
+      await moveTasksTo(490);
+      check(board.settings.module_layout.tasks.x === 490, "module can move back without changing other objects");
+    }
 
     if (scenario.width < 761) {
       const dock = page.locator(".focus-dock");
@@ -239,6 +387,7 @@ try {
         return Math.abs(mark.left - active.left) < 2;
       });
       check(await dock.getByRole("button", { name: "工作指示" }).getAttribute("aria-current") === "location", "mobile dock follows current region");
+      await dock.getByRole("button", { name: "队员排班", exact: true }).click();
     }
 
     await page.getByRole("button", { name: "调整汉堡屋指数", exact: true }).click();
@@ -251,6 +400,9 @@ try {
     const swapLog = await page.evaluate(() => window.motionLog.filter((item) => item.classes === "motion-text-value"));
     check(scenario.reduced ? swapLog.length === 0 : swapLog.some((item) => item.duration === 120) && swapLog.some((item) => item.duration === 220), "status uses short swaps or reduced-motion bypass");
 
+    if (scenario.width < 761) {
+      await page.locator(".focus-dock").getByRole("button", { name: "工作指示", exact: true }).click();
+    }
     await page.getByRole("button", { name: "审核通过", exact: true }).click();
     await page.waitForFunction(() => document.querySelector(".done-paper [data-task-id='test-quest']") && document.querySelector(".done-paper .task-count .motion-text-value")?.textContent === "1");
     check(await page.locator(".todo-paper .task-count .motion-text-accessible").textContent() === "0", "active task count follows server transition");
@@ -301,14 +453,57 @@ try {
       check(await note.evaluate((element) => getComputedStyle(element).zIndex) === "101", "failed move restores the global note layer");
       rejectMove = false;
 
+      const moveInventoryTo = async (x) => {
+        let reads = 0;
+        let finishReads;
+        const boardReads = new Promise((resolve) => { finishReads = resolve; });
+        const onResponse = (response) => {
+          if (!new URL(response.url()).pathname.endsWith("/get_campaign_board")) return;
+          reads++;
+          if (reads === 2) finishReads();
+        };
+        page.on("response", onResponse);
+        try {
+          const module = page.locator('[data-module="inventory"]');
+          const sign = module.locator(".sign");
+          const box = await sign.boundingBox();
+          const originX = await module.evaluate((element) => Number.parseFloat(element.style.left));
+          const scale = (await cameraGeometry()).scale;
+          const settingsSaved = page.waitForResponse((response) =>
+            new URL(response.url()).pathname.endsWith("/update_campaign_settings"),
+          );
+          await page.mouse.move(box.x + 35, box.y + box.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(
+            box.x + 35 + (x - originX) * scale,
+            box.y + box.height / 2,
+            { steps: 6 },
+          );
+          await page.mouse.up();
+          await settingsSaved;
+          await boardReads;
+          await page.evaluate(() => new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ));
+        } finally {
+          page.off("response", onResponse);
+        }
+      };
+
       delayedMoveId = noteId;
       delayedMoveGate = new Promise((resolve) => { releaseDelayedMove = resolve; });
       const firstBox = await note.boundingBox();
       await page.mouse.move(firstBox.x + firstBox.width / 2, firstBox.y + firstBox.height / 2);
       await page.mouse.down();
-      await page.mouse.move(firstBox.x + firstBox.width / 2 - 55, firstBox.y + firstBox.height / 2 - 35, { steps: 3 });
+      await page.mouse.move(firstBox.x + firstBox.width / 2 + 55, firstBox.y + firstBox.height / 2 - 35, { steps: 3 });
       await page.mouse.up();
       const firstMoved = await position();
+
+      await moveInventoryTo(1500);
+      check(
+        JSON.stringify(await position()) === JSON.stringify(firstMoved),
+        "moving the inventory title preserves a note whose save is still pending",
+      );
 
       const secondBox = await linkedNote.boundingBox();
       await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2);
@@ -350,6 +545,11 @@ try {
           Number.parseFloat(second.style.left) === secondSettled[0] &&
           Number.parseFloat(second.style.top) === secondSettled[1];
       }, { noteId, linkedNoteId, firstMoved, secondSettled });
+      await moveInventoryTo(40);
+      check(
+        JSON.stringify(await position()) === JSON.stringify(firstMoved),
+        "moving the inventory title again preserves the saved note position",
+      );
 
       await note.getByRole("button", { name: "上移一层", exact: true }).click();
       await page.waitForFunction(({ noteId, linkedNoteId }) =>
@@ -475,6 +675,94 @@ try {
       await mobileEditor.getByRole("button", { name: "取消", exact: true }).click();
       await mobileEditor.waitFor({ state: "hidden" });
     }
+    const initialNotePositions = board.notes.map(({ id, x, y }) => ({ id, x, y }));
+    await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
+    const appearanceDialog = page.getByRole("dialog", { name: "房间配置", exact: true });
+    await appearanceDialog.waitFor();
+    await appearanceDialog.getByRole("group", { name: "房间背景", exact: true }).getByRole("button", { name: "纯色", exact: true }).click();
+    await appearanceDialog.getByRole("group", { name: "板面材质", exact: true }).getByRole("button", { name: "软木", exact: true }).click();
+    await appearanceDialog.getByRole("group", { name: "边框样式", exact: true }).getByRole("button", { name: "木框", exact: true }).click();
+    check(await appearanceDialog.locator('.board-surface[data-surface="cork"]').count() === 1, "material changes immediately in the preview");
+    check(await page.locator('.board > .board-surface[data-surface="felt"]').count() === 1, "draft appearance does not change the shared board");
+    await appearanceDialog.getByRole("button", { name: "取消", exact: true }).click();
+    await appearanceDialog.waitFor({ state: "hidden" });
+    check(appearanceWrites === 0, "cancel discards the entire appearance draft");
+
+    await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
+    await appearanceDialog.waitFor();
+    await appearanceDialog.getByRole("group", { name: "房间背景", exact: true }).getByRole("button", { name: "纯色", exact: true }).click();
+    await appearanceDialog.getByRole("group", { name: "板面材质", exact: true }).getByRole("button", { name: "软木", exact: true }).click();
+    await appearanceDialog.getByRole("group", { name: "边框样式", exact: true }).getByRole("button", { name: "木框", exact: true }).click();
+    rejectAppearance = true;
+    await appearanceDialog.getByRole("button", { name: "保存共享配置", exact: true }).click();
+    await appearanceDialog.getByRole("alert").waitFor();
+    check(await appearanceDialog.locator('.board-frame[data-frame="wood"]').count() === 1, "failed saves keep the theme draft for retry");
+    rejectAppearance = false;
+    await appearanceDialog.getByRole("button", { name: "保存共享配置", exact: true }).click();
+    await appearanceDialog.waitFor({ state: "hidden" });
+    check(await page.locator('.world > .board-frame[data-frame="wood"]').count() === 1, "saved frame updates independently of the wallpaper");
+    check(await page.locator('.board > .board-surface[data-surface="cork"]').count() === 1, "saved board material updates");
+    check(JSON.stringify(board.notes.map(({ id, x, y }) => ({ id, x, y }))) === JSON.stringify(initialNotePositions), "theme changes never move existing notes");
+
+    await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
+    await appearanceDialog.waitFor();
+    check(await appearanceDialog.getByRole("group", { name: "板面材质", exact: true }).getByRole("button", { name: "软木", exact: true }).getAttribute("aria-pressed") === "true", "saved theme is restored when reopening settings");
+    await appearanceDialog.getByLabel("选择背景图片", { exact: true }).setInputFiles({
+      name: "room.webp", mimeType: "image/webp", buffer: backgroundImage,
+    });
+    await appearanceDialog.getByLabel("选择板面纹理", { exact: true }).setInputFiles({
+      name: "surface.webp", mimeType: "image/webp", buffer: backgroundImage,
+    });
+    await appearanceDialog.locator('.board-surface[data-surface="image"]').waitFor();
+    check(imageUploads === 0, "image selection stays local until Save");
+    await appearanceDialog.getByLabel("背景适配方式", { exact: true }).selectOption("contain");
+    await appearanceDialog.getByRole("group", { name: "边框样式", exact: true }).getByRole("button", { name: "金属", exact: true }).click();
+    if (scenario.label === "desktop" || scenario.label === "mobile") {
+      await appearanceDialog.screenshot({ path: join(screenshots, `${scenario.label}-appearance.png`) });
+    }
+    await appearanceDialog.getByRole("button", { name: "保存共享配置", exact: true }).click();
+    await appearanceDialog.waitFor({ state: "hidden" });
+    check(imageUploads === 2, "both media uploads occur on save");
+    check(board.settings.appearance.room.imagePath.startsWith(`${campaignId}/background-`) &&
+      board.settings.appearance.surface.imagePath.startsWith(`${campaignId}/boardTexture-`), "saved image paths belong to this campaign");
+    check(await page.locator(".room-background.is-wallpaper").evaluate((e) => getComputedStyle(e).backgroundSize) === "contain", "wallpaper fit is shared with all viewers");
+    check(await page.locator('.world > .board-frame[data-frame="metal"]').count() === 1, "metal frame is independent of image uploads");
+    await page.waitForFunction(() => getComputedStyle(document.querySelector(".room-background.is-wallpaper")).backgroundImage !== "none");
+    if (scenario.label === "desktop") {
+      const savedBackground = await page.locator(".room-background.is-wallpaper").evaluate((e) => getComputedStyle(e).backgroundImage);
+      const workingPath = board.settings.appearance.room.imagePath;
+      await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
+      await appearanceDialog.waitFor();
+      board.settings.appearance.room.imagePath = `${campaignId}/broken-background.webp`;
+      await appearanceDialog.getByRole("button", { name: "保存共享配置", exact: true }).click();
+      await appearanceDialog.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => document.querySelector(".room-background.is-wallpaper")?.dataset.backgroundError === "true");
+      check(await page.locator(".room-background.is-wallpaper").evaluate((e) => getComputedStyle(e).backgroundImage) === savedBackground,
+        "image load failure retains the last successfully displayed wallpaper");
+      board.settings.appearance.room.imagePath = workingPath;
+
+      for (const viewport of [
+        { width: 2560, height: 1080 },
+        { width: 1200, height: 700 },
+        { width: 900, height: 1300 },
+      ]) {
+        await page.setViewportSize(viewport);
+        const coverage = await page.locator(".room-background.is-wallpaper").boundingBox();
+        check(Math.abs(coverage.x) < 1 && Math.abs(coverage.y) < 1 &&
+          Math.abs(coverage.width - viewport.width) < 1 && Math.abs(coverage.height - viewport.height) < 1,
+        `wallpaper covers ${viewport.width}x${viewport.height} independently of board zoom`);
+      }
+      await page.setViewportSize({ width: scenario.width, height: scenario.height });
+      await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
+      await appearanceDialog.waitFor();
+      await appearanceDialog.getByRole("group", { name: "房间背景", exact: true }).getByRole("button", { name: "门店", exact: true }).click();
+      await appearanceDialog.getByRole("group", { name: "板面材质", exact: true }).getByRole("button", { name: "黑板", exact: true }).click();
+      await appearanceDialog.getByRole("group", { name: "边框样式", exact: true }).getByRole("button", { name: "汉堡店", exact: true }).click();
+      await appearanceDialog.getByRole("button", { name: "保存共享配置", exact: true }).click();
+      await appearanceDialog.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => getComputedStyle(document.querySelector(".room-background.is-wallpaper")).backgroundImage.includes("room-kitchen"));
+      await page.screenshot({ path: join(screenshots, "desktop-default-theme.png") });
+    }
     check(!await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), "viewport has no horizontal overflow");
     await page.waitForFunction(() => [...document.querySelectorAll(".motion-text-value")].every((element) => !element.getAnimations().length));
     await page.screenshot({ path: join(screenshots, `${scenario.label}-board.png`) });
@@ -494,6 +782,8 @@ try {
     await page.waitForFunction(() => !document.documentElement.dataset.campaignTransition);
     check(new URL(page.url()).searchParams.get("visit") === campaignId, "public visit updates URL after success");
     check(await page.getByText("访客 / 只读参观", { exact: true }).isVisible(), "public view keeps observer role");
+    check(await page.locator(`.board > .board-surface[data-surface="${board.settings.appearance.surface.kind}"]`).count() === 1, "visitors read the saved appearance");
+    check(await page.getByRole("button", { name: "打开房间配置", exact: true }).count() === 0, "visitors cannot edit the appearance");
     await page.getByRole("button", { name: "返回签到处", exact: true }).click();
     await page.locator(".access-screen").waitFor();
     await page.waitForFunction(() => !document.documentElement.dataset.campaignTransition);

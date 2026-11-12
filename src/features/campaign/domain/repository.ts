@@ -12,6 +12,7 @@ import type {
   QuestDraft,
   QuestStatus,
 } from "./types";
+import type { BoardAppearance, BoardAppearanceFiles } from "./boardAppearance";
 
 export interface CampaignRepository {
   getBoard(campaignId: string): Promise<CampaignBoard>;
@@ -110,6 +111,11 @@ export interface CampaignRepository {
   updateCampaignSettings(
     campaignId: string,
     draft: CampaignSettingsDraft,
+  ): Promise<CampaignBoard>;
+  saveBoardAppearance(
+    campaignId: string,
+    appearance: BoardAppearance,
+    files: BoardAppearanceFiles,
   ): Promise<CampaignBoard>;
   setCampaignPublic(
     campaignId: string,

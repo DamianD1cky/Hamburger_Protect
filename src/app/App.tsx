@@ -494,7 +494,7 @@ function CampaignBoardWorkspace({
   const queryClient = useQueryClient();
   const campaign = useCampaignBoard(campaignId, publicView);
   const { worldRef, viewScaleRef, focusZone, setFocusZone } =
-    useBoardViewport();
+    useBoardViewport(campaign.board?.settings.moduleLayout);
   const [composer, setComposer] = useState<ComposerState>(closedComposer);
   const [boardEditor, setBoardEditor] = useState<BoardEditorKind | null>(null);
   const [resourceSheet, setResourceSheet] = useState<number | null>(null);
@@ -1010,6 +1010,10 @@ function CampaignBoardWorkspace({
             onSave={async (draft) => {
               await campaign.updateCampaignSettings(draft);
               showToast("房间配置已保存");
+            }}
+            onSaveAppearance={async (appearance, files) => {
+              await campaign.saveBoardAppearance(appearance, files);
+              showToast("公告板外观已保存");
             }}
             onUpload={async (kind, file) => {
               await campaign.uploadCampaignMedia(kind, file);

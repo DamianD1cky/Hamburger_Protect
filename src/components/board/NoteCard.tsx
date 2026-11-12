@@ -7,6 +7,7 @@ import {
 } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { BoardNote } from "../../features/campaign/domain/types";
+import { BOARD_HEIGHT, BOARD_WIDTH } from "../../features/campaign/domain/boardGeometry";
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -168,8 +169,8 @@ export function NoteCard({
       }
     }
     if (!drag.moved) return;
-    const x = clamp(drag.originX + dx, 18, 1172);
-    const y = clamp(drag.originY + dy, 110, 980);
+    const x = clamp(drag.originX + dx, 18, BOARD_WIDTH - event.currentTarget.offsetWidth - 18);
+    const y = clamp(drag.originY + dy, 18, BOARD_HEIGHT - event.currentTarget.offsetHeight - 18);
     event.currentTarget.style.left = x + "px";
     event.currentTarget.style.top = y + "px";
     onPositionPreview(note.id, x, y);

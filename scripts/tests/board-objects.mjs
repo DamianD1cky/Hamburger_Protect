@@ -93,6 +93,39 @@ try {
   const first = (await createNote("一")).rows[0].id;
   const second = (await createNote("二")).rows[0].id;
 
+  const appearance = {
+    room: { kind: "color", color: "#263b32", imagePath: null, fit: "cover", positionX: 50, positionY: 50, dim: 0.2 },
+    surface: { kind: "cork", imagePath: null },
+    frame: "wood",
+  };
+  await asUser(() => db.query("select public.update_board_appearance($1,$2::jsonb)", [campaign, JSON.stringify(appearance)]));
+  assert.deepEqual(
+    (await db.query("select appearance from public.campaign_settings where campaign_id=$1", [campaign])).rows[0].appearance,
+    appearance,
+  );
+  await asUser(() => db.query("select public.update_campaign_settings($1,'{}','{}',null,null)", [campaign]));
+  assert.deepEqual(
+    (await db.query("select appearance from public.campaign_settings where campaign_id=$1", [campaign])).rows[0].appearance,
+    appearance,
+    "legacy settings writes preserve the layered theme",
+  );
+  for (const invalid of [
+    { ...appearance, frame: "unknown" },
+    { ...appearance, room: { ...appearance.room, dim: 0.95 } },
+    { ...appearance, room: { ...appearance.room, kind: "image", imagePath: "other-room/background.jpg" } },
+  ]) {
+    await assert.rejects(asUser(() => db.query("select public.update_board_appearance($1,$2::jsonb)", [campaign, JSON.stringify(invalid)])), /INVALID_BOARD_APPEARANCE/);
+  }
+  await db.query("insert into auth.users(id,email) values('10000000-0000-4000-8000-000000000099','theme-outsider@example.test')");
+  await assert.rejects(db.exec(`
+    begin;
+    select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000099',true);
+    set local role authenticated;
+    select public.update_board_appearance('${campaign}','${JSON.stringify(appearance)}');
+    commit;
+  `), /REQUIRED/);
+  await db.exec("rollback");
+
   let notes = (
     await db.query(
       "select id,layer from public.notes where campaign_id=$1 order by layer",
@@ -174,6 +207,31 @@ try {
   ).rows[0].value;
   assert.equal(moved.x, 360);
   assert.equal(moved.y, 450);
+  const wideMoved = (await asUser(() => db.query(
+    "select public.move_board_sticker($1,$2,1900,1100) value", [campaign, sticker.id],
+  ))).rows[0].value;
+  assert.equal(wideMoved.x, 1900, "stickers can use the expanded board");
+  const edge = (await asUser(() => db.query(
+    "select public.move_board_sticker($1,$2,9999,9999) value", [campaign, sticker.id],
+  ))).rows[0].value;
+  assert.deepEqual([edge.x, edge.y], [2072, 1134], "the full sticker stays inside the board");
+  await asUser(() => db.query(
+    "select public.move_note($1,$2,1800,500)", [campaign, first],
+  ));
+  assert.equal((await db.query("select x from public.notes where id=$1", [first])).rows[0].x, 1800);
+  const wideLayout = { tasks: { x: 1550, y: 50 } };
+  await asUser(() => db.query(
+    "select public.update_campaign_settings($1,'{}','{}',null,null,null,null,$2::jsonb)",
+    [campaign, JSON.stringify(wideLayout)],
+  ));
+  assert.deepEqual(
+    (await db.query("select module_layout from public.campaign_settings where campaign_id=$1", [campaign])).rows[0].module_layout,
+    wideLayout,
+  );
+  await assert.rejects(asUser(() => db.query(
+    "select public.update_campaign_settings($1,'{}','{}',null,null,null,null,$2::jsonb)",
+    [campaign, JSON.stringify({ tasks: { x: 2145, y: 50 } })],
+  )), /INVALID_MODULE_LAYOUT/);
   await asUser(() =>
     db.query("select public.delete_board_sticker($1,$2)", [campaign, sticker.id]),
   );
@@ -188,6 +246,8 @@ try {
   );
 
   await db.exec(await readFile("supabase/tests/note_pins_stickers_smoke.sql", "utf8"));
+  await db.exec(await readFile("supabase/tests/board_appearance_smoke.sql", "utf8"));
+  await db.exec(await readFile("supabase/tests/wide_board_smoke.sql", "utf8"));
 
   console.log(
     `${migrations.length} migrations applied; pin colors, global note layers, and sticker CRUD passed.`,

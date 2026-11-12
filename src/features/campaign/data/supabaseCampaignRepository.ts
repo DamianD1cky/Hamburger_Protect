@@ -1,4 +1,6 @@
 import type { CampaignRepository } from "../domain/repository";
+import { defaultBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
+import { compressImage, blobToFile } from "../../../lib/imageCompress";
 import type {
   CampaignBoard,
   BoardActivity,
@@ -98,6 +100,7 @@ interface RemoteBoard {
     pin_color?: PinColor | null;
   }>;
   settings: {
+    appearance?: BoardAppearance | null;
     section_titles: Partial<Record<CampaignSectionKey, string>>;
     section_colors?: Partial<Record<CampaignSectionKey, string>> | null;
     resource_titles?: Partial<Record<string, string>> | null;
@@ -228,9 +231,11 @@ async function toBoard(
   if (!publicView && !user) throw new Error("AUTH_REQUIRED");
   if (!publicView && !viewer)
     throw new Error("Current user is not a campaign member");
-  const [backgroundUrl, noteTextureUrl, stickers] = await Promise.all([
-    signedMediaUrl(remote.settings.background_path, publicView),
+  const appearance = remote.settings.appearance ?? defaultBoardAppearance(remote.settings.background_path);
+  const [backgroundUrl, noteTextureUrl, boardTextureUrl, stickers] = await Promise.all([
+    signedMediaUrl(appearance.room.imagePath, publicView),
     signedMediaUrl(remote.settings.note_texture_path, publicView),
+    signedMediaUrl(appearance.surface.imagePath, publicView),
     loadBoardStickers(remote.id),
   ]);
   return {
@@ -327,10 +332,12 @@ async function toBoard(
       moduleLayout: remote.settings.module_layout ?? {},
       hiddenSections: remote.settings.hidden_sections ?? [],
       isPublic: remote.settings.is_public ?? false,
-      backgroundPath: remote.settings.background_path,
+      backgroundPath: appearance.room.imagePath,
       noteTexturePath: remote.settings.note_texture_path,
       backgroundUrl,
       noteTextureUrl,
+      appearance,
+      boardTextureUrl,
     },
   };
 }
@@ -656,6 +663,12 @@ class SupabaseCampaignRepository implements CampaignRepository {
     kind: CampaignMediaKind,
     file: File,
   ) {
+    if (kind === "background") {
+      const board = await this.getBoard(campaignId);
+      const appearance = structuredClone(board.settings.appearance);
+      appearance.room.kind = "image";
+      return this.saveBoardAppearance(campaignId, appearance, { background: file });
+    }
     const extensions: Record<string, string> = {
       "image/jpeg": "jpg",
       "image/png": "png",
@@ -675,16 +688,13 @@ class SupabaseCampaignRepository implements CampaignRepository {
     if (upload.error) throw new Error("图片上传失败");
     try {
       await this.persistSettings(campaignId, board, {
-        [kind === "background" ? "backgroundPath" : "noteTexturePath"]: path,
+        noteTexturePath: path,
       });
     } catch (error) {
       await bucket.remove([path]);
       throw error;
     }
-    const previous =
-      kind === "background"
-        ? board.settings.backgroundPath
-        : board.settings.noteTexturePath;
+    const previous = board.settings.noteTexturePath;
     if (previous) {
       await bucket.remove([previous]);
       mediaUrlCache.delete(`member:${previous}`);
@@ -692,14 +702,54 @@ class SupabaseCampaignRepository implements CampaignRepository {
     }
     return this.getBoard(campaignId);
   }
+
+  async saveBoardAppearance(
+    campaignId: string,
+    appearance: BoardAppearance,
+    files: BoardAppearanceFiles,
+  ) {
+    const next = structuredClone(appearance);
+    const uploaded: string[] = [];
+    const bucket = requireSupabase().storage.from("campaign-media");
+    try {
+      for (const kind of ["background", "boardTexture"] as const) {
+        const original = files[kind];
+        if (!original) continue;
+        if (!["image/jpeg", "image/png", "image/webp"].includes(original.type)) {
+          throw new Error("图片仅支持 JPEG、PNG、WebP");
+        }
+        const blob = await compressImage(original, kind === "background" ? 2560 : 1600);
+        if (blob.size > 5 * 1024 * 1024) throw new Error("图片不能超过 5 MiB");
+        const extension = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
+        const path = `${campaignId}/${kind}-${crypto.randomUUID()}.${extension}`;
+        const result = await bucket.upload(path, blobToFile(blob, `${kind}.${extension}`), {
+          contentType: blob.type,
+          upsert: false,
+        });
+        if (result.error) throw new Error("图片上传失败，请重试");
+        uploaded.push(path);
+        if (kind === "background") next.room.imagePath = path;
+        else next.surface.imagePath = path;
+      }
+      await rpc("update_board_appearance", { p_campaign_id: campaignId, p_appearance: next });
+    } catch (error) {
+      if (uploaded.length) await bucket.remove(uploaded);
+      throw error;
+    }
+    // 旧素材暂时保留，避免并发替换或已打开页面的签名链接失效。
+    return this.getBoard(campaignId);
+  }
   async clearCampaignMedia(campaignId: string, kind: CampaignMediaKind) {
     const board = await this.getBoard(campaignId);
-    const previous =
-      kind === "background"
-        ? board.settings.backgroundPath
-        : board.settings.noteTexturePath;
+    if (kind === "background") {
+      const appearance = structuredClone(board.settings.appearance);
+      appearance.room.kind = "default";
+      appearance.room.imagePath = null;
+      return this.saveBoardAppearance(campaignId, appearance, {});
+    }
+    const previous = board.settings.noteTexturePath;
     await this.persistSettings(campaignId, board, {
-      [kind === "background" ? "backgroundPath" : "noteTexturePath"]: null,
+      noteTexturePath: null,
     });
     if (previous) {
       await requireSupabase().storage.from("campaign-media").remove([previous]);

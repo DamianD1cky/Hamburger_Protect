@@ -3,6 +3,7 @@ export type CampaignStatus = "active" | "archived";
 export type EmployeePosition = string;
 
 import type { BoardModuleLayout } from "./boardModules";
+import type { BoardAppearance } from "./boardAppearance";
 
 export type CampaignSectionKey =
   "inventory" | "tasks" | "shifts" | "index" | "activity" | "safety" | "notes";
@@ -149,6 +150,8 @@ export interface CampaignSettings {
   noteTexturePath: string | null;
   backgroundUrl: string | null;
   noteTextureUrl: string | null;
+  appearance: BoardAppearance;
+  boardTextureUrl: string | null;
 }
 
 export interface PublicCampaign {

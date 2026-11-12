@@ -1,5 +1,7 @@
 import { cloneDefaultBoard } from "../domain/defaults";
 import type { CampaignRepository } from "../domain/repository";
+import { defaultBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
+import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../domain/boardGeometry";
 import type {
   CampaignBoard,
   BoardActivity,
@@ -42,10 +44,14 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
     noteTexturePath: null,
     backgroundUrl: null,
     noteTextureUrl: null,
+    appearance: defaultBoardAppearance(),
+    boardTextureUrl: null,
   };
   board.settings.sectionColors ??= {};
   board.settings.resourceTitles ??= {};
   board.settings.moduleLayout ??= {};
+  board.settings.appearance ??= defaultBoardAppearance(board.settings.backgroundPath);
+  board.settings.boardTextureUrl ??= null;
   board.noteLinks ??= [];
   board.stickers ??= [];
   board.settings.isPublic ??= false;
@@ -580,8 +586,8 @@ class LocalCampaignRepository implements CampaignRepository {
       created = {
         id: uid("sticker"),
         emoji,
-        x: Math.max(0, Math.min(1395, x)),
-        y: Math.max(0, Math.min(1131, y)),
+        x: Math.max(0, Math.min(BOARD_WIDTH - STICKER_SIZE, x)),
+        y: Math.max(0, Math.min(BOARD_HEIGHT - STICKER_SIZE, y)),
         rotation: Math.max(-20, Math.min(20, rotation)),
         createdBy: board.viewer.id,
       };
@@ -601,8 +607,8 @@ class LocalCampaignRepository implements CampaignRepository {
     this.updateAsMember((board) => {
       const sticker = board.stickers.find((item) => item.id === stickerId);
       if (!sticker) throw new Error("贴纸不存在");
-      sticker.x = Math.max(0, Math.min(1395, x));
-      sticker.y = Math.max(0, Math.min(1131, y));
+      sticker.x = Math.max(0, Math.min(BOARD_WIDTH - STICKER_SIZE, x));
+      sticker.y = Math.max(0, Math.min(BOARD_HEIGHT - STICKER_SIZE, y));
       moved = { ...sticker };
     });
     if (!moved) throw new Error("贴纸不存在");
@@ -672,6 +678,19 @@ class LocalCampaignRepository implements CampaignRepository {
   ): Promise<CampaignBoard> {
     return this.manage((board) => {
       board.settings.isPublic = isPublic;
+    });
+  }
+
+  async saveBoardAppearance(
+    _campaignId: string,
+    appearance: BoardAppearance,
+    files: BoardAppearanceFiles,
+  ) {
+    if (Object.keys(files).length) throw new Error("演示模式不保存自定义图片");
+    return this.manage((board) => {
+      board.settings.appearance = clone(appearance);
+      board.settings.backgroundPath = appearance.room.imagePath;
+      board.settings.backgroundUrl = null;
     });
   }
 

@@ -1,3 +1,6 @@
+import { BOARD_HEIGHT, BOARD_WIDTH } from "./boardGeometry";
+export { BOARD_HEIGHT, BOARD_WIDTH } from "./boardGeometry";
+
 /**
  * 公告板模块定义。
  *
@@ -23,9 +26,6 @@ export interface BoardModuleRect {
 
 /** 只存位置；尺寸由下面的定义决定，用户改不了。 */
 export type BoardModuleLayout = Partial<Record<BoardModuleKey, { x: number; y: number }>>;
-
-export const BOARD_WIDTH = 1467;
-export const BOARD_HEIGHT = 1203;
 
 /** 拖拽时吸附到这个格子上，摆出来整齐，也好做碰撞判断。 */
 export const SNAP_GRID = 10;

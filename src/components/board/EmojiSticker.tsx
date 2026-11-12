@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useRef, type PointerEvent, type RefObject } from "react";
 import type { BoardSticker } from "../../features/campaign/domain/types";
+import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../../features/campaign/domain/boardGeometry";
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -68,8 +69,8 @@ export function EmojiSticker({
       event.currentTarget.classList.add("is-dragging");
     }
     if (!drag.moved) return;
-    event.currentTarget.style.left = clamp(drag.originX + dx, 0, 1395) + "px";
-    event.currentTarget.style.top = clamp(drag.originY + dy, 0, 1131) + "px";
+    event.currentTarget.style.left = clamp(drag.originX + dx, 0, BOARD_WIDTH - STICKER_SIZE) + "px";
+    event.currentTarget.style.top = clamp(drag.originY + dy, 0, BOARD_HEIGHT - STICKER_SIZE) + "px";
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {

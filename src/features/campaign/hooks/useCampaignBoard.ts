@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import type { BoardAppearance, BoardAppearanceFiles } from "../domain/boardAppearance";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { backend } from "../../../lib/backend";
 import { getSupabaseAppSession } from "../../access/data/supabaseSession";
@@ -22,6 +23,22 @@ import type {
   QuestDraft,
   QuestStatus,
 } from "../domain/types";
+
+type PendingNoteMove = { revision: number; x: number; y: number };
+
+function withPendingNotePositions(
+  board: CampaignBoard,
+  pendingMoves: Map<string, PendingNoteMove>,
+) {
+  if (!pendingMoves.size) return board;
+  return {
+    ...board,
+    notes: board.notes.map((note) => {
+      const pending = pendingMoves.get(note.id);
+      return pending ? { ...note, x: pending.x, y: pending.y } : note;
+    }),
+  };
+}
 
 /** Shared with navigation so the prepared board is the mounted view's cache. */
 export function campaignBoardQueryOptions(
@@ -58,11 +75,13 @@ export function useCampaignBoard(
   const repository = cloudEnabled
     ? supabaseCampaignRepository
     : localCampaignRepository;
-  const noteMoveRevisions = useRef(new Map<string, number>());
+  const noteMoveRevisions = useRef(new Map<string, PendingNoteMove>());
   const options = campaignBoardQueryOptions(requestedCampaignId, publicView);
   const boardKey = options.queryKey;
   const query = useQuery({
     ...options,
+    select: (data) =>
+      withPendingNotePositions(data, noteMoveRevisions.current),
     placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
     refetchInterval: cloudEnabled ? 5_000 : false,
     refetchIntervalInBackground: false,
@@ -70,11 +89,15 @@ export function useCampaignBoard(
   const board = query.data;
   const campaignId = board?.campaign.id ?? requestedCampaignId;
 
+  const mergePendingNotePositions = (next: CampaignBoard) => {
+    return withPendingNotePositions(next, noteMoveRevisions.current);
+  };
+
   const commit = async (operation: () => Promise<CampaignBoard>) => {
     const next = await operation();
     if (cloudEnabled && getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId)
       throw new Error("登录账号已变更，请重新进入战役。");
-    queryClient.setQueryData(boardKey, next);
+    queryClient.setQueryData(boardKey, mergePendingNotePositions(next));
     return next;
   };
 
@@ -90,14 +113,15 @@ export function useCampaignBoard(
   };
 
   const moveNote = async (noteId: string, x: number, y: number) => {
-    const revision = (noteMoveRevisions.current.get(noteId) ?? 0) + 1;
-    noteMoveRevisions.current.set(noteId, revision);
+    const revision =
+      (noteMoveRevisions.current.get(noteId)?.revision ?? 0) + 1;
+    noteMoveRevisions.current.set(noteId, { revision, x, y });
     const previous = queryClient
       .getQueryData<CampaignBoard>(boardKey)
       ?.notes.find((note) => note.id === noteId);
 
     await queryClient.cancelQueries({ queryKey: boardKey });
-    if (noteMoveRevisions.current.get(noteId) === revision) {
+    if (noteMoveRevisions.current.get(noteId)?.revision === revision) {
       setCachedNotePosition(noteId, x, y);
     }
 
@@ -111,20 +135,20 @@ export function useCampaignBoard(
       }
       // moveNote 返回的是整板快照。这里只合并当前便签，避免较晚返回的
       // 旧快照覆盖其他刚移动完的便签。
-      if (noteMoveRevisions.current.get(noteId) === revision) {
+      if (noteMoveRevisions.current.get(noteId)?.revision === revision) {
         setCachedNotePosition(noteId, x, y);
       }
       return next;
     } catch (error) {
       if (
         previous &&
-        noteMoveRevisions.current.get(noteId) === revision
+        noteMoveRevisions.current.get(noteId)?.revision === revision
       ) {
         setCachedNotePosition(noteId, previous.x, previous.y);
       }
       throw error;
     } finally {
-      if (noteMoveRevisions.current.get(noteId) === revision) {
+      if (noteMoveRevisions.current.get(noteId)?.revision === revision) {
         noteMoveRevisions.current.delete(noteId);
       }
     }
@@ -294,6 +318,8 @@ export function useCampaignBoard(
       commit(() => repository.removeMember(campaignId, userId, note)),
     updateCampaignSettings: (draft: CampaignSettingsDraft) =>
       commit(() => repository.updateCampaignSettings(campaignId, draft)),
+    saveBoardAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles) =>
+      commit(() => repository.saveBoardAppearance(campaignId, appearance, files)),
     setCampaignPublic: (isPublic: boolean) =>
       commit(() => repository.setCampaignPublic(campaignId, isPublic)),
     uploadCampaignMedia: (kind: CampaignMediaKind, file: File) =>

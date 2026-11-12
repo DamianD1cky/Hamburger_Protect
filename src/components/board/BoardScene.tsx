@@ -1,12 +1,5 @@
 import { List, Plus, SmilePlus, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode, type Ref, type RefObject } from "react";
-import sceneUrl from "../../../assets/scene.webp";
-import stickerTopLeft from "../../../assets/stickers/tl.webp";
-import stickerTopRight from "../../../assets/stickers/tr.webp";
-import stickerBottomLeft from "../../../assets/stickers/bl.webp";
-import stickerBottomRight from "../../../assets/stickers/br.webp";
-import stickerMiniOne from "../../../assets/stickers/mini1.webp";
-import stickerMiniTwo from "../../../assets/stickers/mini2.webp";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type Ref, type RefObject } from "react";
 import {
   sectionColor,
   sectionTitle,
@@ -31,9 +24,11 @@ import {
   type SectionActions,
 } from "./BoardSections";
 import { BoardClock } from "./BoardClock";
+import { RoomBackground, BoardSurface, BoardFrame } from "./BoardAppearance";
 import { EmojiSticker } from "./EmojiSticker";
 import { BoardModuleFrame } from "./BoardModuleFrame";
 import { BOARD_HEIGHT, BOARD_WIDTH } from "../../features/campaign/domain/boardModules";
+import { boardGeometryStyle } from "../../features/campaign/domain/boardGeometry";
 import { NoteCard } from "./NoteCard";
 import {
   moduleRect,
@@ -129,7 +124,6 @@ export function BoardScene({
   const hidden = new Set(board.settings.hiddenSections);
   const title = (key: Parameters<typeof sectionTitle>[0]) =>
     sectionTitle(key, board.settings.sectionTitles);
-  const hasCustomBackground = Boolean(board.settings.backgroundUrl);
   const color = (key: Parameters<typeof sectionTitle>[0]) => {
     const custom = board.settings.sectionColors ?? {};
     return custom[key] ? sectionColor(key, custom) : undefined;
@@ -419,60 +413,17 @@ export function BoardScene({
       {node}
     </BoardModuleFrame>
   );
-  const sceneSrc = board.settings.backgroundUrl ?? sceneUrl;
-  const fallBackToDefaultScene = (event: {
-    currentTarget: HTMLImageElement;
-  }) => {
-    if (event.currentTarget.src !== sceneUrl) {
-      event.currentTarget.src = sceneUrl;
-    }
-  };
-
   return (
+    <>
+    <RoomBackground appearance={board.settings.appearance} imageUrl={board.settings.backgroundUrl} fullscreen />
+    <BoardClock />
     <div className="viewport">
-      {/* Full-bleed fill: the scaled world is sized to keep the board fully
-          visible, which can leave margins around the scene on extreme
-          window shapes. This blurred copy of the same scene always covers
-          the whole viewport, so the page backdrop can never show through. */}
-      <img
-        className="scene-fill"
-        src={sceneSrc}
-        alt=""
-        aria-hidden="true"
-        draggable={false}
-        decoding="async"
-        onError={fallBackToDefaultScene}
-      />
       <div
         className="world"
-        data-has-custom-background={hasCustomBackground || undefined}
         ref={worldRef}
+        style={boardGeometryStyle as CSSProperties}
       >
-        <picture className="scene-picture">
-          <img
-            className="scene"
-            src={sceneSrc}
-            width="2496"
-            height="1664"
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            decoding="async"
-            fetchPriority="high"
-            onError={fallBackToDefaultScene}
-          />
-        </picture>
-
-        {hasCustomBackground && (
-          <div className="scene-frame" aria-hidden="true">
-            <span className="scene-frame-top" />
-            <span className="scene-frame-right" />
-            <span className="scene-frame-bottom" />
-            <span className="scene-frame-left" />
-          </div>
-        )}
-
-        <BoardClock />
+        <BoardFrame frame={board.settings.appearance.frame} />
 
         <main
           className="board"
@@ -492,6 +443,7 @@ export function BoardScene({
             setStickerPlacement(stickerPoint(event));
           }}
         >
+          <BoardSurface appearance={board.settings.appearance} imageUrl={board.settings.boardTextureUrl} />
           {selectedEmoji && stickerPlacement && (
             <div
               className="board-emoji-placement"
@@ -878,43 +830,8 @@ export function BoardScene({
           )}
         </main>
 
-        <img
-          className="sticker sticker-tl"
-          src={stickerTopLeft}
-          alt=""
-          aria-hidden="true"
-        />
-        <img
-          className="sticker sticker-tr"
-          src={stickerTopRight}
-          alt=""
-          aria-hidden="true"
-        />
-        <img
-          className="sticker sticker-bl"
-          src={stickerBottomLeft}
-          alt=""
-          aria-hidden="true"
-        />
-        <img
-          className="sticker sticker-br"
-          src={stickerBottomRight}
-          alt=""
-          aria-hidden="true"
-        />
-        <img
-          className="sticker sticker-mini1"
-          src={stickerMiniOne}
-          alt=""
-          aria-hidden="true"
-        />
-        <img
-          className="sticker sticker-mini2"
-          src={stickerMiniTwo}
-          alt=""
-          aria-hidden="true"
-        />
       </div>
     </div>
+    </>
   );
 }

@@ -1,4 +1,5 @@
 import type { CampaignBoard } from "./types";
+import { defaultBoardAppearance } from "./boardAppearance";
 
 export const defaultBoard: CampaignBoard = {
   campaign: {
@@ -42,6 +43,8 @@ export const defaultBoard: CampaignBoard = {
     noteTexturePath: null,
     backgroundUrl: null,
     noteTextureUrl: null,
+    appearance: defaultBoardAppearance(),
+    boardTextureUrl: null,
   },
   activities: [],
   hasMoreActivity: false,

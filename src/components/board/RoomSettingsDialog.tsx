@@ -1,5 +1,7 @@
 import { Copy, Globe2, Image, Upload, Users } from "lucide-react";
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import type { BoardAppearance, BoardAppearanceFiles } from "../../features/campaign/domain/boardAppearance";
+import { AppearancePreview } from "./BoardAppearance";
 import type {
   CampaignBoard,
   CampaignMediaKind,
@@ -16,6 +18,7 @@ export function RoomSettingsDialog({
   board,
   onClose,
   onSave,
+  onSaveAppearance,
   onUpload,
   onClearMedia,
   onSetPublic,
@@ -24,6 +27,7 @@ export function RoomSettingsDialog({
   board: CampaignBoard;
   onClose: () => void;
   onSave: (draft: CampaignSettingsDraft) => Promise<unknown>;
+  onSaveAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles) => Promise<unknown>;
   onUpload: (kind: CampaignMediaKind, file: File) => Promise<unknown>;
   onClearMedia: (kind: CampaignMediaKind) => Promise<unknown>;
   onSetPublic: (isPublic: boolean) => Promise<unknown>;
@@ -33,6 +37,52 @@ export function RoomSettingsDialog({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
+  const [appearance, setAppearance] = useState(() => structuredClone(board.settings.appearance));
+  const [files, setFiles] = useState<BoardAppearanceFiles>({});
+  const [previews, setPreviews] = useState<Partial<Record<keyof BoardAppearanceFiles, string>>>({});
+  const previewUrls = useRef<string[]>([]);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+  const room = appearance.room;
+  const updateRoom = (patch: Partial<BoardAppearance["room"]>) =>
+    setAppearance((current) => ({ ...current, room: { ...current.room, ...patch } }));
+  const chooseAppearanceImage = (kind: keyof BoardAppearanceFiles) =>
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 20 * 1024 * 1024) {
+        setError("请选择不超过 20 MiB 的 JPEG、PNG 或 WebP 图片");
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      setBusy(`prepare-${kind}`);
+      try {
+        const image = new window.Image();
+        image.src = url;
+        await image.decode();
+        if (!image.width || !image.height) throw new Error("图片无法读取");
+        if (!mounted.current) { URL.revokeObjectURL(url); return; }
+        previewUrls.current.push(url);
+        setFiles((current) => ({ ...current, [kind]: file }));
+        setPreviews((current) => ({ ...current, [kind]: url }));
+        setAppearance((current) => kind === "background"
+          ? { ...current, room: { ...current.room, kind: "image" } }
+          : { ...current, surface: { ...current.surface, kind: "image" } });
+        setError("");
+      } catch {
+        URL.revokeObjectURL(url);
+        if (mounted.current) setError("图片无法读取，请换一张图片");
+      } finally {
+        if (mounted.current) setBusy("");
+      }
+    };
   const editable =
     board.viewer.role === "gm" && board.campaign.status === "active";
   const run = async (key: string, operation: () => Promise<unknown>) => {
@@ -139,43 +189,68 @@ export function RoomSettingsDialog({
         <section className="room-settings-section media-settings">
           <header>
             <div>
-              <small>JPEG、PNG 或 WebP，最大 5 MiB</small>
-              <h2>房间图片</h2>
+              <h2>公告板外观</h2>
             </div>
             <Image />
           </header>
-          <div className="media-setting-row">
-            <div>
-              <strong>场景背景</strong>
-              <span>
-                {board.settings.backgroundPath
-                  ? "已使用自定义背景"
-                  : "使用默认门店场景"}
-              </span>
+          <AppearancePreview appearance={appearance}
+            backgroundUrl={previews.background ?? board.settings.backgroundUrl}
+            surfaceUrl={previews.boardTexture ?? board.settings.boardTextureUrl} />
+          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
+            <legend>房间背景</legend>
+            <div className="appearance-options">
+              {([["default", "门店"], ["color", "纯色"], ["image", "图片"]] as const).map(([value, label]) =>
+                <button type="button" key={value} aria-pressed={room.kind === value}
+                  disabled={value === "image" && !room.imagePath && !files.background}
+                  onClick={() => updateRoom({ kind: value })}>{label}</button>)}
+              <label className="text-button file-button">
+                <Upload aria-hidden="true" />选择背景图片
+                <input type="file" aria-label="选择背景图片" accept="image/jpeg,image/png,image/webp"
+                  onChange={(event) => void chooseAppearanceImage("background")(event)} />
+              </label>
             </div>
-            <label className="text-button file-button">
-              <Upload />
-              {busy === "upload-background" ? "上传中…" : "选择图片"}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                disabled={!editable || Boolean(busy)}
-                onChange={upload("background")}
-              />
+            <label className="appearance-color"><span>底色</span>
+              <input type="color" aria-label="房间底色" value={room.color}
+                onChange={(event) => updateRoom({ color: event.target.value })} />
             </label>
-            {board.settings.backgroundPath && (
-              <button
-                type="button"
-                className="text-button danger-button"
-                disabled={Boolean(busy)}
-                onClick={() =>
-                  void run("clear-background", () => onClearMedia("background"))
-                }
-              >
-                恢复默认
-              </button>
+            {room.kind !== "color" && (
+              <div className="appearance-image-controls">
+                <label>适配方式<select aria-label="背景适配方式" value={room.fit}
+                  onChange={(event) => updateRoom({ fit: event.target.value as typeof room.fit })}>
+                  <option value="cover">铺满</option><option value="contain">完整显示</option><option value="tile">平铺</option>
+                </select></label>
+                <label>水平焦点<input type="range" aria-label="背景水平焦点" min="0" max="100"
+                  value={room.positionX} onChange={(event) => updateRoom({ positionX: Number(event.target.value) })} /></label>
+                <label>垂直焦点<input type="range" aria-label="背景垂直焦点" min="0" max="100"
+                  value={room.positionY} onChange={(event) => updateRoom({ positionY: Number(event.target.value) })} /></label>
+              </div>
             )}
-          </div>
+            <label className="appearance-range">暗化
+              <input type="range" aria-label="背景暗化" min="0" max="80"
+                value={Math.round(room.dim * 100)} onChange={(event) => updateRoom({ dim: Number(event.target.value) / 100 })} />
+            </label>
+          </fieldset>
+          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
+            <legend>板面材质</legend>
+            <div className="appearance-options">
+              {([["felt", "黑板"], ["cork", "软木"], ["paper", "纸张"], ["image", "自定义"]] as const).map(([value, label]) =>
+                <button type="button" key={value} aria-pressed={appearance.surface.kind === value}
+                  disabled={value === "image" && !appearance.surface.imagePath && !files.boardTexture}
+                  onClick={() => setAppearance((current) => ({ ...current, surface: { ...current.surface, kind: value } }))}>{label}</button>)}
+              <label className="text-button file-button"><Upload aria-hidden="true" />选择板面纹理
+                <input type="file" aria-label="选择板面纹理" accept="image/jpeg,image/png,image/webp"
+                  onChange={(event) => void chooseAppearanceImage("boardTexture")(event)} />
+              </label>
+            </div>
+          </fieldset>
+          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
+            <legend>边框样式</legend>
+            <div className="appearance-options">
+              {([["burger", "汉堡店"], ["wood", "木框"], ["metal", "金属"], ["none", "无边框"]] as const).map(([value, label]) =>
+                <button type="button" key={value} aria-pressed={appearance.frame === value}
+                  onClick={() => setAppearance((current) => ({ ...current, frame: value }))}>{label}</button>)}
+            </div>
+          </fieldset>
           <div className="media-setting-row">
             <div>
               <strong>便签纸张</strong>
@@ -238,6 +313,13 @@ export function RoomSettingsDialog({
                 moduleLayout: board.settings.moduleLayout,
                 hiddenSections: board.settings.hiddenSections,
               });
+              const activeFiles: BoardAppearanceFiles = {
+                ...(appearance.room.kind === "image" && files.background ? { background: files.background } : {}),
+                ...(appearance.surface.kind === "image" && files.boardTexture ? { boardTexture: files.boardTexture } : {}),
+              };
+              if (JSON.stringify(appearance) !== JSON.stringify(board.settings.appearance) || Object.keys(activeFiles).length) {
+                await onSaveAppearance(appearance, activeFiles);
+              }
               onClose();
             })
           }
