@@ -77,6 +77,7 @@ interface BoardSceneProps {
     x: number,
     y: number,
   ) => Promise<unknown>;
+  onOpenClockSettings: () => void;
 }
 
 export function BoardScene({
@@ -106,6 +107,7 @@ export function BoardScene({
   onHideSection,
   moduleLayout,
   onMoveModule,
+  onOpenClockSettings,
 }: BoardSceneProps) {
   const canEditNotes =
     board.viewer.role !== "observer" && board.campaign.status === "active";
@@ -416,7 +418,11 @@ export function BoardScene({
   return (
     <>
     <RoomBackground appearance={board.settings.appearance} imageUrl={board.settings.backgroundUrl} fullscreen />
-    <BoardClock />
+    <BoardClock
+      config={board.settings.clock}
+      canManage={canManage}
+      onOpenSettings={onOpenClockSettings}
+    />
     <div className="viewport">
       <div
         className="world"

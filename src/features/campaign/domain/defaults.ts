@@ -1,5 +1,6 @@
 import type { CampaignBoard } from "./types";
 import { defaultBoardAppearance } from "./boardAppearance";
+import { defaultCampaignClock } from "./campaignClock";
 
 export const defaultBoard: CampaignBoard = {
   campaign: {
@@ -45,6 +46,7 @@ export const defaultBoard: CampaignBoard = {
     noteTextureUrl: null,
     appearance: defaultBoardAppearance(),
     boardTextureUrl: null,
+    clock: defaultCampaignClock(),
   },
   activities: [],
   hasMoreActivity: false,

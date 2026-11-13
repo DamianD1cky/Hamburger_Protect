@@ -27,16 +27,24 @@ import type {
   BoardModuleKey,
   BoardModuleLayout,
 } from "../domain/boardModules";
+import type { CampaignClockConfig } from "../domain/campaignClock";
 
 type PendingNoteMove = { revision: number; x: number; y: number };
 type PendingModuleMove = { revision: number; x: number; y: number };
+type PendingClockSave = {
+  revision: number;
+  config: CampaignClockConfig;
+};
 
 function withPendingPositions(
   board: CampaignBoard,
   pendingNotes: Map<string, PendingNoteMove>,
   pendingModules: Map<BoardModuleKey, PendingModuleMove>,
+  pendingClock: PendingClockSave | null,
 ) {
-  if (!pendingNotes.size && !pendingModules.size) return board;
+  if (!pendingNotes.size && !pendingModules.size && !pendingClock) {
+    return board;
+  }
   const moduleLayout = { ...board.settings.moduleLayout };
   pendingModules.forEach(({ x, y }, key) => {
     moduleLayout[key] = { x, y };
@@ -47,9 +55,14 @@ function withPendingPositions(
       const pending = pendingNotes.get(note.id);
       return pending ? { ...note, x: pending.x, y: pending.y } : note;
     }),
-    settings: pendingModules.size
-      ? { ...board.settings, moduleLayout }
-      : board.settings,
+    settings:
+      pendingModules.size || pendingClock
+        ? {
+            ...board.settings,
+            moduleLayout,
+            clock: pendingClock?.config ?? board.settings.clock,
+          }
+        : board.settings,
   };
 }
 
@@ -92,6 +105,7 @@ export function useCampaignBoard(
   const moduleMoveRevisions = useRef(
     new Map<BoardModuleKey, PendingModuleMove>(),
   );
+  const pendingClockSave = useRef<PendingClockSave | null>(null);
   const options = campaignBoardQueryOptions(requestedCampaignId, publicView);
   const boardKey = options.queryKey;
   const query = useQuery({
@@ -101,6 +115,7 @@ export function useCampaignBoard(
         data,
         noteMoveRevisions.current,
         moduleMoveRevisions.current,
+        pendingClockSave.current,
       ),
     placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
     refetchInterval: cloudEnabled ? 5_000 : false,
@@ -114,6 +129,7 @@ export function useCampaignBoard(
       next,
       noteMoveRevisions.current,
       moduleMoveRevisions.current,
+      pendingClockSave.current,
     );
   };
 
@@ -237,6 +253,53 @@ export function useCampaignBoard(
     } finally {
       if (noteMoveRevisions.current.get(noteId)?.revision === revision) {
         noteMoveRevisions.current.delete(noteId);
+      }
+    }
+  };
+
+  const saveCampaignClock = async (config: CampaignClockConfig) => {
+    const revision = (pendingClockSave.current?.revision ?? 0) + 1;
+    const previous =
+      queryClient.getQueryData<CampaignBoard>(boardKey)?.settings.clock;
+    pendingClockSave.current = { revision, config };
+    await queryClient.cancelQueries({ queryKey: boardKey });
+    const setCachedClock = (clock: CampaignClockConfig) => {
+      queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
+        current
+          ? {
+              ...current,
+              settings: { ...current.settings, clock },
+            }
+          : current,
+      );
+    };
+    setCachedClock(config);
+    try {
+      const saved = await repository.saveCampaignClock(
+        campaignId,
+        config,
+      );
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      if (
+        cloudEnabled &&
+        getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId
+      ) {
+        throw new Error("登录账号已变更，请重新进入战役。");
+      }
+      if (pendingClockSave.current?.revision === revision) {
+        pendingClockSave.current = { revision, config: saved };
+        setCachedClock(saved);
+      }
+      return saved;
+    } catch (error) {
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      if (pendingClockSave.current?.revision === revision && previous) {
+        setCachedClock(previous);
+      }
+      throw error;
+    } finally {
+      if (pendingClockSave.current?.revision === revision) {
+        pendingClockSave.current = null;
       }
     }
   };
@@ -406,6 +469,7 @@ export function useCampaignBoard(
     updateCampaignSettings: (draft: CampaignSettingsDraft) =>
       commit(() => repository.updateCampaignSettings(campaignId, draft)),
     moveBoardModule,
+    saveCampaignClock,
     saveBoardAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles) =>
       commit(() => repository.saveBoardAppearance(campaignId, appearance, files)),
     setCampaignPublic: (isPublic: boolean) =>

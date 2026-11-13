@@ -94,6 +94,7 @@ try {
     let boardStickers = [];
     let rejectSticker = false;
     let appearanceWrites = 0;
+    let clockWrites = 0;
     let imageUploads = 0;
     let rejectAppearance = false;
     let delayNextModuleMove = false;
@@ -117,7 +118,24 @@ try {
         { id: linkedNoteId, title: "连线目标", body: "验证端点同步", color: "blue", x: 820, y: 480, rotation: 1, created_at: date, author_id: actorId, pinned: false, pinned_at: null, layer: 2, pin_color: "green" },
         { id: newLinkedNoteId, title: "即时连线目标", body: "请求未完成也立即显示", color: "pink", x: 520, y: 820, rotation: -1, created_at: date, author_id: actorId, pinned: false, pinned_at: null, layer: 3, pin_color: "yellow" },
       ],
-      settings: { section_titles: {}, hidden_sections: [], is_public: true, background_path: "fixtures/custom-background.webp", note_texture_path: null }, events: [],
+      settings: {
+        section_titles: {},
+        hidden_sections: [],
+        is_public: true,
+        background_path: "fixtures/custom-background.webp",
+        note_texture_path: null,
+        clock_config: {
+          mode: "clock",
+          style: "digital",
+          era: "AD",
+          eraYear: 2026,
+          running: true,
+          valueMs: new Date(date).getTime(),
+          initialValueMs: new Date(date).getTime(),
+          referenceAt: date,
+        },
+      },
+      events: [],
     };
     await context.route(`${origin}/**`, async (route) => {
       const request = route.request();
@@ -165,6 +183,14 @@ try {
           [body.p_key]: { x: body.p_x, y: body.p_y },
         };
         result = board.settings.module_layout;
+      }
+      else if (path.endsWith("/update_campaign_clock")) {
+        clockWrites++;
+        board.settings.clock_config = {
+          ...body.p_config,
+          referenceAt: new Date().toISOString(),
+        };
+        result = board.settings.clock_config;
       }
       else if (path.endsWith("/update_board_appearance")) {
         if (rejectAppearance) { status = 400; result = { message: "主题保存失败" }; }
@@ -262,6 +288,10 @@ try {
       "legacy rooms keep an independent burger frame");
     check(await page.locator('.board > .board-surface[data-surface="felt"]').count() === 1,
       "legacy rooms keep their board material");
+    check(await page.locator('.board-clock[data-clock-style="digital"]').count() === 1,
+      "shared clock style is rendered");
+    check((await page.locator(".clock-zone").textContent()) === "AD.2026",
+      "shared clock era and year are rendered");
     const transitions = await page.evaluate(() => window.transitionLog);
     check(scenario.reduced || scenario.unsupported ? transitions.length === 0 : transitions[0]?.ready, "native transition is ready or safely bypassed");
     check(boardRequests === 1, "mounted board reuses prepared query data");
@@ -292,6 +322,43 @@ try {
     check(Math.abs(originalView.board.width / originalView.board.height - 16 / 9) < 0.0001, "board is exactly 16:9");
     check(originalView.frameFits, "overview fits the real frame inside the usable viewport");
     if (scenario.label === "desktop") {
+      await page.getByRole("button", { name: "设置战役时钟" }).click();
+      await page.locator(".clock-settings-dialog").waitFor();
+      await page.getByRole("tab", { name: "倒计时" }).click();
+      const clockDialog = page.locator(".clock-settings-dialog");
+      await clockDialog.getByLabel("纪元", { exact: true }).fill("uc");
+      await clockDialog.locator('input[type="number"]').nth(0).fill("79");
+      await clockDialog.locator(".clock-duration-fields input").nth(0).fill("1");
+      await clockDialog.locator(".clock-duration-fields input").nth(1).fill("2");
+      await clockDialog.locator(".clock-duration-fields input").nth(2).fill("3");
+      await clockDialog.getByText("辉光管", { exact: true }).click();
+      await clockDialog.getByRole("button", { name: "开始" }).click();
+      await page.screenshot({
+        path: join(screenshots, "desktop-clock-settings.png"),
+      });
+      const clockSaved = page.waitForResponse((response) =>
+        new URL(response.url()).pathname.endsWith("/update_campaign_clock"));
+      await clockDialog.getByRole("button", { name: "保存共享时钟" }).click();
+      await clockSaved;
+      check(clockWrites === 1, "GM saves the shared clock through its own RPC");
+      check(board.settings.clock_config.mode === "countdown", "countdown mode is persisted");
+      check(board.settings.clock_config.style === "nixie", "nixie style is persisted");
+      check(board.settings.clock_config.era === "UC" && board.settings.clock_config.eraYear === 79,
+        "custom era and year are persisted");
+      check(await page.locator('.board-clock[data-clock-style="nixie"][data-clock-mode="countdown"]').count() === 1,
+        "saved clock mode and style update immediately");
+      check((await page.locator(".clock-zone").textContent()) === "UC.0079",
+        "custom science-fiction era is displayed with four-digit year");
+      const quartzSaved = page.waitForResponse((response) =>
+        new URL(response.url()).pathname.endsWith("/update_campaign_clock"));
+      await page.getByRole("button", { name: "设置战役时钟" }).click();
+      await page.locator(".clock-settings-dialog").waitFor();
+      await page.locator(".clock-settings-dialog").getByText("石英", { exact: true }).click();
+      await page.locator(".clock-settings-dialog").getByRole("button", { name: "保存共享时钟" }).click();
+      await quartzSaved;
+      check(clockWrites === 2, "clock style changes use the same isolated RPC");
+      check(await page.locator('.board-clock[data-clock-style="quartz"] .quartz-dial').count() === 1,
+        "quartz preset renders its physical dial");
       for (const [width, height] of [[1366, 768], [1920, 1080], [2560, 1080], [900, 1300], [768, 1024]]) {
         await page.setViewportSize({ width, height });
         await settleView();
@@ -304,6 +371,24 @@ try {
       }
       await page.setViewportSize({ width: scenario.width, height: scenario.height });
       await settleView();
+    }
+    if (scenario.label === "mobile") {
+      await page.getByRole("button", { name: "设置战役时钟" }).click();
+      const mobileClockDialog = page.locator(".clock-settings-dialog");
+      await mobileClockDialog.waitFor();
+      const dialogGeometry = await mobileClockDialog.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        viewport: innerWidth,
+        overflow: element.scrollWidth > element.clientWidth,
+      }));
+      check(Math.abs(dialogGeometry.width - dialogGeometry.viewport) < 1,
+        "clock settings use the full phone width");
+      check(!dialogGeometry.overflow,
+        "clock settings have no horizontal overflow on phones");
+      await page.screenshot({
+        path: join(screenshots, "mobile-clock-settings.png"),
+      });
+      await mobileClockDialog.getByRole("button", { name: "关闭" }).click();
     }
     check(await page.locator(".board-view-controls").count() === 0,
       "manual board view controls are absent");

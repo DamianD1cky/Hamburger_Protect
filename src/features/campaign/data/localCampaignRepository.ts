@@ -3,6 +3,11 @@ import type { CampaignRepository } from "../domain/repository";
 import { defaultBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
 import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../domain/boardGeometry";
 import type { BoardModuleKey, BoardModuleLayout } from "../domain/boardModules";
+import {
+  defaultCampaignClock,
+  normalizeCampaignClock,
+  type CampaignClockConfig,
+} from "../domain/campaignClock";
 import type {
   CampaignBoard,
   BoardActivity,
@@ -47,12 +52,14 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
     noteTextureUrl: null,
     appearance: defaultBoardAppearance(),
     boardTextureUrl: null,
+    clock: defaultCampaignClock(),
   };
   board.settings.sectionColors ??= {};
   board.settings.resourceTitles ??= {};
   board.settings.moduleLayout ??= {};
   board.settings.appearance ??= defaultBoardAppearance(board.settings.backgroundPath);
   board.settings.boardTextureUrl ??= null;
+  board.settings.clock = normalizeCampaignClock(board.settings.clock);
   board.noteLinks ??= [];
   board.stickers ??= [];
   board.settings.isPublic ??= false;
@@ -686,6 +693,20 @@ class LocalCampaignRepository implements CampaignRepository {
       };
     });
     return clone(board.settings.moduleLayout);
+  }
+
+  async saveCampaignClock(
+    _campaignId: string,
+    config: CampaignClockConfig,
+  ) {
+    const saved = normalizeCampaignClock({
+      ...config,
+      referenceAt: new Date().toISOString(),
+    });
+    this.manage((board) => {
+      board.settings.clock = saved;
+    });
+    return clone(saved);
   }
 
   async setCampaignPublic(

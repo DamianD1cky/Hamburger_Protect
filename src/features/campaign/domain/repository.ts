@@ -14,6 +14,7 @@ import type {
 } from "./types";
 import type { BoardAppearance, BoardAppearanceFiles } from "./boardAppearance";
 import type { BoardModuleKey, BoardModuleLayout } from "./boardModules";
+import type { CampaignClockConfig } from "./campaignClock";
 
 export interface CampaignRepository {
   getBoard(campaignId: string): Promise<CampaignBoard>;
@@ -119,6 +120,10 @@ export interface CampaignRepository {
     x: number,
     y: number,
   ): Promise<BoardModuleLayout>;
+  saveCampaignClock(
+    campaignId: string,
+    config: CampaignClockConfig,
+  ): Promise<CampaignClockConfig>;
   saveBoardAppearance(
     campaignId: string,
     appearance: BoardAppearance,

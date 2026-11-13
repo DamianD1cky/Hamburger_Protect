@@ -4,6 +4,7 @@ export type EmployeePosition = string;
 
 import type { BoardModuleLayout } from "./boardModules";
 import type { BoardAppearance } from "./boardAppearance";
+import type { CampaignClockConfig } from "./campaignClock";
 
 export type CampaignSectionKey =
   "inventory" | "tasks" | "shifts" | "index" | "activity" | "safety" | "notes";
@@ -152,6 +153,7 @@ export interface CampaignSettings {
   noteTextureUrl: string | null;
   appearance: BoardAppearance;
   boardTextureUrl: string | null;
+  clock: CampaignClockConfig;
 }
 
 export interface PublicCampaign {

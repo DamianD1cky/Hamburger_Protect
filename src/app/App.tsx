@@ -122,6 +122,11 @@ const SectionVisibilityDialog = lazy(() =>
     default: module.SectionVisibilityDialog,
   })),
 );
+const ClockSettingsDialog = lazy(() =>
+  import("../components/board/ClockSettingsDialog").then((module) => ({
+    default: module.ClockSettingsDialog,
+  })),
+);
 
 const closedComposer: ComposerState = {
   open: false,
@@ -502,6 +507,7 @@ function CampaignBoardWorkspace({
   const [activityOpen, setActivityOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
+  const [clockSettingsOpen, setClockSettingsOpen] = useState(false);
   const [visitorMessagesOpen, setVisitorMessagesOpen] = useState(false);
   const [sectionSettingsKey, setSectionSettingsKey] =
     useState<CampaignSectionKey | null>(null);
@@ -810,6 +816,7 @@ function CampaignBoardWorkspace({
           }}
           moduleLayout={board.settings.moduleLayout}
           onMoveModule={campaign.moveBoardModule}
+          onOpenClockSettings={() => setClockSettingsOpen(true)}
         />
       </Suspense>
 
@@ -1026,6 +1033,16 @@ function CampaignBoardWorkspace({
             onOpenRoster={() => {
               setRoomSettingsOpen(false);
               setRosterOpen(true);
+            }}
+          />
+        )}
+        {clockSettingsOpen && (
+          <ClockSettingsDialog
+            config={board.settings.clock}
+            onClose={() => setClockSettingsOpen(false)}
+            onSave={async (config) => {
+              await campaign.saveCampaignClock(config);
+              showToast("战役时钟已更新");
             }}
           />
         )}

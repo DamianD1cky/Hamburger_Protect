@@ -23,6 +23,10 @@ import type {
 import { requireSupabase, rpc } from "../../../lib/supabase/client";
 import type { BoardModuleKey, BoardModuleLayout } from "../domain/boardModules";
 import {
+  normalizeCampaignClock,
+  type CampaignClockConfig,
+} from "../domain/campaignClock";
+import {
   getSupabaseAppSession,
   requireSupabaseSession,
 } from "../../access/data/supabaseSession";
@@ -105,6 +109,7 @@ interface RemoteBoard {
     section_colors?: Partial<Record<CampaignSectionKey, string>> | null;
     resource_titles?: Partial<Record<string, string>> | null;
     module_layout?: BoardModuleLayout | null;
+    clock_config?: Partial<CampaignClockConfig> | null;
     hidden_sections: CampaignSectionKey[];
     is_public: boolean;
     background_path: string | null;
@@ -338,6 +343,7 @@ async function toBoard(
       noteTextureUrl,
       appearance,
       boardTextureUrl,
+      clock: normalizeCampaignClock(remote.settings.clock_config),
     },
   };
 }
@@ -663,6 +669,16 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_x: x,
       p_y: y,
     });
+  }
+  async saveCampaignClock(
+    campaignId: string,
+    config: CampaignClockConfig,
+  ) {
+    const saved = await rpc<CampaignClockConfig>("update_campaign_clock", {
+      p_campaign_id: campaignId,
+      p_config: config,
+    });
+    return normalizeCampaignClock(saved);
   }
   async setCampaignPublic(campaignId: string, isPublic: boolean) {
     await rpc("set_campaign_public", {

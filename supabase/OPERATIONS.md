@@ -70,7 +70,11 @@
 
 ### 6. 网站迭代增量迁移
 
-`20261028000000_iteration_p0_p2.sql` 是生产基线之后的增量迁移，新增房间配置、清单分类、角色资料、便签置顶、成员移出和私有图片 Storage。部署顺序固定为：本地数据库回归、`supabase db push`、真实云端 `iteration_smoke.sql`、前端构建、Vercel 部署、生产只读 smoke。
+`20261028000000_iteration_p0_p2.sql` 是生产基线之后的增量迁移，新增房间配置、清单分类、角色资料、便签置顶、成员移出和私有图片 Storage。部署顺序固定为：本地数据库回归、`npm run supabase:push:dry`、`npm run supabase:push`、真实云端 smoke SQL、前端构建、Vercel 部署、生产只读 smoke。
+
+生产增量迁移默认由 `scripts/supabase-push-management.mjs` 通过 Supabase Management API 的 HTTPS SQL 通道部署。脚本比较本地与远端版本，对每条待部署 migration 使用事务和 advisory lock，并在同一事务登记 `supabase_migrations.schema_migrations`。这条通道不需要把数据库密码放进命令行，也不依赖数据库直连域名的 IPv6/TLS 状态。
+
+`npm run supabase:push:direct` 保留官方 `supabase db push` 直连方式，只在数据库直连网络和凭据均正常时使用。若直连出现 `ECONNRESET`，先比较直连与 pooler 的 PostgreSQL TLS 握手；不要通过反复重试、关闭 TLS 或把密码写入仓库绕过。云端 smoke 使用 `npx supabase db query --linked --file <测试 SQL>`，测试 SQL 必须自行开启事务并回滚测试数据。
 
 `campaign-media` 必须保持私有，允许类型仅为 JPEG、PNG、WebP，单文件上限 5 MiB。前端只保存对象路径，通过短期签名 URL 展示。GM 上传新图片或恢复默认后应删除旧对象；排查失败上传时先核对房间配置路径，再清理孤立对象，不能扩大 bucket 为公开读取。
 

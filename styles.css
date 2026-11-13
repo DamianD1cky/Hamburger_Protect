@@ -99,13 +99,13 @@ button {
   right: max(16px, env(safe-area-inset-right));
   top: max(16px, env(safe-area-inset-top));
   display: grid;
-  width: 300px;
-  height: 54px;
+  width: 316px;
+  min-height: 64px;
   grid-template-columns: 12px auto 2px minmax(0, 1fr);
   grid-template-rows: 1fr 1fr;
   align-items: center;
   column-gap: 10px;
-  padding: 6px 12px;
+  padding: 8px 42px 8px 12px;
   border: 2px solid #ded9c9;
   border-radius: 7px;
   background: #161918;
@@ -116,6 +116,12 @@ button {
   color: #f33c38;
   font-family: var(--app-font);
   font-variant-numeric: tabular-nums;
+  isolation: isolate;
+  transition:
+    width 180ms ease,
+    min-height 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease;
 }
 
 .board-clock::before {
@@ -134,6 +140,11 @@ button {
   border-radius: 50%;
   background: #32d567;
   box-shadow: 0 0 8px rgba(50, 213, 103, 0.88);
+}
+
+.board-clock[data-clock-running="false"] .clock-status {
+  background: #7e817d;
+  box-shadow: none;
 }
 
 .clock-time {
@@ -167,6 +178,366 @@ button {
   align-self: start;
   color: #918f86;
   font-size: 10px;
+  letter-spacing: 0;
+}
+
+.clock-settings-button {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 7px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  place-items: center;
+  background: transparent;
+  color: currentColor;
+  opacity: 0.62;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.clock-settings-button:hover,
+.clock-settings-button:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+}
+
+.clock-settings-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 辉光管：独立玻璃管、线状阴极、金属网与管座。 */
+.board-clock[data-clock-style="nixie"] {
+  width: max-content;
+  max-width: calc(100% - 32px);
+  grid-template-columns: 7px auto auto;
+  grid-template-rows: 1fr 1fr;
+  gap: 4px 10px;
+  padding: 6px 38px 6px 10px;
+  border: 1px solid #615c50;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #31332d, #181d19 72%, #292922);
+  color: #edb47b;
+  box-shadow:
+    inset 0 1px 0 #ffffff1f,
+    inset 0 -3px 0 #080d0cb3,
+    0 5px 12px #0006;
+}
+
+.board-clock[data-clock-style="nixie"]::before {
+  inset: 5px;
+  border-color: #9a9b7d24;
+  border-radius: 5px;
+}
+
+.board-clock[data-clock-style="nixie"] .clock-time {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  padding: 0;
+  text-shadow: none;
+}
+
+.board-clock[data-clock-style="nixie"] .clock-status {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  width: 5px;
+  height: 5px;
+  background: #ff9b4e;
+  box-shadow: 0 0 5px #f86b2c9c;
+}
+
+.board-clock[data-clock-style="nixie"][data-clock-running="false"] .clock-status {
+  background: #7e817d;
+  box-shadow: none;
+}
+
+.board-clock[data-clock-style="nixie"] .clock-divider {
+  display: none;
+}
+
+.board-clock[data-clock-style="nixie"] .clock-calendar {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: end;
+  color: #c2b5a0;
+  font-size: 10px;
+}
+
+.board-clock[data-clock-style="nixie"] .clock-zone {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: start;
+  justify-self: start;
+  color: #9b9685;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.nixie-display {
+  --nixie-width: 26px;
+  --nixie-height: 48px;
+  --nixie-gap: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nixie-gap);
+  vertical-align: middle;
+  isolation: isolate;
+}
+
+.nixie-tube {
+  position: relative;
+  display: block;
+  flex: 0 0 var(--nixie-width);
+  width: var(--nixie-width);
+  height: var(--nixie-height);
+}
+
+/* Glass evacuation tip and machined socket. */
+.nixie-tube::before {
+  position: absolute;
+  top: 0;
+  left: 42%;
+  width: 16%;
+  height: 6%;
+  border: 1px solid #b9c7b04d;
+  border-radius: 50% 50% 0 0;
+  background: #98aaa126;
+  content: "";
+}
+
+.nixie-tube::after {
+  position: absolute;
+  z-index: 4;
+  inset: auto -2% 0;
+  height: 16%;
+  border: 1px solid #101410;
+  border-top-color: #82887a;
+  border-radius: 20% 20% 15% 15%;
+  background: linear-gradient(
+    180deg, #687065, #252c27 30%, #111712 45%, #474e44 55%, #1a211b 80%
+  );
+  box-shadow: 0 2px 2px #0008, 0 -1px 3px #ff9b3d1f;
+  content: "";
+}
+
+.nixie-envelope {
+  position: absolute;
+  inset: 3% 1% 10%;
+  overflow: hidden;
+  border: 1px solid #afbeb060;
+  border-radius: 45% 45% 18% 18% / 23% 23% 10% 10%;
+  background:
+    radial-gradient(ellipse at 50% 65%, #e65d2024, transparent 72%),
+    linear-gradient(90deg, #acc0b216, #040b0b99 20% 80%, #b6c8b91f);
+  box-shadow:
+    inset 1px 0 2px #d5e7d04d,
+    inset -1px 0 2px #d5e7d033,
+    0 0 5px #ff7b1b0d;
+}
+
+.nixie-envelope::before {
+  position: absolute;
+  z-index: 1;
+  inset: 11% 13% 9%;
+  border: 1px solid #a0a68c33;
+  border-radius: 28% 28% 12% 12%;
+  background:
+    repeating-linear-gradient(60deg, transparent 0 4px, #c4bea319 4px 4.5px, transparent 4.5px 8px),
+    repeating-linear-gradient(-60deg, transparent 0 4px, #c4bea319 4px 4.5px, transparent 4.5px 8px);
+  content: "";
+}
+
+.nixie-envelope::after {
+  position: absolute;
+  z-index: 3;
+  inset: 5% 8% 7%;
+  border-left: 1px solid #e3f0d952;
+  border-right: 1px solid #e3f0d91f;
+  border-radius: inherit;
+  background: linear-gradient(
+    110deg, transparent 8%, #f0f9e810 12%, transparent 20% 75%, #f0f9e809 85%, transparent
+  );
+  content: "";
+  pointer-events: none;
+}
+
+.nixie-cathodes {
+  position: absolute;
+  z-index: 2;
+  inset: 9% 8% 12%;
+  width: 84%;
+  height: 79%;
+  overflow: visible;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nixie-wire {
+  stroke: #d5a27a;
+  stroke-width: 0.7;
+  opacity: 0.09;
+}
+
+.nixie-digit {
+  stroke: #ffd3a1;
+  stroke-width: 1.65;
+  filter: drop-shadow(0 0 1px #ffb14a) drop-shadow(0 0 3px #fa5415);
+  animation: nixie-ignite 180ms ease-out;
+}
+
+.nixie-separator {
+  display: flex;
+  flex: 0 0 calc(var(--nixie-width) * 0.2);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--nixie-height) * 0.16);
+  padding-bottom: calc(var(--nixie-height) * 0.08);
+}
+
+.nixie-separator i {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #ffd3a1;
+  box-shadow: 0 0 3px #ffb14a, 0 0 6px #fa5415;
+}
+
+@keyframes nixie-ignite {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nixie-digit {
+    animation: none;
+  }
+}
+
+/* 数字时钟：高对比 LCD，适合现代规则。 */
+.board-clock[data-clock-style="digital"] {
+  border-color: #8f9b8d;
+  background: #202821;
+  color: #b7e184;
+}
+
+.board-clock[data-clock-style="digital"] .clock-time {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-weight: 600;
+  text-shadow: 0 0 8px rgba(181, 226, 132, 0.46);
+}
+
+.board-clock[data-clock-style="digital"] .clock-calendar {
+  color: #d7dfce;
+}
+
+/* 石英：实体表盘仍保留数字读数，倒计时与正计时同样可精确读取。 */
+.board-clock[data-clock-style="quartz"] {
+  width: 330px;
+  min-height: 78px;
+  grid-template-columns: 10px 58px auto 1px minmax(0, 1fr);
+  border-color: #c8c1b2;
+  background: #eee9dc;
+  color: #25231f;
+  box-shadow:
+    inset 0 0 0 2px #928b7f,
+    7px 9px 0 rgba(0, 0, 0, 0.28);
+}
+
+.board-clock[data-clock-style="quartz"]::before {
+  border-color: rgba(34, 31, 26, 0.12);
+}
+
+.board-clock[data-clock-style="quartz"] .clock-status {
+  width: 7px;
+  height: 7px;
+  box-shadow: none;
+}
+
+.board-clock[data-clock-style="quartz"] .clock-time {
+  grid-column: 3;
+  color: #25231f;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 20px;
+  text-shadow: none;
+}
+
+.board-clock[data-clock-style="quartz"] .clock-divider {
+  grid-column: 4;
+  background: rgba(34, 31, 26, 0.2);
+}
+
+.board-clock[data-clock-style="quartz"] .clock-calendar,
+.board-clock[data-clock-style="quartz"] .clock-zone {
+  grid-column: 5;
+  color: #39362f;
+}
+
+.board-clock[data-clock-style="quartz"] .clock-zone {
+  color: #777065;
+}
+
+.quartz-dial {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1 / -1;
+  width: 52px;
+  height: 52px;
+  border: 2px solid #464139;
+  border-radius: 50%;
+  background: #faf7ed;
+  box-shadow: inset 0 0 8px rgba(38, 35, 30, 0.18);
+}
+
+.quartz-dial i {
+  position: absolute;
+  inset: 3px 24px 37px;
+  border-top: 5px solid #5e584e;
+  transform-origin: 2px 21px;
+}
+
+.quartz-hand {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  display: block;
+  width: 2px;
+  border-radius: 2px;
+  background: #2a2824;
+  transform-origin: 50% 100%;
+}
+
+.quartz-hand.is-hour {
+  height: 14px;
+  transform: rotate(var(--clock-hour));
+}
+
+.quartz-hand.is-minute {
+  height: 19px;
+  transform: rotate(var(--clock-minute));
+}
+
+.quartz-hand.is-second {
+  width: 1px;
+  height: 21px;
+  background: #ca332e;
+  transform: rotate(var(--clock-second));
+}
+
+.quartz-dial em {
+  position: absolute;
+  left: 22px;
+  top: 22px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #282622;
 }
 
 .board {
@@ -2701,13 +3072,43 @@ textarea:focus-visible {
     top: calc(80px + env(safe-area-inset-top));
     right: 12px;
     width: auto;
+    min-height: 36px;
     height: 36px;
     grid-template-columns: 9px auto;
-    padding: 4px 9px;
+    padding: 4px 36px 4px 9px;
     column-gap: 8px;
     box-shadow: 2px 3px 0 #0004;
   }
   .clock-time { font-size: 19px; }
+  .board-clock[data-clock-style="quartz"] {
+    width: auto;
+    min-height: 36px;
+    grid-template-columns: 9px auto;
+  }
+  .board-clock[data-clock-style="quartz"] .clock-time {
+    grid-column: 2;
+    font-size: 18px;
+  }
+  .board-clock[data-clock-style="nixie"] {
+    max-width: calc(100% - 24px);
+    min-height: 46px;
+    height: auto;
+    grid-template-columns: 5px auto auto;
+    grid-template-rows: 1fr 1fr;
+    gap: 3px 6px;
+    padding: 4px 38px 4px 8px;
+  }
+  .board-clock[data-clock-style="nixie"] .nixie-display {
+    --nixie-width: 18px;
+    --nixie-height: 36px;
+    --nixie-gap: 2px;
+  }
+  .board-clock[data-clock-style="nixie"] .clock-calendar,
+  .board-clock[data-clock-style="nixie"] .clock-zone {
+    display: block;
+    font-size: 9px;
+  }
+  .board-clock .quartz-dial,
   .board-clock .clock-divider,
   .board-clock .clock-calendar,
   .board-clock .clock-zone { display: none; }
@@ -5236,6 +5637,270 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 .section-settings-dialog,
 .section-visibility-dialog {
   width: min(520px, calc(100% - 24px));
+}
+
+/* ------------------------------------------------------------------
+   战役时钟设置
+   ------------------------------------------------------------------ */
+.clock-settings-dialog {
+  width: min(620px, calc(100% - 24px));
+}
+
+.clock-settings-dialog fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.clock-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 18px;
+  border: 2px solid #302b24;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.clock-mode-tabs button {
+  min-height: 42px;
+  border: 0;
+  border-right: 1px solid #302b24;
+  background: transparent;
+  color: #302b24;
+  cursor: pointer;
+}
+
+.clock-mode-tabs button:last-child {
+  border-right: 0;
+}
+
+.clock-mode-tabs button.is-active {
+  background: #302b24;
+  color: #fff;
+}
+
+.clock-settings-section {
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(54, 46, 34, 0.18);
+}
+
+.clock-era-fields {
+  display: grid;
+  grid-template-columns: 100px 130px minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.clock-era-fields .field,
+.clock-datetime-field {
+  margin-top: 0;
+}
+
+.clock-era-preview {
+  min-width: 0;
+  padding: 0 8px 8px;
+  overflow: hidden;
+  color: #5f574d;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 20px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clock-datetime-field {
+  margin-top: 16px;
+}
+
+.clock-datetime-field input {
+  font-family: var(--ui-font);
+  font-size: 18px;
+}
+
+.clock-duration-fields {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.clock-duration-fields label {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: #5f574d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.clock-duration-fields input {
+  width: 100%;
+  height: 45px;
+  border: 0;
+  border-bottom: 2px solid #5f574d;
+  border-radius: 0;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.4);
+  color: #28241f;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 20px;
+  text-align: center;
+}
+
+.clock-style-picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.clock-style-picker label {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 86px;
+  align-content: center;
+  gap: 6px;
+  padding: 10px;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background: #252725;
+  color: #e9e4d6;
+  text-align: center;
+  cursor: pointer;
+}
+
+.clock-style-picker label.is-selected {
+  border-color: #b51f2a;
+  box-shadow: 0 0 0 2px #f4f1e5, 0 0 0 4px #b51f2a;
+}
+
+.clock-style-picker input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.clock-style-picker label:focus-within {
+  outline: 2px solid #b51f2a;
+  outline-offset: 4px;
+}
+
+.clock-style-picker strong {
+  overflow: hidden;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 21px;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.clock-style-picker label > span {
+  font-size: 12px;
+}
+
+.clock-style-picker [data-clock-style="nixie"] {
+  background: #1c231e;
+  color: #c2b5a0;
+  text-shadow: none;
+}
+
+.clock-style-picker .nixie-display {
+  --nixie-width: 23px;
+  --nixie-height: 47px;
+  --nixie-gap: 2px;
+}
+
+.clock-style-picker [data-clock-style="quartz"] {
+  background: #eee9dc;
+  color: #292722;
+  text-shadow: none;
+}
+
+.clock-style-picker [data-clock-style="digital"] {
+  background: #202821;
+  color: #b7e184;
+  text-shadow: 0 0 7px rgba(181, 226, 132, 0.52);
+}
+
+.clock-run-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.clock-run-controls button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid #746b5e;
+  border-radius: 4px;
+  background: #f7f1e3;
+  color: #3d3629;
+  cursor: pointer;
+}
+
+.clock-run-controls button.is-active {
+  border-color: #386344;
+  color: #2f5b3d;
+}
+
+.clock-run-controls svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.dialog-actions button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid #746b5e;
+  border-radius: 4px;
+  background: transparent;
+  color: #302b24;
+  cursor: pointer;
+}
+
+.dialog-actions button.primary {
+  border-color: #302b24;
+  background: #302b24;
+  color: #fff;
+}
+
+@media (max-width: 620px) {
+  .clock-settings-dialog {
+    width: 100%;
+  }
+  .clock-era-fields {
+    grid-template-columns: 82px 110px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .clock-era-preview {
+    font-size: 15px;
+  }
+  .clock-style-picker {
+    gap: 6px;
+  }
+  .clock-style-picker label {
+    min-height: 76px;
+    padding: 8px 4px;
+  }
+  .clock-style-picker strong {
+    font-size: 17px;
+  }
+  .clock-style-picker .nixie-display {
+    --nixie-width: 17px;
+    --nixie-height: 37px;
+    --nixie-gap: 1px;
+  }
 }
 
 .dialog-hint {

@@ -245,6 +245,47 @@ try {
     activity: { x: 1500, y: 800 },
     safety: { x: 600, y: 580 },
   }, "atomic module moves preserve positions written by other moves");
+  const clockConfig = {
+    mode: "countdown",
+    style: "nixie",
+    era: "uc",
+    eraYear: 79,
+    running: true,
+    valueMs: 3723000,
+    initialValueMs: 3723000,
+    referenceAt: "2000-01-01T00:00:00.000Z",
+  };
+  const savedClock = (await asUser(() => db.query(
+    "select public.update_campaign_clock($1,$2::jsonb) value",
+    [campaign, JSON.stringify(clockConfig)],
+  ))).rows[0].value;
+  assert.equal(savedClock.era, "UC");
+  assert.equal(savedClock.eraYear, 79);
+  assert.equal(savedClock.referenceAt === clockConfig.referenceAt, false,
+    "server replaces the client reference time");
+  assert.deepEqual(
+    (await db.query("select clock_config from public.campaign_settings where campaign_id=$1", [campaign])).rows[0].clock_config,
+    savedClock,
+  );
+  await assert.rejects(asUser(() => db.query(
+    "select public.update_campaign_clock($1,$2::jsonb)",
+    [campaign, JSON.stringify({ ...clockConfig, era: "U1" })],
+  )), /INVALID_CAMPAIGN_CLOCK/);
+  await assert.rejects(asUser(() => db.query(
+    "select public.update_campaign_clock($1,'{}'::jsonb)",
+    [campaign],
+  )), /INVALID_CAMPAIGN_CLOCK/);
+  await assert.rejects(db.exec(`
+    begin;
+    select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000099',true);
+    set local role authenticated;
+    select public.update_campaign_clock(
+      '${campaign}',
+      '${JSON.stringify(clockConfig)}'::jsonb
+    );
+    commit;
+  `), /REQUIRED/);
+  await db.exec("rollback");
   await assert.rejects(asUser(() => db.query(
     "select public.move_board_module($1,'unknown',10,10)", [campaign],
   )), /INVALID_MODULE_POSITION/);
@@ -270,7 +311,7 @@ try {
   await db.exec(await readFile("supabase/tests/wide_board_smoke.sql", "utf8"));
 
   console.log(
-    `${migrations.length} migrations applied; pin colors, global note layers, and sticker CRUD passed.`,
+    `${migrations.length} migrations applied; board objects and shared clock passed.`,
   );
 } finally {
   await db.close();

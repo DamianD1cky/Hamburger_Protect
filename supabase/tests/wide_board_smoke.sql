@@ -32,6 +32,7 @@ declare
   positions jsonb;
   sticker jsonb;
   moved_layout jsonb;
+  clock_value jsonb;
 begin
   select * into settings from public.campaign_settings where campaign_id = room;
   select jsonb_agg(jsonb_build_array(id,x,y) order by id) into positions from public.notes where campaign_id = room;
@@ -47,6 +48,14 @@ begin
   if moved_layout->'activity' <> '{"x":1500,"y":800}'::jsonb
     or moved_layout->'safety' <> '{"x":600,"y":580}'::jsonb
     then raise exception 'ATOMIC_MODULE_MOVE_LOST_POSITION'; end if;
+  clock_value := public.update_campaign_clock(
+    room,
+    '{"mode":"countdown","style":"nixie","era":"UN","eraYear":5064,"running":true,"valueMs":3600000,"initialValueMs":3600000}'::jsonb
+  );
+  if clock_value->>'era' <> 'UN'
+    or (clock_value->>'eraYear')::integer <> 5064
+    or clock_value->>'referenceAt' is null
+    then raise exception 'CAMPAIGN_CLOCK_SAVE_FAILED'; end if;
   if (select appearance from public.campaign_settings where campaign_id = room) is distinct from settings.appearance
     then raise exception 'WIDE_BOARD_CHANGED_THEME'; end if;
   sticker := public.create_board_sticker(room, '⭐', 1900, 500, 0);
