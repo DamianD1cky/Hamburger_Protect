@@ -80,6 +80,16 @@
 
 移出成员会立即终止其活跃房间读取，释放没有待审核报告的未完成任务，并取消旧入店申请；待审核报告和历史内容保留。运行线上验收时只使用独立测试身份与战役，结束后按依赖顺序清理，并确认临时战役、业务身份和 Storage 对象均为 0。
 
+### 骰盘部署
+
+先运行 `npm run check:dice`、`npm run check:board-objects` 和浏览器回归，再通过 `npm run supabase:push` 部署 `shared_dice`，然后执行 `npx supabase functions deploy roll-dice --use-api`。骰子三个表在迁移中加入 `supabase_realtime` publication；RLS 过滤私密结果，客户端重连后通过 `get_dice_state` 补齐记录。
+
+`roll-dice` 在函数内使用 Auth `getUser` 校验 Bearer，然后以用户 JWT 调用准备和回执 RPC；只有服务器 service role 可写入随机结果。配置中的 gateway `verify_jwt=false` 用于兼容新版签名密钥，不表示匿名投掷开放。自托管修改 `DICE_ALLOWED_ORIGINS` 时，应配置自己的页面域名；不要把 service role key 放到前端。
+
+默认跨域策略同时允许 `localhost` 与 `127.0.0.1` 的 5173、5174 和 4173 端口；显式配置 `DICE_ALLOWED_ORIGINS` 会覆盖默认列表。请求头使用同版本 SDK 的 `@supabase/supabase-js/cors` 清单，避免 SDK 升级后预检遗漏。浏览器请求被跨域策略阻止时服务器可能没有收到投掷，Node 联机测试不会执行浏览器预检；验证应包含从实际页面地址触发的请求。
+
+每次请求以客户端 UUID 幂等；一项 GM 检定中每位玩家仅允许一次有效响应。每人每分钟最多 30 次新投掷，每次初始骰子最多 100 颗、随机抽取最多 1000 次。爆炸、重投的安全上限不会被 3D 动画改变。公开结果不能再改成秘密；暗骰者的回执、历史和实时 payload 不包含结果。
+
 ### 7. R10 公开参观与访客留言
 
 `20261028010000_public_visits.sql` 增加 GM 控制的公开参观、专用公开快照、独立访客留言和公开媒体读取。部署后运行：
@@ -114,6 +124,8 @@ Auth 云配置需要逐项与生产核对，不能把本地 `site_url` 覆盖到
 人工找回：先通过用户在申请/游玩之前已有的联系渠道核验身份，再核对 Auth ID 与 profile；使用服务端 `auth.admin.updateUserById(authUserId, { password: generatedTemporaryPassword })`，将临时密码通过已核验渠道单独交接，要求用户登录后自行改密。只在受保护环境运行 Admin API，不向前端提供 service-role key，不记录明文密码，不凭公开角色名、班次码或新建账号替换原账号归属。当前前端不支持自行绑定真实邮箱，因为直接替换 Auth email 会破坏现有账号名登录映射。
 
 ## 深度交互
+
+骰盘表情与贴纸缩放使用 `20261115000000_dice_reactions_sticker_scale.sql`。部署后可运行 `supabase db query --linked --file supabase/tests/dice_social_sticker_smoke.sql`；临时战役、表情与贴纸均在事务结束时回滚。表情只保存每位成员的最新一条，显示期限为 4 秒，服务器限制每秒最多一条。`get_dice_social` 只返回可见投掷的成员 ID，不返回公式或点数；`dice_reactions` 已加入 Realtime publication，前端另以短轮询补查过期和断线状态。
 
 初始方案未假设旧密码可迁移；实际执行已保留 24 个来源 bcrypt 密码，仍不承诺开放写入后的即时回退。匿名身份在新平台仍依赖浏览器会话，长期角色找回机制需要单独设计。生产执行必须同时具备来源和目标授权连接；只有前端 URL 和 publishable key，仍不足以导入历史数据。
 

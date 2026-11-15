@@ -62,6 +62,7 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.settings.clock = normalizeCampaignClock(board.settings.clock);
   board.noteLinks ??= [];
   board.stickers ??= [];
+  board.stickers.forEach((sticker) => { sticker.scale ??= 1; });
   board.settings.isPublic ??= false;
   board.members ??= [
     {
@@ -597,6 +598,7 @@ class LocalCampaignRepository implements CampaignRepository {
         x: Math.max(0, Math.min(BOARD_WIDTH - STICKER_SIZE, x)),
         y: Math.max(0, Math.min(BOARD_HEIGHT - STICKER_SIZE, y)),
         rotation: Math.max(-20, Math.min(20, rotation)),
+        scale: 1,
         createdBy: board.viewer.id,
       };
       board.stickers.push(created);
@@ -615,8 +617,8 @@ class LocalCampaignRepository implements CampaignRepository {
     this.updateAsMember((board) => {
       const sticker = board.stickers.find((item) => item.id === stickerId);
       if (!sticker) throw new Error("贴纸不存在");
-      sticker.x = Math.max(0, Math.min(BOARD_WIDTH - STICKER_SIZE, x));
-      sticker.y = Math.max(0, Math.min(BOARD_HEIGHT - STICKER_SIZE, y));
+      sticker.x = Math.max(0, Math.min(BOARD_WIDTH - Math.ceil(STICKER_SIZE * sticker.scale), x));
+      sticker.y = Math.max(0, Math.min(BOARD_HEIGHT - Math.ceil(STICKER_SIZE * sticker.scale), y));
       moved = { ...sticker };
     });
     if (!moved) throw new Error("贴纸不存在");
@@ -628,6 +630,20 @@ class LocalCampaignRepository implements CampaignRepository {
       board.stickers = board.stickers.filter((item) => item.id !== stickerId);
     });
     return stickerId;
+  }
+
+  async resizeBoardSticker(_campaignId: string, stickerId: string, scale: number): Promise<BoardSticker> {
+    if (!Number.isFinite(scale) || scale < .5 || scale > 2.5) throw new Error("贴纸大小须为 50%–250%");
+    let resized: BoardSticker | undefined;
+    this.updateAsMember((board) => {
+      const sticker = board.stickers.find((item) => item.id === stickerId);
+      if (!sticker) throw new Error("贴纸不存在");
+      sticker.scale = Math.round(scale * 100) / 100;
+      sticker.x = Math.min(sticker.x, BOARD_WIDTH - Math.ceil(STICKER_SIZE * sticker.scale));
+      sticker.y = Math.min(sticker.y, BOARD_HEIGHT - Math.ceil(STICKER_SIZE * sticker.scale));
+      resized = { ...sticker };
+    });
+    return resized!;
   }
 
   async updateMemberProfile(_campaignId: string, draft: MemberProfileDraft) {

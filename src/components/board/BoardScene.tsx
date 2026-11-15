@@ -59,6 +59,7 @@ interface BoardSceneProps {
   onNoteLayer: (noteId: string, direction: -1 | 1) => Promise<unknown>;
   onCreateSticker: (emoji: string, x: number, y: number, rotation: number) => Promise<unknown>;
   onMoveSticker: (stickerId: string, x: number, y: number) => Promise<unknown>;
+  onResizeSticker: (stickerId: string, scale: number) => Promise<unknown>;
   onDeleteSticker: (stickerId: string) => Promise<unknown>;
   onCreateNoteLink: (
     fromNoteId: string,
@@ -100,6 +101,7 @@ export function BoardScene({
   onCreateNoteLink,
   onCreateSticker,
   onMoveSticker,
+  onResizeSticker,
   onDeleteSticker,
   onDeleteNoteLink,
   onUpdateNoteLinkLabel,
@@ -466,6 +468,7 @@ export function BoardScene({
               viewScaleRef={viewScaleRef}
               canEdit={canUpdateSharedBoard}
               onMove={onMoveSticker}
+              onResize={onResizeSticker}
               onDelete={onDeleteSticker}
             />
           ))}

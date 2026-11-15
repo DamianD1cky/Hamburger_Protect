@@ -20,3 +20,7 @@ enable_signup = true
 enable_confirmations = false
 [functions.migrate-identity]
 verify_jwt = true
+[functions.roll-dice]
+# The handler verifies the bearer with Auth.getUser before any write. This
+# supports modern signing keys that the gateway's legacy JWT verifier rejects.
+verify_jwt = false

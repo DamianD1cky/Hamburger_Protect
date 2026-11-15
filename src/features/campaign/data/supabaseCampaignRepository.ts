@@ -42,6 +42,7 @@ interface RemoteBoardSticker {
   x: number;
   y: number;
   rotation: number;
+  scale?: number;
   created_by: string;
 }
 
@@ -216,6 +217,7 @@ async function loadBoardStickers(campaignId: string): Promise<BoardSticker[]> {
       x: sticker.x,
       y: sticker.y,
       rotation: sticker.rotation,
+      scale: sticker.scale ?? 1,
       createdBy: sticker.created_by,
     }));
   } catch {
@@ -567,6 +569,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
       x: sticker.x,
       y: sticker.y,
       rotation: sticker.rotation,
+      scale: sticker.scale ?? 1,
       createdBy: sticker.created_by,
     };
   }
@@ -588,6 +591,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
       x: sticker.x,
       y: sticker.y,
       rotation: sticker.rotation,
+      scale: sticker.scale ?? 1,
       createdBy: sticker.created_by,
     };
   }
@@ -596,6 +600,15 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_campaign_id: campaignId,
       p_id: id,
     });
+  }
+  async resizeBoardSticker(campaignId: string, id: string, scale: number): Promise<BoardSticker> {
+    const sticker = await rpc<RemoteBoardSticker>("resize_board_sticker", {
+      p_campaign_id: campaignId, p_id: id, p_scale: scale,
+    });
+    return {
+      id: sticker.id, emoji: sticker.emoji, x: sticker.x, y: sticker.y,
+      rotation: sticker.rotation, scale: sticker.scale ?? 1, createdBy: sticker.created_by,
+    };
   }
   async moveNote(campaignId: string, id: string, x: number, y: number) {
     await rpc("move_note", {

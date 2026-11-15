@@ -89,6 +89,7 @@ export interface CampaignRepository {
     y: number,
   ): Promise<BoardSticker>;
   deleteBoardSticker(campaignId: string, stickerId: string): Promise<string>;
+  resizeBoardSticker(campaignId: string, stickerId: string, scale: number): Promise<BoardSticker>;
   uploadNotePhoto(campaignId: string, file: File): Promise<string>;
   createNoteLink(
     campaignId: string,

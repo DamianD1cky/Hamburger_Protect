@@ -28,9 +28,11 @@ import type {
   BoardModuleLayout,
 } from "../domain/boardModules";
 import type { CampaignClockConfig } from "../domain/campaignClock";
+import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../domain/boardGeometry";
 
 type PendingNoteMove = { revision: number; x: number; y: number };
 type PendingModuleMove = { revision: number; x: number; y: number };
+type PendingSticker = { revision: number; sticker: BoardSticker };
 type PendingClockSave = {
   revision: number;
   config: CampaignClockConfig;
@@ -41,8 +43,9 @@ function withPendingPositions(
   pendingNotes: Map<string, PendingNoteMove>,
   pendingModules: Map<BoardModuleKey, PendingModuleMove>,
   pendingClock: PendingClockSave | null,
+  pendingStickers: Map<string, PendingSticker>,
 ) {
-  if (!pendingNotes.size && !pendingModules.size && !pendingClock) {
+  if (!pendingNotes.size && !pendingModules.size && !pendingClock && !pendingStickers.size) {
     return board;
   }
   const moduleLayout = { ...board.settings.moduleLayout };
@@ -51,6 +54,7 @@ function withPendingPositions(
   });
   return {
     ...board,
+    stickers: board.stickers.map((sticker) => pendingStickers.get(sticker.id)?.sticker ?? sticker),
     notes: board.notes.map((note) => {
       const pending = pendingNotes.get(note.id);
       return pending ? { ...note, x: pending.x, y: pending.y } : note;
@@ -106,6 +110,9 @@ export function useCampaignBoard(
     new Map<BoardModuleKey, PendingModuleMove>(),
   );
   const pendingClockSave = useRef<PendingClockSave | null>(null);
+  const pendingStickers = useRef(new Map<string, PendingSticker>());
+  const stickerWrites = useRef(new Map<string, Promise<unknown>>());
+  const stickerRevision = useRef(0);
   const options = campaignBoardQueryOptions(requestedCampaignId, publicView);
   const boardKey = options.queryKey;
   const query = useQuery({
@@ -116,6 +123,7 @@ export function useCampaignBoard(
         noteMoveRevisions.current,
         moduleMoveRevisions.current,
         pendingClockSave.current,
+        pendingStickers.current,
       ),
     placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
     refetchInterval: cloudEnabled ? 5_000 : false,
@@ -130,6 +138,7 @@ export function useCampaignBoard(
       noteMoveRevisions.current,
       moduleMoveRevisions.current,
       pendingClockSave.current,
+      pendingStickers.current,
     );
   };
 
@@ -372,27 +381,52 @@ export function useCampaignBoard(
     return created;
   };
 
-  const moveBoardSticker = async (stickerId: string, x: number, y: number) => {
+  const updateSticker = async (stickerId: string, change: (sticker: BoardSticker) => BoardSticker,
+    save: () => Promise<BoardSticker>) => {
     const previous = queryClient
       .getQueryData<CampaignBoard>(boardKey)
       ?.stickers.find((item) => item.id === stickerId);
-    if (previous) setCachedSticker({ ...previous, x, y });
+    const revision = ++stickerRevision.current;
+    if (previous) {
+      const sticker = change(previous);
+      pendingStickers.current.set(stickerId, { revision, sticker });
+      setCachedSticker(sticker);
+    }
+    const write = (stickerWrites.current.get(stickerId) ?? Promise.resolve()).catch(() => {}).then(async () => {
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      return save();
+    });
+    stickerWrites.current.set(stickerId, write);
     try {
-      const moved = await repository.moveBoardSticker(
-        campaignId,
-        stickerId,
-        x,
-        y,
-      );
-      setCachedSticker(moved);
-      return moved;
+      const updated = await write;
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      if (pendingStickers.current.get(stickerId)?.revision === revision) {
+        pendingStickers.current.delete(stickerId);
+        setCachedSticker(updated);
+      }
+      return updated;
     } catch (error) {
-      if (previous) setCachedSticker(previous);
+      if (pendingStickers.current.get(stickerId)?.revision === revision) {
+        pendingStickers.current.delete(stickerId);
+        if (previous) setCachedSticker(previous);
+      }
       throw error;
+    } finally {
+      if (stickerWrites.current.get(stickerId) === write) stickerWrites.current.delete(stickerId);
     }
   };
+  const moveBoardSticker = (stickerId: string, x: number, y: number) =>
+    updateSticker(stickerId, (sticker) => ({ ...sticker, x, y }),
+      () => repository.moveBoardSticker(campaignId, stickerId, x, y));
+  const resizeBoardSticker = (stickerId: string, scale: number) =>
+    updateSticker(stickerId, (sticker) => ({
+      ...sticker, scale,
+      x: Math.min(sticker.x, BOARD_WIDTH - Math.ceil(STICKER_SIZE * scale)),
+      y: Math.min(sticker.y, BOARD_HEIGHT - Math.ceil(STICKER_SIZE * scale)),
+    }), () => repository.resizeBoardSticker(campaignId, stickerId, scale));
 
   const deleteBoardSticker = async (stickerId: string) => {
+    await stickerWrites.current.get(stickerId)?.catch(() => {});
     const previous = queryClient
       .getQueryData<CampaignBoard>(boardKey)
       ?.stickers.find((item) => item.id === stickerId);
@@ -456,6 +490,7 @@ export function useCampaignBoard(
       repository.uploadNotePhoto(campaignId, file),
     createBoardSticker,
     moveBoardSticker,
+    resizeBoardSticker,
     deleteBoardSticker,
     createNoteLink,
     deleteNoteLink: (linkId: string) =>

@@ -127,6 +127,11 @@ const ClockSettingsDialog = lazy(() =>
     default: module.ClockSettingsDialog,
   })),
 );
+const DiceWorkspace = lazy(() =>
+  import("../features/dice/DiceWorkspace").then((module) => ({
+    default: module.DiceWorkspace,
+  })),
+);
 
 const closedComposer: ComposerState = {
   open: false,
@@ -802,6 +807,13 @@ function CampaignBoardWorkspace({
               throw error;
             }
           }}
+          onResizeSticker={async (id, scale) => {
+            try { return await campaign.resizeBoardSticker(id, scale); }
+            catch (error) {
+              showToast(error instanceof Error ? error.message : "贴纸缩放失败，请重试。");
+              throw error;
+            }
+          }}
           onCreateNoteLink={campaign.createNoteLink}
           onDeleteNoteLink={campaign.deleteNoteLink}
           onUpdateNoteLinkLabel={campaign.updateNoteLinkLabel}
@@ -818,6 +830,9 @@ function CampaignBoardWorkspace({
           onMoveModule={campaign.moveBoardModule}
           onOpenClockSettings={() => setClockSettingsOpen(true)}
         />
+        {!publicView && board.viewer.role !== "observer" && (
+          <DiceWorkspace key={`${board.campaign.id}:${board.viewer.id}`} board={board} />
+        )}
       </Suspense>
 
       <div className="shop-status" aria-label="战役状态">

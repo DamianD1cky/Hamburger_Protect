@@ -1,0 +1,65 @@
+[
+  {
+    "source": "jade_d4_tripo_v31_corrected_highpoly.glb",
+    "sha256": "026a7757988e1938d441176fb3a95339be8361de609d05afcc403b366e1478cf",
+    "sourceBytes": 1355536,
+    "runtime": "d4.glb",
+    "runtimeBytes": 360232,
+    "triangles": 10447,
+    "textureMaxEdge": 1024
+  },
+  {
+    "source": "jade_dice_tripo_v31_highpoly.glb",
+    "sha256": "b052238c3ec277ab12ccc7e15728ed871df35c6f861a599ed32b83d53c88c49e",
+    "sourceBytes": 2798068,
+    "runtime": "d6.glb",
+    "runtimeBytes": 339940,
+    "triangles": 7000,
+    "textureMaxEdge": 1024
+  },
+  {
+    "source": "jade_d8_tripo_v31_corrected_highpoly.glb",
+    "sha256": "f4b0c9b520c99afb301d11e7066500d31239f163b9e0e7e5c34ec4310b48bbfb",
+    "sourceBytes": 1607064,
+    "runtime": "d8.glb",
+    "runtimeBytes": 463068,
+    "triangles": 15479,
+    "textureMaxEdge": 1024
+  },
+  {
+    "source": "jade_d10_tripo_v31_corrected_highpoly.glb",
+    "sha256": "6c037020b8ac7d952c3833e8353bd780a26b54c9a6d6ef9eba356fa605529537",
+    "sourceBytes": 1491324,
+    "runtime": "d10.glb",
+    "runtimeBytes": 479904,
+    "triangles": 17592,
+    "textureMaxEdge": 1024
+  },
+  {
+    "source": "jade_d12_tripo_v31_corrected_highpoly.glb",
+    "sha256": "dd1f0033429494c3333dc47ca8c9e60d6be8afb8ea64960b98d92ca80f3d282b",
+    "sourceBytes": 2226848,
+    "runtime": "d12.glb",
+    "runtimeBytes": 514688,
+    "triangles": 17513,
+    "textureMaxEdge": 1024
+  },
+  {
+    "source": "jade_d20_tripo_v31_corrected_highpoly.glb",
+    "sha256": "9ac270c33ec2eaf9edd3968e77e73a5ec6e8252b1716a6d03412a92d65e11b70",
+    "sourceBytes": 1486964,
+    "runtime": "d20.glb",
+    "runtimeBytes": 469344,
+    "triangles": 15271,
+    "textureMaxEdge": 1024
+  },
+  {
+    "source": "leather_hex_dice_tray_tripo_v31_highpoly.glb",
+    "sha256": "331bd33da756190b6ce79a1c8f4f8add4d7fae8e27a401b802b73fbfe56e4087",
+    "sourceBytes": 3106572,
+    "runtime": "tray.glb",
+    "runtimeBytes": 1010468,
+    "triangles": 8615,
+    "textureMaxEdge": 1024
+  }
+]

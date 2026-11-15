@@ -12,6 +12,7 @@ const authKey = `sb-${new URL(origin).hostname.split(".")[0]}-auth-token`;
 const preview = process.env.HP_PREVIEW_URL || "http://127.0.0.1:5174";
 const authId = "10000000-0000-4000-8000-000000000010";
 const actorId = "20000000-0000-4000-8000-000000000010";
+const peerId = "20000000-0000-4000-8000-000000000011";
 const campaignId = "30000000-0000-4000-8000-000000000010";
 const deniedId = "30000000-0000-4000-8000-000000000011";
 const noteId = "40000000-0000-4000-8000-000000000010";
@@ -50,7 +51,8 @@ try {
     { label: "mobile", width: 390, height: 844, reduced: false, unsupported: false },
     { label: "reduced", width: 1440, height: 900, reduced: true, unsupported: false },
     { label: "fallback", width: 1440, height: 900, reduced: false, unsupported: true },
-  ]) {
+  ].filter((scenario) => !process.env.HP_MOTION_SCENARIOS || process.env.HP_MOTION_SCENARIOS.split(",").includes(scenario.label))) {
+    console.log(`Checking ${scenario.label} UI`);
     const context = await browser.newContext({
       viewport: { width: scenario.width, height: scenario.height },
       reducedMotion: scenario.reduced ? "reduce" : "no-preference",
@@ -93,8 +95,15 @@ try {
     let deleteLinkRequests = 0;
     let boardStickers = [];
     let rejectSticker = false;
+    let rejectStickerResize = false;
     let appearanceWrites = 0;
     let clockWrites = 0;
+    const diceState = { rolls: [], presets: [], checks: [], hasMore: false };
+    const dicePosts = [];
+    const socialState = { rolling: [peerId], reactions: [] };
+    const reactionPosts = [];
+    let rejectDiceOnce = false;
+    let redactBlindReceipt = false;
     let imageUploads = 0;
     let rejectAppearance = false;
     let delayNextModuleMove = false;
@@ -110,7 +119,10 @@ try {
     ];
     let board = {
       id: campaignId, name, join_code: "TEST00", status: "active", burger_index: 5,
-      members: [{ user_id: actorId, role: "gm", character_name: "验收店长", job_title: "店长", profile_text: "", active: true, joined_at: date, left_at: null }],
+      members: [
+        { user_id: actorId, role: "gm", character_name: "验收店长", job_title: "店长", profile_text: "", active: true, joined_at: date, left_at: null },
+        { user_id: peerId, role: "player", character_name: "验收玩家", job_title: "员工", profile_text: "", active: true, joined_at: date, left_at: null },
+      ],
       resources: [], checklist_categories: [], checklist_items: [],
       quests: [{ id: "test-quest", title: "验收任务", body: "提交后等待审核", assignee_label: "服务员", due_at: null, status: "pending_review", created_by: actorId, claimed_by: actorId, submissions: [{ id: "test-submission" }] }],
       notes: [
@@ -192,6 +204,65 @@ try {
         };
         result = board.settings.clock_config;
       }
+      else if (path.endsWith("/get_dice_state")) result = diceState;
+      else if (path.endsWith("/get_dice_social")) result = {
+        rolling: socialState.rolling,
+        reactions: socialState.reactions.filter((reaction) => Date.now() - Date.parse(reaction.sent_at) < 4000),
+      };
+      else if (path.endsWith("/send_dice_reaction")) {
+        reactionPosts.push(body);
+        socialState.reactions = [{ actor_id: actorId, emoji: body.p_emoji, sent_at: new Date().toISOString() }];
+        result = null;
+      }
+      else if (path.endsWith("/functions/v1/roll-dice")) {
+        dicePosts.push(body);
+        if (rejectDiceOnce) {
+          rejectDiceOnce = false; status = 503; result = { error: "temporary failure" };
+        } else {
+          result = diceState.rolls.find((r) => r.id === body.requestId);
+          if (!result) {
+            const rolled = [...body.notation.matchAll(/(\d+)d(\d+)/g)].flatMap((match) => {
+              const sides = Number(match[2]);
+              return Array.from({ length: Number(match[1]) }, () => ({
+                value: sides === 6 ? 4 : Math.min(12, sides), sides, kept: true, flags: "",
+              }));
+            });
+            const bonus = Number(body.notation.match(/([+-]\d+)$/)?.[1] ?? 0);
+            const total = rolled.reduce((sum, die) => sum + die.value, bonus);
+            result = {
+              id: body.requestId, campaign_id: campaignId, actor_id: actorId, actor_name: "验收店长",
+              notation: body.notation, label: body.label, visibility: body.visibility,
+              parent_id: body.parentId ?? null, check_id: body.checkId ?? null,
+              revealed_at: null, status: "complete", created_at: new Date().toISOString(),
+              result: { total, output: `${body.notation}: [${rolled.map((die) => die.value).join(",")}]+${bonus} = ${total}`,
+                dice: rolled, detail: [] },
+            };
+            diceState.rolls.unshift(result);
+          }
+          if (body.visibility === "blind" && redactBlindReceipt) {
+            diceState.rolls[0] = { ...diceState.rolls[0], result: null };
+            result = { ...result, result: null };
+          }
+        }
+      }
+      else if (path.endsWith("/save_dice_preset")) {
+        const preset = { id: crypto.randomUUID(), campaign_id: campaignId, owner_id: actorId,
+          name: body.p_name, notation: body.p_notation, visibility: body.p_visibility, shared: body.p_shared };
+        diceState.presets.push(preset); result = preset;
+      }
+      else if (path.endsWith("/reveal_dice_roll")) {
+        result = diceState.rolls.find((r) => r.id === body.p_id);
+        result.revealed_at = new Date().toISOString();
+      }
+      else if (path.endsWith("/create_dice_check")) {
+        result = { id: crypto.randomUUID(), campaign_id: campaignId, title: body.p_title,
+          notation: body.p_notation, visibility: body.p_visibility,
+          targets: [{ id: actorId, name: "验收玩家" }], responses: {}, open: true, created_at: date };
+        diceState.checks.unshift(result);
+      }
+      else if (path.endsWith("/close_dice_check")) {
+        const item = diceState.checks.find((c) => c.id === body.p_id); item.open = false; result = null;
+      }
       else if (path.endsWith("/update_board_appearance")) {
         if (rejectAppearance) { status = 400; result = { message: "主题保存失败" }; }
         else {
@@ -243,7 +314,7 @@ try {
           status = 404;
           result = { code: "PGRST202", message: "Could not find the function public.create_board_sticker" };
         } else {
-          const sticker = { id: `sticker-${boardStickers.length + 1}`, campaign_id: campaignId, emoji: body.p_emoji, x: body.p_x, y: body.p_y, rotation: body.p_rotation, created_by: actorId };
+          const sticker = { id: `sticker-${boardStickers.length + 1}`, campaign_id: campaignId, emoji: body.p_emoji, x: body.p_x, y: body.p_y, scale: 1, rotation: body.p_rotation, created_by: actorId };
           boardStickers.push(sticker);
           result = sticker;
         }
@@ -251,6 +322,16 @@ try {
       else if (path.endsWith("/move_board_sticker")) {
         boardStickers = boardStickers.map((sticker) => sticker.id === body.p_id ? { ...sticker, x: body.p_x, y: body.p_y } : sticker);
         result = boardStickers.find((sticker) => sticker.id === body.p_id);
+      }
+      else if (path.endsWith("/resize_board_sticker")) {
+        if (rejectStickerResize) { status = 400; result = { message: "贴纸缩放失败" }; }
+        else {
+          boardStickers = boardStickers.map((sticker) => sticker.id === body.p_id ? {
+            ...sticker, scale: body.p_scale, x: Math.min(sticker.x, 2144 - Math.ceil(72 * body.p_scale)),
+            y: Math.min(sticker.y, 1206 - Math.ceil(72 * body.p_scale)),
+          } : sticker);
+          result = boardStickers.find((sticker) => sticker.id === body.p_id);
+        }
       }
       else if (path.endsWith("/delete_board_sticker")) {
         boardStickers = boardStickers.filter((sticker) => sticker.id !== body.p_id);
@@ -288,13 +369,419 @@ try {
       "legacy rooms keep an independent burger frame");
     check(await page.locator('.board > .board-surface[data-surface="felt"]').count() === 1,
       "legacy rooms keep their board material");
+    check(boardRequests === 1, "mounted board reuses prepared query data");
+    if (["desktop", "mobile", "reduced"].includes(scenario.label) || process.env.HP_MOTION_DICE_ONLY) {
+      await page.getByRole("button", { name: "打开骰盘", exact: true }).click();
+      const tray = page.locator(".dice-dialog");
+      await tray.waitFor();
+      await tray.locator(`.dice-member[data-member-id="${peerId}"][data-rolling="true"]`).waitFor();
+      check(await tray.locator(".dice-member-avatar").count() === 2, "dice layer lists GM and player avatars");
+      await tray.getByRole("button", { name: "验收店长，发送表情", exact: true }).click();
+      await tray.getByRole("button", { name: "发送 🍀", exact: true }).click();
+      await tray.getByRole("status", { name: "验收店长：🍀", exact: true }).waitFor();
+      check(reactionPosts.at(-1).p_campaign_id === campaignId && reactionPosts.at(-1).p_emoji === "🍀",
+        "a non-rolling member sends a reaction to the current campaign");
+      await page.screenshot({ path: join(screenshots, `${scenario.label}-dice-reaction.png`) });
+      socialState.rolling = [];
+      socialState.reactions = [{ actor_id: peerId, emoji: "👏", sent_at: new Date().toISOString() }];
+      await tray.getByRole("status", { name: "验收玩家：👏", exact: true }).waitFor();
+      check(await tray.getByRole("status", { name: "验收玩家：👏", exact: true }).isVisible(),
+        "a remote member's reaction appears beside their own avatar");
+      const openTool = async (name) => {
+        await tray.getByRole("button", { name: "骰盘更多操作", exact: true }).click();
+        await tray.getByRole("dialog", { name: "骰盘更多操作", exact: true }).getByRole("button", { name, exact: true }).click();
+      };
+      const addFromDie = async (type = "d6") => {
+        await tray.getByRole("button", { name: "选择新增骰型", exact: true }).click();
+        const types = tray.getByRole("dialog", { name: "添加骰型", exact: true });
+        await types.getByRole("button", { name: type, exact: true }).click();
+        await types.waitFor({ state: "detached" });
+      };
+      check(await tray.locator(".dice-layer-header nav button").count() === 2, "duplicate top-right controls collapse into More and Close");
+      const rect = await tray.boundingBox();
+      check(rect.x >= -1 && rect.x + rect.width <= scenario.width + 1, "dice tray fits the viewport");
+      check(await tray.evaluate((el) => el.scrollWidth <= el.clientWidth), "dice tray has no horizontal overflow");
+      const boardBeforeDice = await page.locator(".world").getAttribute("style");
+      await tray.locator('.dice-tray-scene[data-ready="true"] canvas').waitFor();
+      check(await tray.locator(".dice-scene canvas").count() === 1, "dice tray is 3D as soon as it opens");
+      check(await tray.evaluate((el) => el.parentElement === document.body), "3D layer is outside the board world");
+      await page.waitForFunction(() => {
+        const target = document.querySelector(".dice-pick-target");
+        return target?.dataset.topFace && target.style.left && target.style.top;
+      });
+      const pick = await tray.locator(".dice-pick-target").first().boundingBox();
+      if (scenario.label === "mobile") await page.touchscreen.tap(pick.x + pick.width / 2, pick.y + pick.height / 2);
+      else await page.mouse.click(pick.x + pick.width / 2, pick.y + pick.height / 2);
+      await tray.getByRole("group", { name: "骰子选项", exact: true }).waitFor();
+      check(await tray.getByRole("button", { name: "投掷这颗骰子", exact: true }).isVisible(), "3D die picking opens its options");
+      await page.waitForFunction(() => {
+        const menu = document.querySelector(".dice-fan-menu");
+        return menu?.dataset.fanReady === "true" && menu.dataset.interactive === "true" &&
+          menu.getAnimations({ subtree: true }).every((animation) => animation.playState === "finished");
+      });
+      const fanGeometry = await tray.locator(".dice-fan-action").evaluateAll((buttons) => buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+      }));
+      check(fanGeometry.every((r) => r.x >= 0 && r.y >= 0 && r.right <= scenario.width && r.bottom <= scenario.height),
+        "fan actions stay on screen on desktop and mobile");
+      check(fanGeometry.every((r) => r.width >= 44 && r.height >= 44), "fan keeps touch-sized actions");
+      check(fanGeometry.some((r) => Math.abs(r.y - fanGeometry[0].y) > 20), "dice actions follow an arc");
+      await page.waitForFunction(() => document.activeElement?.classList.contains("dice-fan-action"));
+      await page.keyboard.press("ArrowRight");
+      check(await tray.getByRole("button", { name: "选择新增骰型", exact: true }).evaluate((button) => button === document.activeElement),
+        "arrow keys move between radial actions");
+      await page.screenshot({ path: join(screenshots, `${scenario.label}-dice-menu.png`) });
+      await tray.getByRole("button", { name: "修正与可见范围", exact: true }).click();
+      const dieSettings = tray.getByRole("dialog", { name: "选中骰子设置面板", exact: true });
+      await dieSettings.waitFor();
+      await page.waitForFunction(() => document.querySelector(".dice-popover")?.dataset.positioned === "true" &&
+        document.querySelector(".dice-popover").getAnimations().every((animation) => animation.playState === "finished"));
+      const popupRect = await dieSettings.boundingBox();
+      check(popupRect.x >= 0 && popupRect.y >= 0 &&
+        popupRect.x + popupRect.width <= scenario.width && popupRect.y + popupRect.height <= scenario.height,
+      "die submenu stays within the screen");
+      check(popupRect.height < scenario.height * .8 && await tray.locator(".dice-drawer").count() === 0,
+        "die settings use a compact popover rather than a full-height sidebar");
+      check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 1,
+        "die silhouette stays selected while its submenu is open");
+      await page.screenshot({ path: join(screenshots, `${scenario.label}-dice-settings-popover.png`) });
+      if (scenario.label === "desktop") {
+        await page.setViewportSize({ width: 820, height: 420 });
+        await page.waitForFunction(() => {
+          const rect = document.querySelector(".dice-popover")?.getBoundingClientRect();
+          return rect && rect.x >= 0 && rect.right <= innerWidth && rect.y >= 0 && rect.bottom <= innerHeight;
+        });
+        check(await dieSettings.evaluate((element) => element.scrollWidth <= element.clientWidth),
+          "popover fits a short landscape viewport without horizontal overflow");
+        await page.setViewportSize({ width: scenario.width, height: scenario.height });
+      }
+      await dieSettings.getByLabel("选中骰子总修正").fill("2");
+      await dieSettings.getByRole("button", { name: "返回骰子菜单", exact: true }).click();
+      await dieSettings.waitFor({ state: "detached" });
+      await tray.getByRole("button", { name: "修正与可见范围", exact: true }).click();
+      check(await dieSettings.getByLabel("选中骰子总修正").inputValue() === "2",
+        "returning to a submenu keeps the current selection settings");
+      await dieSettings.getByLabel("选中骰子总修正").fill("0");
+      await page.keyboard.press("Escape");
+      await dieSettings.waitFor({ state: "detached" });
+      check(await tray.isVisible(), "Escape returns from a submenu without closing the tray");
+      await page.waitForFunction(() => document.activeElement?.classList.contains("dice-fan-action"));
+      await page.keyboard.press("Escape");
+      await tray.locator(".dice-fan-menu").waitFor({ state: "detached" });
+      check(await tray.isVisible(), "Escape dismisses the fan without closing the dice tray");
+      if (scenario.label === "mobile") await page.touchscreen.tap(pick.x + pick.width / 2, pick.y + pick.height / 2);
+      else await page.mouse.click(pick.x + pick.width / 2, pick.y + pick.height / 2);
+      await tray.getByRole("button", { name: "选择新增骰型", exact: true }).click();
+      const types = tray.getByRole("dialog", { name: "添加骰型", exact: true });
+      await types.waitFor({ state: "visible" });
+      await page.waitForFunction(() => document.querySelector(".dice-popover")?.getAnimations()
+        .every((animation) => animation.playState === "finished"));
+      await page.screenshot({ path: join(screenshots, `${scenario.label}-dice-type-submenu.png`) });
+      check(await types.locator(".dice-add-menu button").count() === 8, "add submenu offers all standard dice and Fate");
+      check(await types.getByRole("button", { name: "返回骰子菜单", exact: true }).isVisible(), "dice-type submenu returns to the selected die");
+      await types.getByRole("button", { name: "d20", exact: true }).click();
+      check(await tray.locator(".dice-pick-target").count() === 2, "add another die through its menu");
+      check((await tray.locator(".dice-pick-target").last().getAttribute("aria-label")).includes("d20"),
+        "add submenu can add a different die type");
+      await page.waitForFunction(() => {
+        const targets = [...document.querySelectorAll(".dice-pick-target")];
+        const target = targets.at(-1);
+        return targets.length === 2 && target?.dataset.topFace && target.style.left && target.style.top;
+      });
+      const secondPick = await tray.locator(".dice-pick-target").last().boundingBox();
+      await page.mouse.click(secondPick.x + secondPick.width / 2, secondPick.y + secondPick.height / 2);
+      await tray.getByRole("group", { name: "骰子选项", exact: true }).waitFor();
+      await tray.getByRole("button", { name: "移出骰盘", exact: true }).click();
+      check(await tray.locator(".dice-pick-target").count() === 1, "removing a tray object works without a roll mutation");
+      if (scenario.label === "desktop") {
+        for (const sides of [20, 8]) {
+          await openTool("添加骰子");
+          await tray.getByRole("button", { name: `d${sides}`, exact: true }).click();
+        }
+        await page.waitForFunction(() => {
+          const targets = [...document.querySelectorAll(".dice-pick-target")];
+          return targets.length === 3 && targets.every((target) => target.style.left && target.dataset.topFace);
+        });
+        const footprints = await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => target.dataset.footprint.split(",").map(Number)));
+        check(footprints.every((a, i) => footprints.slice(i + 1).every((b) =>
+          a[1] <= b[0] || a[0] >= b[1] || a[3] <= b[2] || a[2] >= b[3])),
+        "new mixed dice occupy separate free floor areas");
+        const staged = await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => {
+          const rect = target.getBoundingClientRect();
+          return { id: target.dataset.dieId, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        }));
+        const drawBox = async (points) => {
+          await page.mouse.move(Math.min(...points.map((point) => point.x)) - 35,
+            Math.max(...points.map((point) => point.y)) + 45);
+          await page.mouse.down();
+          await page.mouse.move(Math.max(...points.map((point) => point.x)) + 35,
+            Math.min(...points.map((point) => point.y)) - 45, { steps: 12 });
+        };
+        await drawBox(staged.slice(0, 2));
+        check(await tray.locator(".dice-selection-box").isVisible(), "mouse drag displays a selection rectangle");
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 2,
+          "marquee highlights only dice with enclosed centers");
+        check(await tray.locator(".dice-fan-menu").count() === 0, "batch menu waits until the drag finishes");
+        await page.screenshot({ path: join(screenshots, "desktop-dice-marquee.png") });
+        await page.mouse.up();
+        await tray.getByRole("button", { name: "统一设置选中骰子", exact: true }).waitFor();
+        check(await tray.locator(".dice-selection-box").isHidden(), "selection rectangle disappears on release");
+        await page.waitForFunction(() => document.querySelector(".dice-fan-menu")?.dataset.interactive === "true");
+        const beforeDrag = dicePosts.length;
+        const beforePoses = await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => target.dataset.position));
+        await page.mouse.move(staged[0].x, staged[0].y);
+        await page.mouse.down();
+        await tray.locator('.dice-tray-scene[data-gesture="lift"]').waitFor();
+        check(await tray.locator(".dice-fan-menu").count() === 0, "long press lifts the selected group and hides its menu");
+        await page.mouse.move(staged[0].x + 70, staged[0].y - 35, { steps: 10 });
+        const duringPoses = await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => target.dataset.position));
+        check(duringPoses[0] !== beforePoses[0] && duringPoses[1] !== beforePoses[1] && duringPoses[2] === beforePoses[2],
+          "long-press dragging moves only selected dice");
+        await page.screenshot({ path: join(screenshots, "desktop-dice-dragging.png") });
+        await page.keyboard.press("Escape");
+        await page.mouse.up();
+        check(dicePosts.length === beforeDrag, "cancelled dragging never submits a roll");
+        check(JSON.stringify(await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => target.dataset.position))) === JSON.stringify(beforePoses),
+          "Escape restores every dragged die to its original pose");
+        await page.waitForFunction(() => document.querySelector(".dice-fan-menu")?.dataset.interactive === "true");
+        await page.keyboard.down("Shift");
+        await drawBox([staged[2]]);
+        await page.mouse.up();
+        await page.keyboard.up("Shift");
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 3,
+          "Shift marquee adds to the existing selection");
+        await page.waitForFunction(() => document.querySelector(".dice-fan-menu")?.dataset.interactive === "true");
+        await page.keyboard.press("Escape");
+        await tray.locator(".dice-fan-menu").waitFor({ state: "detached" });
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 0, "Escape clears the batch selection");
+        await drawBox(staged.slice(0, 2));
+        await page.mouse.up();
+        await tray.getByRole("button", { name: "统一设置选中骰子", exact: true }).click();
+        const selectedPanel = tray.getByRole("dialog", { name: "选中骰子设置面板", exact: true });
+        await selectedPanel.getByLabel("选中骰子总修正").fill("3");
+        await selectedPanel.getByLabel("选中骰子用途").fill("批量检定");
+        await selectedPanel.getByLabel("选中骰子可见性").selectOption("self");
+        check(await selectedPanel.getByLabel("选中骰子公式").textContent() === "1d6+1d20+3",
+          "mixed selected dice share one total modifier");
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 2,
+          "opening settings preserves the selected dice");
+        await page.waitForFunction(() => document.querySelector(".dice-popover")?.getAnimations()
+          .every((animation) => animation.playState === "finished"));
+        await page.screenshot({ path: join(screenshots, "desktop-dice-selection-settings.png") });
+        const beforeBatch = dicePosts.length;
+        rejectDiceOnce = true;
+        await selectedPanel.getByRole("button", { name: "投掷选中（2）", exact: true }).click();
+        await tray.getByRole("alert").waitFor();
+        const batchRequest = dicePosts.at(-1).requestId;
+        check(await selectedPanel.getByLabel("选中骰子总修正").isDisabled(),
+          "uncertain retries keep their original settings");
+        await tray.getByRole("button", { name: "收起面板", exact: true }).click();
+        await page.waitForFunction(() => document.querySelector(".dice-fan-menu")?.dataset.interactive === "true");
+        await page.keyboard.press("Escape");
+        await tray.locator(".dice-fan-menu").waitFor({ state: "detached" });
+        await page.mouse.click(staged[2].x, staged[2].y);
+        await page.waitForFunction(() => document.querySelectorAll('.dice-pick-target[aria-pressed="true"]').length === 1);
+        await tray.locator(".dice-stage-roll").click();
+        await page.waitForFunction((id) => document.querySelector(`[data-die-id="${id}:1"]`)?.dataset.faceValue === "12", batchRequest);
+        await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+        check(dicePosts.length === beforeBatch + 2 && dicePosts.at(-1).requestId === batchRequest,
+          "batch retry remains one idempotent request after selection changes");
+        check(dicePosts.at(-1).notation === "1d6+1d20+3" &&
+          dicePosts.at(-1).label === "批量检定" && dicePosts.at(-1).visibility === "self",
+        "batch throw submits the selected mixed pool and shared settings");
+        const stationary = tray.locator(`[data-die-id="${staged[2].id}"]`);
+        const stationaryAfter = await stationary.boundingBox();
+        check(Math.abs(stationaryAfter.x + stationaryAfter.width / 2 - staged[2].x) < 1 &&
+          Math.abs(stationaryAfter.y + stationaryAfter.height / 2 - staged[2].y) < 1 &&
+          await stationary.getAttribute("data-face-value") === "",
+        "batch throw preserves the unselected die position and value");
+        check(await tray.locator(".dice-pick-target").count() === 3 && diceState.rolls.length === 1,
+          "selected dice are replaced together without replacing the whole tray");
+        for (const [index, value] of [4, 12].entries()) {
+          check(await tray.locator(`[data-die-id="${batchRequest}:${index}"]`).getAttribute("data-top-face") === String(value),
+            "each selected die lands on its server face");
+        }
+        check(diceState.rolls[0].result.total === 19, "batch total applies the modifier once");
+        check(await tray.locator(".dice-result-die").allTextContents().then((values) => values.length === 2 &&
+          values[0].includes("d6") && values[0].includes("4") && values[1].includes("d20") && values[1].includes("12")),
+        "bottom equation identifies the type and value of every die");
+        check(await tray.locator(".dice-result-modifier b").textContent() === "3", "bottom equation shows the total modifier separately");
+        const tossTargets = tray.locator(".dice-pick-target");
+        await tossTargets.nth(0).focus();
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(() => document.querySelector(".dice-fan-menu")?.dataset.interactive === "true");
+        await tossTargets.nth(1).focus();
+        await page.keyboard.press("Shift+Enter");
+        await page.waitForFunction(() => document.querySelectorAll('.dice-pick-target[aria-pressed="true"]').length === 2);
+        await page.waitForFunction(() => document.querySelector(".dice-fan-menu")?.dataset.interactive === "true");
+        const throwPick = await tossTargets.nth(0).boundingBox();
+        const postsBeforeToss = dicePosts.length;
+        const stationaryPose = await stationary.getAttribute("data-position");
+        const posesBeforeToss = await tossTargets.evaluateAll((targets) => targets.map((target) => target.dataset.position));
+        await page.mouse.move(throwPick.x + throwPick.width / 2, throwPick.y + throwPick.height / 2);
+        await page.mouse.down();
+        await tray.locator('.dice-tray-scene[data-gesture="lift"]').waitFor();
+        await page.mouse.move(throwPick.x + throwPick.width / 2 + 110, throwPick.y + throwPick.height / 2 - 50, { steps: 12 });
+        rejectDiceOnce = true;
+        const tossSaved = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/functions/v1/roll-dice"));
+        await page.mouse.up();
+        await tossSaved;
+        const tossId = dicePosts.at(-1).requestId;
+        await tray.getByRole("alert").waitFor();
+        await page.waitForFunction(() => document.querySelector(".dice-tray-scene")?.dataset.gesture === "");
+        check(JSON.stringify(await tossTargets.evaluateAll((targets) => targets.map((target) => target.dataset.position))) === JSON.stringify(posesBeforeToss),
+          "a failed gesture request restores original dice positions");
+        check(dicePosts.length === postsBeforeToss + 1, "releasing the held group submits once");
+        await tray.locator(".dice-stage-roll").click();
+        await page.waitForFunction((id) => !!document.querySelector(`[data-die-id="${id}:1"]`), tossId);
+        await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+        check(dicePosts.length === postsBeforeToss + 2 && dicePosts.at(-1).requestId === tossId && dicePosts.at(-1).notation === "1d6+1d20",
+          "a dragged selection retries the same grouped roll");
+        check(dicePosts.at(-1).result === undefined && dicePosts.at(-1).velocity === undefined,
+          "drag gestures affect presentation, never client-supplied results");
+        check(await stationary.getAttribute("data-position") === stationaryPose,
+        "unselected die stays stationary during a gesture throw");
+        check(await tray.locator(`[data-die-id="${tossId}:0"]`).getAttribute("data-top-face") === "4" &&
+          await tray.locator(`[data-die-id="${tossId}:1"]`).getAttribute("data-top-face") === "12",
+        "dragged dice settle on the server's faces");
+        await page.screenshot({ path: join(screenshots, "desktop-dice-toss-result.png") });
+        await openTool("公式与预设");
+        check(await tray.getByLabel("投掷可见性").inputValue() === "public" &&
+          await tray.getByLabel("修正", { exact: true }).inputValue() === "0",
+        "selection settings do not overwrite the whole-tray formula settings");
+        await tray.getByLabel("骰子公式").fill("1d6");
+        await tray.locator(".dice-roll-button").click();
+        await page.waitForFunction(() => document.querySelectorAll(".dice-pick-target").length === 1 &&
+          document.querySelector(".dice-pick-target")?.dataset.faceValue === "4");
+        await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      }
+      const d6Pick = await tray.locator(".dice-pick-target").first().boundingBox();
+      const d6Before = await tray.locator(".dice-pick-target").first().getAttribute("data-die-id");
+      await page.mouse.click(d6Pick.x + d6Pick.width / 2, d6Pick.y + d6Pick.height / 2);
+      await tray.getByRole("button", { name: /^(投掷|重投)这颗骰子$/ }).click();
+      await page.waitForFunction((oldId) => {
+        const target = document.querySelector(".dice-pick-target");
+        return target?.dataset.dieId !== oldId && target?.dataset.faceValue === "4";
+      }, d6Before);
+      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      check(await tray.locator(".dice-pick-target").first().getAttribute("data-top-face") === "4",
+        "default d6 lands with the server's four pips facing up");
+      const landedPick = await tray.locator(".dice-pick-target").first().boundingBox();
+      const oldDieId = await tray.locator(".dice-pick-target").first().getAttribute("data-die-id");
+      await page.mouse.click(landedPick.x + landedPick.width / 2, landedPick.y + landedPick.height / 2);
+      const rerollSaved = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/functions/v1/roll-dice"));
+      await tray.getByRole("button", { name: "重投这颗骰子", exact: true }).click();
+      await rerollSaved;
+      await page.waitForFunction((oldId) => document.querySelector(".dice-pick-target")?.dataset.dieId !== oldId, oldDieId);
+      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      check(dicePosts.at(-1).parentId !== undefined, "single-die reroll links to its original record");
+      const retainedId = await tray.locator(".dice-pick-target").first().getAttribute("data-die-id");
+      const retainedBefore = await tray.locator(".dice-pick-target").first().boundingBox();
+      await page.mouse.click(retainedBefore.x + retainedBefore.width / 2, retainedBefore.y + retainedBefore.height / 2);
+      await addFromDie();
+      await page.waitForFunction(() => [...document.querySelectorAll(".dice-pick-target")].at(-1)?.dataset.topFace);
+      const occupiedAfterAdd = await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => target.dataset.footprint.split(",").map(Number)));
+      check(occupiedAfterAdd[0][1] <= occupiedAfterAdd[1][0] || occupiedAfterAdd[0][0] >= occupiedAfterAdd[1][1] ||
+        occupiedAfterAdd[0][3] <= occupiedAfterAdd[1][2] || occupiedAfterAdd[0][2] >= occupiedAfterAdd[1][3],
+      "adding beside a settled die uses free floor space");
+      const extraPick = await tray.locator(".dice-pick-target").last().boundingBox();
+      await page.mouse.click(extraPick.x + extraPick.width / 2, extraPick.y + extraPick.height / 2);
+      const extraSaved = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/functions/v1/roll-dice"));
+      await tray.getByRole("button", { name: "投掷这颗骰子", exact: true }).click();
+      await extraSaved;
+      await page.waitForFunction(() => [...document.querySelectorAll(".dice-pick-target")].every((target) => target.dataset.faceValue === "4"));
+      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      const retainedAfter = await tray.locator(`[data-die-id="${retainedId}"]`).boundingBox();
+      check(Math.abs(retainedAfter.x - retainedBefore.x) < 1 && Math.abs(retainedAfter.y - retainedBefore.y) < 1,
+        "single-die throw preserves other dice positions");
+      await openTool("公式与预设");
+      await tray.getByLabel("骰子公式", { exact: true }).fill("1d20+5");
+      await tray.getByLabel("投掷用途", { exact: true }).fill("潜行检定");
+      await tray.getByLabel("投掷可见性").selectOption("self");
+      rejectDiceOnce = true;
+      await tray.locator(".dice-roll-button").click();
+      await tray.getByRole("alert").waitFor();
+      const firstRequest = dicePosts.at(-1).requestId;
+      await tray.locator(".dice-popover").getByRole("button", { name: "重试这次投掷", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector(".dice-pick-target")?.dataset.faceValue === "12");
+      check(dicePosts.at(-1).requestId === firstRequest, "failed roll retries preserve request identity");
+      check(dicePosts.at(-1).result === undefined, "client never submits a random result");
+      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      check(await tray.locator(".dice-pick-target").first().getAttribute("data-top-face") === "12",
+        "3D top face matches the server die result");
+      check(await tray.locator(".dice-pick-target").first().getAttribute("data-face-value") === "12",
+        "result is attached to the picked die");
+      const privatePick = await tray.locator(".dice-pick-target").first().boundingBox();
+      await page.mouse.click(privatePick.x + privatePick.width / 2, privatePick.y + privatePick.height / 2);
+      await tray.locator('.dice-fan-menu[data-fan-ready="true"]').waitFor();
+      check(await tray.locator(".dice-fan-action").count() === 6, "private result fan includes detail and reveal actions");
+      await page.waitForFunction(() => document.querySelector(".dice-fan-menu")
+        ?.getAnimations({ subtree: true }).every((animation) => animation.playState === "finished"));
+      await page.screenshot({ path: join(screenshots, `${scenario.label}-dice-result-menu.png`) });
+      await tray.getByRole("button", { name: "关闭骰子选项", exact: true }).click();
+      await tray.locator(".dice-fan-menu").waitFor({ state: "detached" });
+      await openTool("投掷记录");
+      await page.waitForFunction(() => document.querySelector(".dice-popover")?.dataset.positioned === "true" &&
+        document.querySelector(".dice-popover").getAnimations().every((animation) => animation.playState === "finished"));
+      await page.screenshot({ path: join(screenshots, `${scenario.label}-dice-history-popover.png`) });
+      check(await tray.locator(".dice-record summary strong").first().textContent() === "17", "server total is shown");
+      await tray.locator(".dice-record summary").first().click();
+      check(await tray.locator(".dice-breakdown").first().isVisible(), "per-die result details expand");
+      await tray.locator(".dice-record").first().getByRole("button", { name: "公开结果", exact: true }).click();
+      await tray.locator(".dice-record").first().getByText("已公开", { exact: true }).waitFor();
+      check(diceState.rolls[0].revealed_at !== null, "private roll reveal persists");
+      await openTool("公式与预设");
+      await tray.getByRole("button", { name: "保存为预设", exact: true }).click();
+      await tray.getByLabel("预设名称").fill("潜行");
+      await tray.getByLabel("房间共享").check();
+      await tray.getByRole("button", { name: "保存", exact: true }).click();
+      await tray.locator(".dice-preset-list").getByText("潜行", { exact: true }).waitFor();
+      check(diceState.presets[0].shared, "GM can create a shared roll preset");
+      await tray.getByRole("button", { name: "收起面板", exact: true }).click();
+      await tray.locator(".dice-popover").waitFor({ state: "detached" });
+      await page.screenshot({ path: join(screenshots, `${scenario.label}-dice.png`) });
+      await openTool("全员检定");
+      const checkPopover = tray.getByRole("dialog", { name: "检定面板", exact: true });
+      await checkPopover.locator(".dice-check-form").waitFor({ state: "visible" });
+      check(await checkPopover.locator(".dice-check-form").isVisible(), "group checks use the same floating menu");
+      await page.mouse.click(8, scenario.height - 24);
+      await checkPopover.waitFor({ state: "detached" });
+      check(await tray.isVisible(), "clicking outside dismisses only the popover");
+      await openTool("公式与预设");
+      await tray.getByLabel("投掷可见性").selectOption("blind");
+      redactBlindReceipt = true;
+      await tray.locator(".dice-roll-button").click();
+      await page.waitForFunction(() => document.querySelector(".dice-pick-target")?.getAttribute("aria-label")?.includes("暗骰"));
+      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      check(await tray.locator(".dice-pick-target").first().getAttribute("data-face-value") === "",
+        "blind receipt does not expose a result on its 3D die");
+      check(await tray.locator(".dice-pick-target").first().getAttribute("data-top-face") === "",
+        "blind die does not publish a numeric top face");
+      const blindPick = await tray.locator(".dice-pick-target").first().boundingBox();
+      await page.mouse.click(blindPick.x + blindPick.width / 2, blindPick.y + blindPick.height / 2);
+      await tray.getByRole("button", { name: "移出骰盘", exact: true }).click();
+      check(await tray.locator(".dice-pick-target").count() === 0, "tray can be emptied");
+      await openTool("添加骰子");
+      await tray.getByRole("dialog", { name: "添加骰型", exact: true }).getByRole("button", { name: "d100", exact: true }).click();
+      await page.waitForFunction(() => document.querySelectorAll(".dice-pick-target").length === 2 &&
+        [...document.querySelectorAll(".dice-pick-target")].every((target) => target.dataset.position));
+      check(await tray.locator(".dice-pick-target").count() === 2, "empty tray can add a percentile pair through More");
+      await tray.getByRole("button", { name: "关闭", exact: true }).click();
+      check(await page.locator(".world").getAttribute("style") === boardBeforeDice,
+        "closing independent dice layer preserves the board camera");
+    }
+    if (process.env.HP_MOTION_DICE_ONLY) {
+      check(errors.length === 0, `no dice browser errors: ${errors.join("; ")}`);
+      await context.close();
+      continue;
+    }
     check(await page.locator('.board-clock[data-clock-style="digital"]').count() === 1,
       "shared clock style is rendered");
     check((await page.locator(".clock-zone").textContent()) === "AD.2026",
       "shared clock era and year are rendered");
     const transitions = await page.evaluate(() => window.transitionLog);
     check(scenario.reduced || scenario.unsupported ? transitions.length === 0 : transitions[0]?.ready, "native transition is ready or safely bypassed");
-    check(boardRequests === 1, "mounted board reuses prepared query data");
 
     const settleView = async () => {
       await page.waitForFunction(() => !document.querySelector(".world").getAnimations().length);
@@ -735,6 +1222,20 @@ try {
           Number.parseFloat(sticker.style.top) !== stickerInitial[1];
       }, { stickerInitial });
       check(boardStickers[0].x !== stickerInitial[0] && boardStickers[0].y !== stickerInitial[1], "emoji sticker drag persists its board position");
+      await emojiSticker.hover();
+      await page.getByRole("button", { name: "放大贴纸 ⭐", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.scale === "1.25");
+      await page.getByRole("button", { name: "放大贴纸 ⭐", exact: true }).waitFor();
+      check(boardStickers[0].scale === 1.25 && await emojiSticker.evaluate((element) => element.style.width) === "90px",
+        "sticker enlargement persists and changes its board-space size");
+      rejectStickerResize = true;
+      await page.getByRole("button", { name: "放大贴纸 ⭐", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.scale === "1.25" &&
+        !document.querySelector('[aria-label="放大贴纸 ⭐"]')?.disabled);
+      check(boardStickers[0].scale === 1.25, "failed sticker resize rolls back without losing saved scale");
+      rejectStickerResize = false;
+      await page.getByRole("button", { name: "缩小贴纸 ⭐", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.scale === "1");
       if (scenario.label === "desktop") {
         await page.screenshot({ path: join(screenshots, "desktop-sticker.png") });
       }
@@ -911,6 +1412,7 @@ try {
     await page.waitForFunction(() => !document.documentElement.dataset.campaignTransition);
     check(new URL(page.url()).searchParams.get("visit") === campaignId, "public visit updates URL after success");
     check(await page.getByText("访客 / 只读参观", { exact: true }).isVisible(), "public view keeps observer role");
+    check(await page.locator(".dice-launcher").count() === 0, "public visitors never receive the dice tool");
     check(await page.locator(`.board > .board-surface[data-surface="${board.settings.appearance.surface.kind}"]`).count() === 1, "visitors read the saved appearance");
     check(await page.getByRole("button", { name: "打开房间配置", exact: true }).count() === 0, "visitors cannot edit the appearance");
     await page.getByRole("button", { name: "返回签到处", exact: true }).click();

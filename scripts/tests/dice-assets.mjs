@@ -1,0 +1,60 @@
+import assert from "node:assert/strict";
+import { MeshStandardMaterial, Quaternion, Vector3 } from "three";
+import { buildDieGeometry } from "../../src/features/dice/proceduralGeometry.ts";
+import { getDieShape, faceCorrection, readDieFace } from "../../src/features/dice/diceShapes.ts";
+import { createModelLibrary, disposeModel } from "../../src/features/dice/trayModels.ts";
+import { createProceduralTray } from "../../src/features/dice/proceduralTray.ts";
+import { trayEdges } from "../../src/features/dice/trayPlacement.ts";
+
+const materials = new Map();
+const surfaces = { material(slot, skin, labels) {
+  const key = `${slot}:${skin}:${labels}`;
+  if (!materials.has(key)) materials.set(key, new MeshStandardMaterial());
+  return materials.get(key);
+} };
+let checked = 0;
+for (const sides of [4, 6, 8, 10, 12, 20, 100, "F"]) {
+  const geometry = buildDieGeometry(sides), shape = getDieShape(sides);
+  assert.ok(geometry.body.getAttribute("position").count / 3 < 3200, `d${sides} geometry budget`);
+  for (const mesh of [geometry.body, geometry.marks]) {
+    const position = mesh.getAttribute("position"), normal = mesh.getAttribute("normal"), uv = mesh.getAttribute("uv");
+    assert.equal(position.count, normal.count);
+    assert.equal(position.count, uv.count, "every surface supports replacement textures");
+    for (let i = 0; i < position.count; i++) {
+      const p = new Vector3().fromBufferAttribute(position, i);
+      assert.ok(Number.isFinite(p.lengthSq()));
+      assert.ok(Math.abs(new Vector3().fromBufferAttribute(normal, i).length() - 1) < .001);
+      assert.ok(shape.faces.every((face) => p.dot(face.normal) <= face.center.dot(face.normal) + .002),
+        `d${sides}: round body, pips and numbers fit the physics hull`);
+    }
+  }
+  for (const face of shape.faces) {
+    for (const axis of [new Vector3(.3, .7, .4), new Vector3(-.4, .1, .8)]) {
+      const resting = new Quaternion().setFromAxisAngle(axis.normalize(), 1.12);
+      const corrected = resting.clone().multiply(faceCorrection(shape, resting, face.value));
+      assert.equal(readDieFace(shape, corrected).value, face.value);
+    }
+    checked++;
+  }
+  geometry.body.dispose(); geometry.marks.dispose();
+}
+const library = createModelLibrary(surfaces);
+const die = { id: "a", sides: 20, value: 12, kept: true, rollId: "test" };
+const first = library.create(die, "jade"), second = library.create({ ...die, id: "b" }, "jade");
+assert.equal(first.body.geometry, second.body.geometry);
+assert.equal(first.body.material, second.body.material);
+assert.notEqual(first.group, second.group);
+let disposed = false;
+first.body.geometry.addEventListener("dispose", () => { disposed = true; });
+disposeModel(first.group);
+assert.equal(disposed, false, "removing one die must not release another die's shared geometry");
+const hidden = library.create({ ...die, value: null }, "jade");
+assert.notEqual(hidden.body.geometry, second.body.geometry, "hidden outcomes have a separate unmarked body");
+const tray = createProceduralTray(surfaces);
+assert.deepEqual(tray.children.map((mesh) => mesh.userData.surfaceSlot).sort(), ["lining", "rim", "stitch", "trim"]);
+for (const mesh of tray.children) assert.ok(mesh.geometry.getAttribute("uv"));
+assert.equal(trayEdges.length, 6);
+library.dispose();
+assert.equal(disposed, true, "the owning library releases geometry at tray close");
+disposeModel(tray); materials.forEach((material) => material.dispose());
+console.log(`${checked} procedural face mappings passed; UVs, smooth normals, resource sharing, hidden models and geometry budgets passed.`);

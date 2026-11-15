@@ -114,6 +114,7 @@ export interface BoardSticker {
   x: number;
   y: number;
   rotation: number;
+  scale: number;
   createdBy: string;
 }
 

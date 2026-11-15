@@ -16,6 +16,7 @@ This license applies only to the following original visual assets:
 - `stickers/mini2.webp`
 - `stickers/tl.webp`
 - `stickers/tr.webp`
+- `dice/*.glb` (optimized runtime derivatives of the supplied Tripo models)
 
 These files are licensed under the
 [Creative Commons Attribution-NonCommercial 4.0 International License][cc-by-nc].
@@ -38,4 +39,3 @@ to user-uploaded content, third-party material, or other files under `assets/`
 that are not listed above.
 
 [cc-by-nc]: https://creativecommons.org/licenses/by-nc/4.0/
-
