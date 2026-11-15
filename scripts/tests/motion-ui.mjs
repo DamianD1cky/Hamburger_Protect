@@ -86,6 +86,7 @@ try {
     let releaseBoard;
     let boardGate = new Promise((resolve) => { releaseBoard = resolve; });
     let boardRequests = 0;
+    let diceResponseGate = null;
     let rejectMove = false;
     let delayedMoveId = null;
     let releaseDelayedMove;
@@ -216,6 +217,7 @@ try {
       }
       else if (path.endsWith("/functions/v1/roll-dice")) {
         dicePosts.push(body);
+        if (diceResponseGate) await diceResponseGate;
         if (rejectDiceOnce) {
           rejectDiceOnce = false; status = 503; result = { error: "temporary failure" };
         } else {
@@ -371,6 +373,17 @@ try {
       "legacy rooms keep their board material");
     check(boardRequests === 1, "mounted board reuses prepared query data");
     if (["desktop", "mobile", "reduced"].includes(scenario.label) || process.env.HP_MOTION_DICE_ONLY) {
+      const toolButtons = await page.getByRole("navigation", { name: "公告板工具", exact: true })
+        .locator(".board-tool-button").evaluateAll((buttons) => buttons.map((button) => {
+          const rect = button.getBoundingClientRect(), style = getComputedStyle(button);
+          return { x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+            background: style.backgroundColor, radius: style.borderRadius };
+        }));
+      check(toolButtons.length === 4 && toolButtons.every((button) => button.width === 48 && button.height === 48),
+        "board tools use four fixed-size buttons");
+      check(toolButtons.every((button) => button.y === toolButtons[0].y &&
+        button.background === toolButtons[0].background && button.radius === toolButtons[0].radius),
+        "board tools align in one row with consistent styling");
       await page.getByRole("button", { name: "打开骰盘", exact: true }).click();
       const tray = page.locator(".dice-dialog");
       await tray.waitFor();
@@ -767,6 +780,23 @@ try {
       await page.waitForFunction(() => document.querySelectorAll(".dice-pick-target").length === 2 &&
         [...document.querySelectorAll(".dice-pick-target")].every((target) => target.dataset.position));
       check(await tray.locator(".dice-pick-target").count() === 2, "empty tray can add a percentile pair through More");
+      if (!scenario.reduced) {
+        let releaseResponse;
+        diceResponseGate = new Promise((resolve) => { releaseResponse = resolve; });
+        const beforeResponse = diceState.rolls.length;
+        await tray.locator(".dice-stage-roll").click();
+        await tray.locator('.dice-tray-scene[data-phase="request"]').waitFor();
+        const firstFrame = await tray.locator(".dice-tray-scene canvas").screenshot();
+        const nextFrame = await tray.locator(".dice-tray-scene canvas").screenshot();
+        check(!firstFrame.equals(nextFrame) && diceState.rolls.length === beforeResponse,
+          "dice move while the network response is still held, without a local result");
+        releaseResponse(); diceResponseGate = null;
+        await tray.locator('.dice-tray-scene[data-rolling="true"]').waitFor();
+        await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
+        check(await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.every((target) =>
+          target.dataset.topFace === target.dataset.faceValue && Number(target.dataset.faceAlignment) > .9999)),
+          "delayed percentile results settle with an unambiguous face");
+      }
       await tray.getByRole("button", { name: "关闭", exact: true }).click();
       check(await page.locator(".world").getAttribute("style") === boardBeforeDice,
         "closing independent dice layer preserves the board camera");

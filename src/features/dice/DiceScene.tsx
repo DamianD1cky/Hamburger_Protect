@@ -22,6 +22,8 @@ interface Props {
   selection: DiceSelection | null;
   disabled: boolean;
   canThrow: boolean;
+  waiting: boolean;
+  waitingIds: string[];
   reducedMotion: boolean;
   onSelect: (selection: DiceSelection | null) => void;
   onRolling: (rolling: boolean) => void;
@@ -88,6 +90,9 @@ export function DiceScene(props: Props) {
     const physics = createPhysicsClient();
     let simulationRevision = 0;
     let preparing = false;
+    let waiting = false;
+    let waitingSince = 0;
+    const waitingPoses = new Map<string, { pose: DiePose; sides: TrayDie["sides"] }>();
     let startTime = 0;
     let frame = 0;
     let stopped = false;
@@ -116,6 +121,7 @@ export function DiceScene(props: Props) {
       return poses;
     };
     let awaitingThrow = false;
+    let gestureRestorePoses: Map<string, DiePose> | null = null;
     let cancelledPointer: number | null = null;
     let gesture: {
       pointerId: number; x: number; y: number;
@@ -153,6 +159,7 @@ export function DiceScene(props: Props) {
         target.dataset.footprint = [bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ].join(",");
         const top = readDieFace(getDieShape(die.sides), model.group.quaternion);
         target.dataset.topFace = die.rollId && die.value === null ? "" : String(top.value);
+        target.dataset.faceAlignment = String(top.readNormal.clone().applyQuaternion(model.group.quaternion).y);
         target.dataset.model = String(model.group.userData.model ?? "neutral");
       }
       const selected = latest.current.selection;
@@ -160,6 +167,20 @@ export function DiceScene(props: Props) {
     };
     const render = (now = performance.now()) => {
       if (stopped) return;
+      if ((waiting || preparing) && !latest.current.reducedMotion) {
+        const elapsed = Math.max(0, (now - waitingSince) / 1000);
+        for (const [id, { pose }] of waitingPoses) {
+          const model = models.get(id);
+          if (!model) continue;
+          // Anticipation has no local result: keep moving while the server and
+          // worker respond, without landing on a provisional number.
+          const rise = Math.min(1, elapsed / .18);
+          model.group.position.set(...pose.position);
+          model.group.position.y += rise * (.15 + Math.sin(elapsed * 5) * .05);
+          model.group.quaternion.set(...pose.quaternion).multiply(
+            new T.Quaternion().setFromEuler(new T.Euler(elapsed * 3.8, elapsed * 2.7, elapsed * 1.6)));
+        }
+      }
       if (rolling && !preparing) {
         const elapsed = (now - startTime) / 1000;
         const index = Math.max(0, Math.floor(elapsed * 120));
@@ -175,12 +196,13 @@ export function DiceScene(props: Props) {
         }
         if (done) {
           rolling = false; container.dataset.rolling = "false";
+          container.dataset.phase = "idle";
           latest.current.onRolling(false); syncTargets();
         }
       }
-      if (!rolling && selectedBodies.length) glow?.render();
+      if (!rolling && !waiting && selectedBodies.length) glow?.render();
       else renderer.render(scene, camera);
-      if (rolling && !preparing) frame = requestAnimationFrame(render);
+      if ((rolling && !preparing) || ((waiting || preparing) && !latest.current.reducedMotion)) frame = requestAnimationFrame(render);
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(render); };
     const resize = () => {
@@ -361,6 +383,7 @@ export function DiceScene(props: Props) {
           velocity,
         };
         awaitingThrow = true;
+        gestureRestorePoses = ended.poses;
         container.dataset.gesture = "pending";
         void latest.current.onThrow(ended.selected, launch).then((saved) => {
           if (stopped) return;
@@ -395,6 +418,33 @@ export function DiceScene(props: Props) {
       select,
       allocate,
       update(next) {
+        const newThrow = next.throwId !== null && next.throwId !== previousThrow;
+        if (next.waiting && !waiting && !newThrow) {
+          waitingSince = performance.now();
+          waitingPoses.clear();
+          for (const die of currentDice) {
+            if (next.waitingIds.length && !next.waitingIds.includes(die.id)) continue;
+            const model = models.get(die.id);
+            if (model) waitingPoses.set(die.id, { pose: poseOf(model), sides: die.sides });
+          }
+          container.dataset.phase = "request";
+        }
+        let localLaunch: ThrowLaunch | null = null;
+        if (newThrow && waitingPoses.size) {
+          localLaunch = {
+            dice: [...waitingPoses].map(([id, entry]) => ({
+              sides: entry.sides, pose: models.has(id) ? poseOf(models.get(id)!) : entry.pose,
+            })),
+            velocity: next.throwLaunch?.velocity ?? [2.4, 1.5, 2.5],
+          };
+          gestureRestorePoses = null;
+        } else if (!next.waiting && waiting && !newThrow && !preparing && !rolling) {
+          // Request failure/cancellation restores the exact original poses.
+          restorePoses(gestureRestorePoses ?? new Map([...waitingPoses].map(([id, entry]) => [id, entry.pose])));
+          gestureRestorePoses = null;
+          waitingPoses.clear(); container.dataset.phase = "idle";
+        }
+        waiting = next.waiting;
         const changed = currentDice !== next.dice || currentSkin !== next.skin;
         if (changed) {
           const previousDice = new Map(currentDice.map((die) => [die.id, die]));
@@ -439,7 +489,6 @@ export function DiceScene(props: Props) {
             });
           }
         }
-        const newThrow = next.throwId !== null && next.throwId !== previousThrow;
         previousThrow = next.throwId;
         if (newThrow) {
           const revision = ++simulationRevision;
@@ -457,11 +506,28 @@ export function DiceScene(props: Props) {
           });
           preparing = true; rolling = true;
           container.dataset.rolling = "true";
+          container.dataset.phase = "preparing";
           latest.current.onRolling(true);
-          void physics.build({ dice: moving, stationary, launch: next.throwLaunch }).then((result) => {
+          // Match old anticipation poses to replacement IDs by type, so the
+          // dice remain moving while the worker prepares their actual replay.
+          if (localLaunch) {
+            const sources = [...localLaunch.dice];
+            waitingPoses.clear();
+            for (const die of moving) {
+              const index = sources.findIndex((entry) => entry.sides === die.sides);
+              if (index < 0) continue;
+              const source = sources.splice(index, 1)[0];
+              const model = models.get(die.id)!;
+              model.group.position.set(...source.pose.position); model.group.quaternion.set(...source.pose.quaternion);
+              waitingPoses.set(die.id, { pose: source.pose, sides: source.sides });
+            }
+            waitingSince = performance.now();
+          }
+          void physics.build({ dice: moving, stationary, launch: localLaunch ?? next.throwLaunch }).then((result) => {
             if (stopped || revision !== simulationRevision) return;
             tracks = result.map((track) => ({ ...track, rotation: new T.Quaternion(...track.correction) }));
             preparing = false;
+            waitingPoses.clear(); container.dataset.phase = "replay";
             if (next.reducedMotion) {
               tracks.forEach((track) => {
                 const model = models.get(track.die.id)!;
@@ -471,6 +537,7 @@ export function DiceScene(props: Props) {
               });
               rolling = false;
               container.dataset.rolling = "false";
+              container.dataset.phase = "idle";
               latest.current.onRolling(false);
               syncTargets();
             } else { startTime = performance.now(); }
@@ -478,6 +545,7 @@ export function DiceScene(props: Props) {
           }).catch(() => {
             if (stopped || revision !== simulationRevision) return;
             preparing = false; rolling = false;
+            waitingPoses.clear(); container.dataset.phase = "idle";
             container.dataset.rolling = "false";
             latest.current.onRolling(false);
             for (const die of moving) {
@@ -538,7 +606,10 @@ export function DiceScene(props: Props) {
   }, []);
   // Synchronize newly mounted pick targets before paint, including when
   // reduced motion lets the next interaction happen without an animation.
-  useLayoutEffect(() => { controller.current?.update(props); }, [props.dice, props.skin, props.throwId, props.selection?.ids, props.reducedMotion, props.throwLaunch]);
+  useLayoutEffect(() => { controller.current?.update(props); }, [
+    props.dice, props.skin, props.throwId, props.selection?.ids, props.reducedMotion,
+    props.throwLaunch, props.waiting, props.waitingIds,
+  ]);
   return <div className="dice-scene dice-tray-scene" ref={host} aria-label="3D 骰盘">
     <div className="dice-pick-targets">
       {props.dice.map((die, index) => <button type="button" key={die.id} data-die-id={die.id}

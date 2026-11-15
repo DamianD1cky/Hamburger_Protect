@@ -1,8 +1,8 @@
 import * as C from "cannon-es";
-import { Quaternion } from "three";
-import { faceCorrection, type DieShape } from "./diceShapes.ts";
+import { Quaternion, Vector3 } from "three";
+import { faceCorrection, readDieFace, type DieShape } from "./diceShapes.ts";
 import type { TrayDie } from "./trayModels";
-import { trayEdges, type DiePose } from "./trayPlacement.ts";
+import { dieBounds, findTraySpace, footprint, trayEdges, type DiePose } from "./trayPlacement.ts";
 
 export { traySize } from "./trayPlacement.ts";
 export type { DiePose } from "./trayPlacement";
@@ -86,6 +86,55 @@ export function buildThrow(dice: TrayDie[], shapes: DieShape[], stationary: Stat
       quaternion: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w],
     }));
     if (step > 60 && bodies.every((body) => body.sleepState === C.Body.SLEEPING)) break;
+  }
+  const stationaryFootprints = stationary.map(({ shape, pose }) => footprint(dieBounds(shape.geometry, pose)));
+  // A sharp collision hull can sleep wedged against another die or a wall.
+  // Finish with a short, smooth settlement to separated floor space rather
+  // than treating the timeout or a numerically selected face as a readable pose.
+  const finalPoses = tracks.map((track, i) => {
+    const last = track.frames.at(-1)!;
+    const resting = new Quaternion(...last.quaternion);
+    const up = readDieFace(shapes[i], resting).readNormal.clone().applyQuaternion(resting);
+    const rotation = new Quaternion().setFromUnitVectors(up, new Vector3(0, 1, 0)).multiply(resting).normalize();
+    return { position: last.position, rotation, resting, origin: last.position };
+  });
+  const allocateRest = (nearby: boolean) => {
+    const occupied = [...stationaryFootprints];
+    for (const [i, target] of finalPoses.entries()) {
+      const bounds = dieBounds(shapes[i].geometry, { position: [0, 0, 0], quaternion: target.rotation.toArray() });
+      const position = findTraySpace(bounds, occupied, nearby ? { x: target.origin[0], z: target.origin[2] } : undefined);
+      if (!position) return false;
+      target.position = position;
+      occupied.push(footprint(bounds.translate(new Vector3(...position))));
+    }
+    return true;
+  };
+  if (!allocateRest(true) && !allocateRest(false)) {
+    // Dense pools need a consistent yaw to avoid fragmented gaps left by
+    // twenty different bounding boxes. Only the moving dice are rearranged.
+    finalPoses.forEach((target, i) => {
+      let smallest = Infinity, best = target.rotation.clone();
+      for (let step = 0; step < 18; step++) {
+        const rotation = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), step * Math.PI / 18)
+          .multiply(target.rotation);
+        const bounds = dieBounds(shapes[i].geometry, { position: [0, 0, 0], quaternion: rotation.toArray() });
+        const area = (bounds.max.x - bounds.min.x) * (bounds.max.z - bounds.min.z);
+        if (area < smallest) { smallest = area; best = rotation; }
+      }
+      target.rotation = best;
+    });
+    if (!allocateRest(false)) throw new Error("骰盘没有足够的空间让骰子平稳落地。");
+  }
+  for (let step = 1; step <= 36; step++) {
+    const t = step / 36, eased = t * t * (3 - 2 * t);
+    tracks.forEach((track, i) => {
+      const target = finalPoses[i];
+      track.frames.push({
+        position: target.origin.map((value, axis) =>
+          value + (target.position[axis] - value) * eased) as DiePose["position"],
+        quaternion: target.resting.clone().slerp(target.rotation, eased).toArray(),
+      });
+    });
   }
   tracks.forEach((track, i) => {
     if (track.die.value === null) return;

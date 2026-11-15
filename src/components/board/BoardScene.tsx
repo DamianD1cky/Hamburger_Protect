@@ -79,6 +79,7 @@ interface BoardSceneProps {
     y: number,
   ) => Promise<unknown>;
   onOpenClockSettings: () => void;
+  diceTool?: ReactNode;
 }
 
 export function BoardScene({
@@ -110,6 +111,7 @@ export function BoardScene({
   moduleLayout,
   onMoveModule,
   onOpenClockSettings,
+  diceTool,
 }: BoardSceneProps) {
   const canEditNotes =
     board.viewer.role !== "observer" && board.campaign.status === "active";
@@ -772,75 +774,37 @@ export function BoardScene({
                 ))}
               </div>
 
-              <div className="pin-actions">
-                <button
-                  className="pin-view"
-                  type="button"
-                  onClick={onOpenNotes}
-                  aria-label={`查看全部便签，共 ${board.notes.length} 条`}
-                  title="查看全部便签"
-                >
-                  <List aria-hidden="true" />
-                  <span>{board.notes.length}</span>
-                </button>
-                {canEditNotes && (
-                  <button
-                    className="pin-add"
-                    type="button"
-                    onClick={onComposeNote}
-                    aria-label="填写便签"
-                    title="填写便签"
-                  >
-                    <Plus aria-hidden="true" />
-                  </button>
-                )}
-              </div>
             </>
-          )}
-
-          {canUpdateSharedBoard && (
-            <div className="sticker-actions">
-              <button
-                className="sticker-add"
-                type="button"
-                onClick={() => {
-                  setSelectedEmoji(null);
-                  setStickerPlacement(null);
-                  setStickerPickerOpen((open) => !open);
-                }}
-                aria-label="添加 Emoji 贴纸"
-                title="添加 Emoji 贴纸"
-                aria-expanded={stickerPickerOpen}
-                disabled={stickerSaving}
-              >
-                <SmilePlus aria-hidden="true" />
-              </button>
-              {selectedEmoji && (
-                <span className="sticker-placement-status" role="status">
-                  {stickerSaving ? "正在保存贴纸…" : "点击公告板放置，Esc 取消"}
-                </span>
-              )}
-              {stickerPickerOpen && (
-                <div className="sticker-picker" aria-label="选择 Emoji 贴纸">
-                  {stickerError && <p className="sticker-error" role="alert">{stickerError}</p>}
-                  {stickerChoices.map((emoji) => (
-                    <button
-                      type="button"
-                      key={emoji}
-                      aria-label={`添加贴纸 ${emoji}`}
-                      onClick={() => chooseSticker(emoji)}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           )}
         </main>
 
       </div>
     </div>
+    <nav className="board-tool-dock" aria-label="公告板工具">
+      {canUpdateSharedBoard && <div className="board-sticker-tool">
+        <button className="board-tool-button" type="button" aria-label="添加 Emoji 贴纸" title="贴纸"
+          aria-expanded={stickerPickerOpen} disabled={stickerSaving} onClick={() => {
+            setSelectedEmoji(null); setStickerPlacement(null); setStickerPickerOpen((open) => !open);
+          }}><SmilePlus aria-hidden="true" /></button>
+        {selectedEmoji && <span className="sticker-placement-status" role="status">
+          {stickerSaving ? "正在保存贴纸…" : "点击公告板放置，Esc 取消"}
+        </span>}
+        {stickerPickerOpen && <div className="sticker-picker" aria-label="选择 Emoji 贴纸">
+          {stickerError && <p className="sticker-error" role="alert">{stickerError}</p>}
+          {stickerChoices.map((emoji) => <button type="button" key={emoji} aria-label={`添加贴纸 ${emoji}`}
+            onClick={() => chooseSticker(emoji)}>{emoji}</button>)}
+        </div>}
+      </div>}
+      {!hidden.has("notes") && <>
+        {canEditNotes && <button className="board-tool-button" type="button" onClick={onComposeNote}
+          aria-label="填写便签" title="便签"><Plus aria-hidden="true" /></button>}
+        <button className="board-tool-button" type="button" onClick={onOpenNotes}
+          aria-label={`查看全部便签，共 ${board.notes.length} 条`} title="便签栏">
+          <List aria-hidden="true" /><span className="board-tool-badge">{board.notes.length}</span>
+        </button>
+      </>}
+      {diceTool}
+    </nav>
     </>
   );
 }

@@ -55,6 +55,8 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   const [modifier, setModifier] = useState(0);
   const [busy, setBusy] = useState(false);
   const [casting, setCasting] = useState(false);
+  const [waitingIds, setWaitingIds] = useState<string[]>([]);
+  const rollInFlight = useRef(false);
   const [rolling, setRolling] = useState(false);
   const [panel, setPanel] = useState<"settings" | "history" | "checks" | null>(null);
   const [panelAnchor, setPanelAnchor] = useState<DicePopoverAnchor | null>(null);
@@ -130,20 +132,30 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
     catch (cause) { setError(errorMessage(cause)); return false; }
     finally { setBusy(false); }
   };
-  const submitRoll = (overrides?: Partial<RollInput>, selectedIds?: string[], launch?: ThrowLaunch) => operation(async () => {
-    setCasting(true);
+  const submitRoll = async (overrides?: Partial<RollInput>, selectedIds?: string[], launch?: ThrowLaunch) => {
+    if (rollInFlight.current) return false;
+    rollInFlight.current = true;
+    const originalPanel = panel;
+    setBusy(true); setCasting(true); setError("");
     const retrying = pending.current !== null;
     const input = pending.current ?? {
       requestId: crypto.randomUUID(), notation, label, visibility, ...overrides,
     };
     if (!retrying && selectedIds) replacements.current.set(input.requestId, selectedIds);
     if (!retrying && launch) launches.current.set(input.requestId, launch);
+    setWaitingIds(replacements.current.get(input.requestId) ?? []);
+    setPanel(null); setAddOpen(false); setToolsAnchor(null);
     pending.current = input;
     try {
       await dice.roll(input);
       pending.current = null;
-    } finally { setCasting(false); }
-  });
+      return true;
+    } catch (cause) {
+      setPanel(originalPanel);
+      setError(errorMessage(cause));
+      return false;
+    } finally { setCasting(false); setBusy(false); rollInFlight.current = false; }
+  };
   const quickDie = (sides: number) => {
     pending.current = null;
     setNotation(`${quantity}d${sides}${modifier ? `${modifier > 0 ? "+" : ""}${modifier}` : ""}`);
@@ -288,9 +300,9 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   ] : [];
 
   return <>
-    <button type="button" className="dice-launcher" aria-label={awaiting ? `打开骰盘，${awaiting} 项待检定` : "打开骰盘"}
+    <button type="button" className="board-tool-button dice-launcher" aria-label={awaiting ? `打开骰盘，${awaiting} 项待检定` : "打开骰盘"}
       title="骰盘" onClick={() => setOpen(true)}>
-      <Dice5 aria-hidden="true" />{awaiting > 0 && <span>{awaiting}</span>}
+      <Dice5 aria-hidden="true" />{awaiting > 0 && <span className="board-tool-badge">{awaiting}</span>}
     </button>
     {!open && notice && <button className="dice-notice" type="button" onClick={() => setOpen(true)} aria-live="polite">
       <Dice5 aria-hidden="true" />
@@ -329,16 +341,17 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
           <DiceScene ref={scene} dice={trayDice} skin={preferences.skin ?? "jade"}
             throwId={throwId} throwLaunch={throwLaunch} selection={selection} disabled={busy || panel !== null || addOpen || !!toolsAnchor}
             canThrow={active && !pending.current && !selectedLocked} reducedMotion={reducedMotion}
+            waiting={casting} waitingIds={waitingIds}
             onThrow={(ids, launch) => castTray(trayDice.filter((die) => ids.includes(die.id)), launch)}
             onSelect={selectDice} onRolling={setRolling} />
         </Suspense>
-        {selectedDice.length > 0 && selection && !selection.dragging && !panel && !addOpen && !toolsAnchor && <DiceFanMenu key={selection.ids.join("|")}
+        {selectedDice.length > 0 && selection && !selection.dragging && !casting && !rolling && !panel && !addOpen && !toolsAnchor && <DiceFanMenu key={selection.ids.join("|")}
           selection={selection} label={selectedDie ? `d${selectedDie.sides}` : `${selectedDice.length} 颗`} actions={fanActions}
           onClose={() => setSelection(null)} />}
       </div>
       <footer className="dice-layer-footer" hidden={panel !== null || addOpen || !!toolsAnchor || selection?.dragging}>
         <div className="dice-tray-result" aria-live="polite">
-          {selectedDice.length ? <span>选中 {selectedDice.length} 颗</span>
+          {casting || rolling ? <span>{trayDice.length} 颗骰子</span> : selectedDice.length ? <span>选中 {selectedDice.length} 颗</span>
             : last ? <DiceResult roll={last} />
             : <span>{trayDice.length} 颗骰子</span>}
           {last?.result && (last.result.dice.reduce((count, die) => count + (die.sides === 100 ? 2 : 1), 0) > 20 ||

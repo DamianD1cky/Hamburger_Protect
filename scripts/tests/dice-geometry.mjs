@@ -83,3 +83,26 @@ for (const direction of [[8, .5, 3], [-8, .5, -3], [0, .5, 0]]) {
   shapes.forEach((shape) => shape.geometry.dispose());
 }
 console.log(`${checks} dice model, face symmetry and physical replay assertions passed`);
+for (const sides of [4, 6, 8, 10, 12, 20]) {
+  const shape = makeDieShape(sides);
+  const dice = Array.from({ length: 20 }, (_, i) => ({ id: `dense-${i}`, sides, value: i % sides + 1, kept: true }));
+  const tracks = buildThrow(dice, dice.map(() => shape));
+  const occupied = [];
+  for (const track of tracks) {
+    const pose = track.frames.at(-1);
+    const rotation = new Quaternion(...pose.quaternion).multiply(track.correction);
+    const face = readDieFace(shape, rotation);
+    assert.equal(face.value, track.die.value, "settlement preserves the authoritative value");
+    assert.ok(face.readNormal.clone().applyQuaternion(rotation).y > .9999,
+      `d${sides} never finishes wedged on an edge`);
+    const bounds = dieBounds(shape.geometry, { ...pose, quaternion: rotation.toArray() });
+    assert.ok(Math.abs(bounds.min.y - .025) < .002, "every moving die rests on the tray floor");
+    const box = footprint(bounds);
+    assert.ok(fitsTray(box), "settled dice stay inside the six walls");
+    assert.ok(occupied.every((other) => box.maxX < other.minX || box.minX > other.maxX ||
+      box.maxZ < other.minZ || box.minZ > other.maxZ), "dense pools settle without stacking or overlaps");
+    occupied.push(box);
+  }
+  shape.geometry.dispose();
+}
+console.log("120 dense-pool dice settle flat, separated and with unambiguous authoritative faces.");

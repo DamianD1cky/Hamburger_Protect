@@ -50,16 +50,18 @@ export function clampTrayMove(bounds: Footprint[], dx: number, dz: number) {
 }
 
 /** Allocate floor space without moving, stacking or covering existing dice. */
-export function findTraySpace(bounds: Box3, occupied: Footprint[]): DiePose["position"] | null {
+export function findTraySpace(bounds: Box3, occupied: Footprint[], preferred?: { x: number; z: number }): DiePose["position"] | null {
   const gap = .14, step = .16;
+  const available = (x: number, z: number) => fitsTray({
+    minX: x + bounds.min.x, maxX: x + bounds.max.x, minZ: z + bounds.min.z, maxZ: z + bounds.max.z,
+  }, gap) && !occupied.some((other) => x + bounds.max.x + gap > other.minX && x + bounds.min.x - gap < other.maxX &&
+    z + bounds.max.z + gap > other.minZ && z + bounds.min.z - gap < other.maxZ);
+  if (preferred && available(preferred.x, preferred.z)) return [preferred.x, -bounds.min.y + .025, preferred.z];
   let best: { x: number; z: number; score: number } | null = null;
   for (let ix = -33; ix <= 33; ix++) for (let iz = -29; iz <= 29; iz++) {
     const x = ix * step, z = iz * step;
-    if (!fitsTray({ minX: x + bounds.min.x, maxX: x + bounds.max.x,
-      minZ: z + bounds.min.z, maxZ: z + bounds.max.z }, gap)) continue;
-    if (occupied.some((other) => x + bounds.max.x + gap > other.minX && x + bounds.min.x - gap < other.maxX &&
-      z + bounds.max.z + gap > other.minZ && z + bounds.min.z - gap < other.maxZ)) continue;
-    const score = x * x + z * z * 2 + Math.abs(z) * .2;
+    if (!available(x, z)) continue;
+    const score = preferred ? (x - preferred.x) ** 2 + (z - preferred.z) ** 2 : x * x + z * z * 2 + Math.abs(z) * .2;
     if (!best || score < best.score) best = { x, z, score };
   }
   return best ? [best.x, -bounds.min.y + .025, best.z] : null;

@@ -829,10 +829,9 @@ function CampaignBoardWorkspace({
           moduleLayout={board.settings.moduleLayout}
           onMoveModule={campaign.moveBoardModule}
           onOpenClockSettings={() => setClockSettingsOpen(true)}
+          diceTool={!publicView && board.viewer.role !== "observer"
+            ? <DiceWorkspace key={`${board.campaign.id}:${board.viewer.id}`} board={board} /> : undefined}
         />
-        {!publicView && board.viewer.role !== "observer" && (
-          <DiceWorkspace key={`${board.campaign.id}:${board.viewer.id}`} board={board} />
-        )}
       </Suspense>
 
       <div className="shop-status" aria-label="战役状态">
