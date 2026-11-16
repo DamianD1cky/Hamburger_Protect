@@ -17,6 +17,8 @@
     "supabase:push:dry": "node scripts/supabase-push-management.mjs --dry-run",
     "supabase:push:direct": "supabase db push",
     "check:access-ui": "node scripts/tests/access-ui.mjs",
+    "check:site-admin": "node scripts/tests/site-admin.mjs",
+    "check:site-admin-ui": "node scripts/tests/site-admin-ui.mjs",
     "check:motion-ui": "node scripts/tests/motion-ui.mjs",
     "check:accounts": "node --experimental-strip-types --test scripts/tests/accounts.mjs",
     "check:database": "node scripts/tests/database.mjs",

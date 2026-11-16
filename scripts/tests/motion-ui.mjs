@@ -221,6 +221,7 @@ try {
       } else if (path.endsWith("/get_service_status")) result = "ready";
       else if (path.endsWith("/ensure_actor")) result = { id: actorId, display_name: "验收账号", disabled: false };
       else if (path.endsWith("/get_gm_access")) result = { user_id: actorId, account_name: user.email, display_name: "验收账号", status: "approved", requested_at: date, reviewed_at: date, review_note: "" };
+      else if (path.endsWith("/get_site_admin_access")) result = false;
       else if (path === "/auth/v1/user") result = user;
       else if (path.endsWith("/campaign_members")) result = [campaignId, deniedId].map((id) => ({ campaign_id: id, role: "gm", character_name: "验收店长", job_title: "店长", joined_at: date, campaign: { name: id === campaignId ? name : "不可访问的战役", join_code: "TEST00", status: "active" } }));
       else if (path.endsWith("/list_public_campaigns")) result = [{ id: campaignId, name, burger_index: 5, published_at: date, message_count: 0 }];

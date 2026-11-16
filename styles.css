@@ -5310,6 +5310,28 @@ textarea:focus-visible {
 .account-settings-entry, .account-recovery { margin-top: 14px; }
 .account-settings-entry { display: flex; align-items: center; gap: 6px; }
 .account-settings-entry svg { width: 16px; height: 16px; }
+.gm-review-dialog { width: min(680px, 100%); }
+.gm-review-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.gm-review-toolbar .access-tabs { flex: 1; margin: 0; }
+.gm-review-row { padding: 22px 0; border-bottom: 1px solid #c8beab; }
+.gm-review-row header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.gm-review-row header div { display: grid; gap: 4px; min-width: 0; }
+.gm-review-row header strong, .gm-review-row header span { overflow-wrap: anywhere; }
+.gm-review-row header strong { font-size: 17px; }
+.gm-review-row header span, .gm-review-row time, .gm-review-history span { color: #6a6257; font-size: 12px; }
+.gm-review-note { display: grid; gap: 6px; margin-top: 16px; font-size: 13px; }
+.gm-review-note textarea { width: 100%; padding: 10px 12px; border: 1px solid #bcb19d; border-radius: 6px; background: #faf7ed; resize: vertical; font: inherit; }
+.gm-review-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+.gm-review-actions button { min-height: 44px; min-width: 88px; }
+.gm-review-reject { border: 1px solid #bcb19d; background: transparent; border-radius: 8px; }
+.gm-review-history { display: grid; gap: 8px; margin-top: 14px; }
+.gm-review-history p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.gm-review-empty { padding: 30px 0; text-align: center; color: #6a6257; }
+.gm-review-more { display: block; margin: 20px auto 4px; }
+@media (max-width: 760px) {
+  .gm-review-row header { flex-direction: column; gap: 6px; }
+  .gm-review-actions button { flex: 1; }
+}
 .account-password-input { position: relative; }
 .account-password-input input { padding-right: 48px; }
 .account-password-input button {

@@ -17,6 +17,7 @@
 - **共享公告板**：16∶9 固定板面，支持桌面和手机自动适配。
 - **任务流程**：发布、领取、提交、审核、退回重试和完成归档。
 - **房间管理**：成员审批、角色资料、战役归档、公开参观和访客留言。
+- **站长审批**：被明确授权的站长登录后，可在账号设置旁打开“GM 申请审批”，批准或拒绝申请、填写备注并查看处理记录。首次站长授权见 [运维说明](supabase/OPERATIONS.md#站长与-gm-审批)。
 - **自由便签**：创建、编辑、拖动、排序、换色、图钉、连线与关系说明。
 - **板面物件**：可移动业务模块、Emoji 贴纸和共享工作记录。贴纸悬停或点选后用 −／＋ 调整为 50%–250%，点击百分比恢复原大小，位置与尺寸在战役内共享保存。
 - **分层主题**：房间背景、板面材质和边框独立配置，支持自定义图片。
@@ -109,6 +110,8 @@ npx supabase functions deploy roll-dice --use-api
 | `npm run preview` | 预览生产构建 |
 | `npm run check` | TypeScript 检查 |
 | `npm run check:access-ui` | 账号入口浏览器回归 |
+| `npm run check:site-admin` | 站长审批、权限隔离和审计回归 |
+| `npm run check:site-admin-ui` | 站长审批桌面与手机交互回归 |
 | `npm run check:motion-ui` | 公告板桌面与移动端回归 |
 | `npm run check:accounts` | 账号领域测试 |
 | `npm run check:database` | PostgreSQL 权限与业务状态回归 |

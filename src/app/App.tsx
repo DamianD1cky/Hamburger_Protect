@@ -60,6 +60,7 @@ import { useBoardViewport } from "../hooks/useBoardViewport";
 import { backend, backendError } from "../lib/backend";
 import { rpc } from "../lib/supabase/client";
 import { settingsUpdate } from "../features/campaign/domain/settingsUpdate";
+import { getSiteAdminAccess } from "../features/access/data/siteAdministration";
 
 const loadBoardScene = () => import("../components/board/BoardScene").then(
   (module) => ({ default: module.BoardScene }),
@@ -213,6 +214,8 @@ function CloudCampaignApp() {
       "join-request",
       "join-inbox",
       "visitor-messages",
+      "site-admin-access",
+      "site-gm-applications",
     ]) {
       queryClient.removeQueries({ queryKey: [key], type: "inactive" });
     }
@@ -226,6 +229,15 @@ function CloudCampaignApp() {
     enabled: Boolean(session?.user) && inLobby,
     staleTime: 5_000,
     refetchInterval: session?.user ? 5_000 : false,
+    refetchIntervalInBackground: false,
+    retry: 1,
+  });
+  const siteAdminQuery = useQuery({
+    queryKey: ["site-admin-access", session?.user.id ?? "signed-out"],
+    queryFn: getSiteAdminAccess,
+    enabled: Boolean(session?.user) && inLobby,
+    staleTime: 5_000,
+    refetchInterval: session?.user && inLobby ? 30_000 : false,
     refetchIntervalInBackground: false,
     retry: 1,
   });
@@ -289,6 +301,8 @@ function CloudCampaignApp() {
     queryClient.removeQueries({ queryKey: ["campaign-board"] });
     queryClient.removeQueries({ queryKey: ["join-request"] });
     queryClient.removeQueries({ queryKey: ["join-inbox"] });
+    queryClient.removeQueries({ queryKey: ["site-admin-access"] });
+    queryClient.removeQueries({ queryKey: ["site-gm-applications"] });
   };
 
   const enterCampaign = async (campaignId: string, publicView = false) => {
@@ -374,6 +388,7 @@ function CloudCampaignApp() {
       session={session}
       legacyCutoff={legacyCutoff}
       gmAccess={gmAccessQuery.data ?? null}
+      isSiteAdmin={siteAdminQuery.data === true}
       activeCampaigns={activeCampaigns}
       joinRequest={
         activePlayerCampaign ? null : (joinRequestQuery.data ?? null)

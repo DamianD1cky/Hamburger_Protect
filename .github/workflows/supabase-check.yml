@@ -17,6 +17,7 @@ jobs:
       - run: npm run check:accounts
       - run: npm run check:database
       - run: npm run check:board-objects
+      - run: npm run check:site-admin
       - run: npm run check:dice
       - run: npm run check:migration
       - run: npm run build

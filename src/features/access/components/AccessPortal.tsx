@@ -39,6 +39,9 @@ import {
 const AccountSettingsDialog = lazy(() => import("./AccountSettingsDialog").then(
   (module) => ({ default: module.AccountSettingsDialog }),
 ));
+const GmApprovalDialog = lazy(() => import("./GmApprovalDialog").then(
+  (module) => ({ default: module.GmApprovalDialog }),
+));
 
 const employeePositions = ["厨师", "维修师", "服务员", "顾客"] as const;
 
@@ -52,6 +55,7 @@ interface AccessPortalProps {
   session: AppSession | null;
   legacyCutoff?: boolean;
   gmAccess: GmAccess | null;
+  isSiteAdmin?: boolean;
   activeCampaigns: ActiveCampaignAccess[];
   joinRequest: CampaignJoinRequest | null;
   onEnterCampaign: (campaignId: string) => void;
@@ -85,6 +89,7 @@ export function AccessPortal({
   session,
   legacyCutoff = false,
   gmAccess,
+  isSiteAdmin = false,
   activeCampaigns,
   joinRequest,
   onEnterCampaign,
@@ -111,6 +116,7 @@ export function AccessPortal({
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [approvalOpen, setApprovalOpen] = useState(false);
   const busyRef = useRef(false);
   const [nickname, setNickname] = useState("");
   const [characterName, setCharacterName] = useState(
@@ -489,6 +495,8 @@ export function AccessPortal({
 
               <button type="button" className="access-signout account-settings-entry"
                 onClick={() => setSettingsOpen(true)}><Settings aria-hidden="true" />账号设置</button>
+              {isSiteAdmin && <button type="button" className="access-signout account-settings-entry"
+                onClick={() => setApprovalOpen(true)}><ShieldAlert aria-hidden="true" />GM 申请审批</button>}
 
               {showCampaignHome ? (
                 <>
@@ -767,6 +775,11 @@ export function AccessPortal({
         <Suspense fallback={<p className="toast is-visible" role="status">正在打开账号设置</p>}>
           <AccountSettingsDialog session={session}
             onClose={() => setSettingsOpen(false)} onUpdated={onAccountUpdated} />
+        </Suspense>
+      )}
+      {approvalOpen && isSiteAdmin && session && (
+        <Suspense fallback={<p className="toast is-visible" role="status">正在打开 GM 审批</p>}>
+          <GmApprovalDialog actorId={session.user.id} onClose={() => setApprovalOpen(false)} />
         </Suspense>
       )}
       {notice && (

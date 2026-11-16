@@ -1,5 +1,41 @@
 # Supabase 迁移运维步骤
 
+## 站长与 GM 审批
+
+迁移 `20261116020000_site_admin_gm_review.sql` 增加独立的站长授权、申请分页与审批 RPC。
+站长登录后，在签到页的“账号设置”旁打开“GM 申请审批”，在待审批列表中核对账号、
+填写可选备注并批准或拒绝；已处理页保留状态、时间和处理人。申请人点击“刷新审批结果”
+即可使用获批 GM 功能。站长审批不会赋予申请人站长权限，也不会让站长自动成为战役 GM。
+
+首次授权必须由持有数据库管理权限的人执行。先在 Supabase Auth Users 核对本人的登录账号，
+取得 **Auth 用户 UUID**，将下面的零 UUID 替换为该 UUID 后在 SQL Editor 执行：
+
+```sql
+do $bootstrap$
+declare actor uuid;
+begin
+  select p.id into strict actor
+    from public.profiles p join auth.users u on u.id=p.auth_user_id
+    where u.id='00000000-0000-0000-0000-000000000000'::uuid
+      and not p.disabled and not coalesce(u.is_anonymous,false)
+      and (u.banned_until is null or u.banned_until<=now());
+  insert into private.site_admins(user_id,active) values(actor,true)
+    on conflict(user_id) do update set active=true;
+end;
+$bootstrap$;
+```
+
+账号须至少成功登录过一次以建立 profile。不会根据“owner”“admin”等名字或可编辑的
+user metadata 自动授权，不在前端放管理密钥。撤销时由数据库管理员将该行 `active` 改为
+`false`；下次审批立即失效。审批接口在事务中锁定授权与申请，拒绝过期请求，并在
+`private.gm_access_reviews` 保存申请人、处理人、决策、备注和时间。浏览器不能直接读写
+授权表或审计表；站长仅通过受控 RPC 读取申请。直接在后台编辑 `gm_access` 不会生成
+此审批接口的处理人记录。
+
+部署与验收：`npm run check:site-admin`、`npm run check:site-admin-ui`，再按既有
+`supabase:push:dry` / `supabase:push` 流程发布迁移。云端事务验收可执行
+`supabase/tests/site_admin_smoke.sql`，测试授权和测试申请均随事务回滚，不处理真实申请。
+
 ## 事件钟
 
 `20261116000000_event_clocks.sql` 增加事件钟表、GM 写入 RPC、成员及公开房间读取与活动记录。

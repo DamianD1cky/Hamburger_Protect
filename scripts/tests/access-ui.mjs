@@ -83,6 +83,7 @@ try {
         } else
           result = { id: actorId, display_name: nickname, disabled: false };
       } else if (url.pathname.endsWith("/get_gm_access")) result = null;
+      else if (url.pathname.endsWith("/get_site_admin_access")) result = false;
       else if (url.pathname.endsWith("/update_account_profile")) {
         assert.deepEqual(Object.keys(body), ["p_display_name"]);
         nickname = body.p_display_name;
