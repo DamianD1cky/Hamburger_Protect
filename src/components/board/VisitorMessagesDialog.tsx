@@ -3,22 +3,28 @@ import { useState, type FormEvent } from "react";
 import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
 import type { VisitorMessage } from "../../features/campaign/domain/types";
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
-import { PaperDialog } from "../composer/PaperDialog";
+import { MenuPopover } from "./MenuPopover";
 
 export function VisitorMessagesDialog({
+  anchor,
   messages,
   defaultName,
   canModerate,
   onClose,
   onSubmit,
   onDelete,
+  loading = false,
+  loadError = "",
 }: {
+  anchor: HTMLElement | null;
   messages: VisitorMessage[];
   defaultName: string;
   canModerate: boolean;
   onClose: () => void;
   onSubmit: (displayName: string, body: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
+  loading?: boolean;
+  loadError?: string;
 }) {
   const [displayName, setDisplayName] = useState(
     defaultName === "访客" ? "" : defaultName,
@@ -64,8 +70,11 @@ export function VisitorMessagesDialog({
   };
 
   return (
-    <PaperDialog
-      title={`访客留言（${messages.length} 条）`}
+    <MenuPopover
+      anchor={anchor}
+      id="visitor-messages-menu"
+      width={440}
+      title="访客留言"
       className="visitor-messages-dialog"
       onClose={onClose}
     >
@@ -74,6 +83,7 @@ export function VisitorMessagesDialog({
         <label className="field">
           <span>署名</span>
           <input
+            aria-label="署名"
             required
             maxLength={40}
             value={displayName}
@@ -85,6 +95,7 @@ export function VisitorMessagesDialog({
         <label className="field">
           <span>留言</span>
           <textarea
+            aria-label="留言"
             required
             maxLength={500}
             rows={3}
@@ -109,7 +120,9 @@ export function VisitorMessagesDialog({
         </p>
       )}
       <div className="visitor-message-list">
-        {!messages.length && <p className="editor-help">还没有访客留言。</p>}
+        {loading && <p className="editor-help" role="status">正在读取留言…</p>}
+        {loadError && <p className="access-error" role="alert">留言读取失败，请稍后重试。</p>}
+        {!loading && !loadError && !messages.length && <p className="editor-help">还没有访客留言。</p>}
         {messages.map((message) => (
           <article key={message.id} className="visitor-message">
             <header>
@@ -135,6 +148,9 @@ export function VisitorMessagesDialog({
         ))}
       </div>
       </div>
-    </PaperDialog>
+      <footer className="composer-actions">
+        <button type="button" className="text-button" onClick={onClose}>完成</button>
+      </footer>
+    </MenuPopover>
   );
 }

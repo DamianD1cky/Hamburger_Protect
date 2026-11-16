@@ -1,4 +1,5 @@
 import { cloneDefaultBoard } from "../domain/defaults";
+import { EVENT_CLOCK_LIMIT, legacyIndexClock, validateEventClock, type EventClock, type EventClockDraft } from "../domain/eventClock";
 import type { CampaignRepository } from "../domain/repository";
 import { defaultBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
 import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../domain/boardGeometry";
@@ -16,13 +17,14 @@ import type {
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
-  CampaignSettingsDraft,
+  CampaignSettingsUpdate,
   MemberProfileDraft,
   NoteDraft,
   QuestDraft,
   QuestStatus,
   ResourceStatus,
 } from "../domain/types";
+import { applySettingsPatch, assertSettingsExpected } from "../domain/settingsUpdate";
 
 const STORAGE_KEY = "hamburger-protect-board-v2";
 const LEGACY_STORAGE_KEY = "laojie-burger-board-v1";
@@ -37,6 +39,7 @@ function uid(prefix: string) {
 
 function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.campaign.burgerIndex ??= 5;
+  board.eventClocks ??= [legacyIndexClock(board.campaign.id, board.campaign.burgerIndex)];
   board.viewer.jobTitle ??= board.viewer.role === "gm" ? "店长" : "服务员";
   board.checklistCategories ??= [];
   board.settings ??= {
@@ -115,6 +118,7 @@ function loadLegacyBoard(): CampaignBoard | null {
       notes?: Array<Record<string, unknown>>;
     };
     const board = cloneDefaultBoard();
+    board.eventClocks = [legacyIndexClock(board.campaign.id, board.campaign.burgerIndex)];
 
     board.resources = board.resources.map((resource) => ({
       ...resource,
@@ -194,6 +198,9 @@ function snapshots(board: CampaignBoard) {
       entity: "checklist",
       value: { label, completed, category_id: categoryId },
     })),
+    ...board.eventClocks.map(({ id, name, segments, progress, consequence, color, mode }) => ({
+      id, entity: "event_clock", value: { name, segments, progress, consequence, color, mode },
+    })),
     {
       id: board.campaign.id,
       entity: "campaign",
@@ -234,6 +241,13 @@ function recordChanges(before: CampaignBoard, board: CampaignBoard) {
     let eventType =
       target.entity + (!prev ? "_created" : !next ? "_deleted" : "_updated");
     if (prev && next) {
+      if (target.entity === "event_clock") {
+        if (next.mode === "progress" && next.progress === next.segments && prev.progress !== prev.segments)
+          eventType = "event_clock_completed";
+        else if (next.mode === "progress" && prev.progress === prev.segments && next.progress !== next.segments)
+          eventType = "event_clock_reopened";
+        else if (prev.progress !== next.progress) eventType = "event_clock_progress_changed";
+      }
       if (
         target.entity === "note" &&
         ["title", "body", "color"].every((f) => prev[f] === next[f])
@@ -249,6 +263,8 @@ function recordChanges(before: CampaignBoard, board: CampaignBoard) {
       )
         eventType = "burger_index_changed";
     }
+    if (target.entity === "event_clock" && !prev && next?.mode === "progress" && next.progress === next.segments)
+      eventType = "event_clock_completed";
     const event: BoardActivity = {
       id: String(BigInt(board.activities[0]?.id ?? "0") + 1n),
       actorId: board.viewer.id,
@@ -394,12 +410,40 @@ class LocalCampaignRepository implements CampaignRepository {
     });
   }
 
-  async setBurgerIndex(_campaignId: string, value: number) {
-    if (!Number.isInteger(value) || value < 1 || value > 9)
-      throw new Error("指数必须在红1到绿3之间");
-    return this.manage((board) => {
-      board.campaign.burgerIndex = value;
+  async saveEventClock(_campaignId: string, draft: EventClockDraft, id?: string, revision?: number) {
+    let saved!: EventClock;
+    this.manage((board) => {
+      const current = board.eventClocks.find((clock) => clock.id === id);
+      if (id && !current) throw new Error("EVENT_CLOCK_NOT_FOUND");
+      if (current && current.revision !== revision) throw new Error("EVENT_CLOCK_CONFLICT");
+      if (!id && board.eventClocks.length >= EVENT_CLOCK_LIMIT) throw new Error("EVENT_CLOCK_LIMIT");
+      saved = current ? { ...current, ...validateEventClock(draft, current), revision: current.revision + 1 } :
+        { ...validateEventClock(draft), id: crypto.randomUUID(), mode: "progress", stages: null, revision: 1 };
+      board.eventClocks = current ? board.eventClocks.map((clock) => clock.id === id ? saved : clock) :
+        [...board.eventClocks, saved];
     });
+    return saved;
+  }
+  async setEventClockProgress(_campaignId: string, id: string, progress: number, revision: number) {
+    let saved!: EventClock;
+    this.manage((board) => {
+      const current = board.eventClocks.find((clock) => clock.id === id);
+      if (!current) throw new Error("EVENT_CLOCK_NOT_FOUND");
+      if (current.revision !== revision) throw new Error("EVENT_CLOCK_CONFLICT");
+      validateEventClock({ ...current, progress }, current);
+      saved = { ...current, progress, revision: current.revision + (progress !== current.progress ? 1 : 0) };
+      board.eventClocks = board.eventClocks.map((clock) => clock.id === id ? saved : clock);
+    });
+    return saved;
+  }
+  async deleteEventClock(_campaignId: string, id: string, revision: number) {
+    this.manage((board) => {
+      const current = board.eventClocks.find((clock) => clock.id === id);
+      if (!current) throw new Error("EVENT_CLOCK_NOT_FOUND");
+      if (current.revision !== revision) throw new Error("EVENT_CLOCK_CONFLICT");
+      board.eventClocks = board.eventClocks.filter((clock) => clock.id !== id);
+    });
+    return id;
   }
 
   async toggleChecklist(_campaignId: string, itemId: string) {
@@ -684,16 +728,13 @@ class LocalCampaignRepository implements CampaignRepository {
 
   async updateCampaignSettings(
     _campaignId: string,
-    draft: CampaignSettingsDraft,
-  ): Promise<CampaignBoard> {
-    return this.manage((board) => {
-      board.campaign.name = draft.name.trim();
-      board.settings.sectionTitles = draft.sectionTitles;
-      board.settings.sectionColors = draft.sectionColors;
-      board.settings.resourceTitles = draft.resourceTitles;
-      board.settings.moduleLayout = draft.moduleLayout;
-      board.settings.hiddenSections = draft.hiddenSections;
+    update: CampaignSettingsUpdate,
+  ) {
+    this.manage((board) => {
+      assertSettingsExpected(board, update);
+      Object.assign(board, applySettingsPatch(board, update.patch));
     });
+    return clone(update.patch);
   }
 
   async moveBoardModule(
@@ -738,9 +779,12 @@ class LocalCampaignRepository implements CampaignRepository {
     _campaignId: string,
     appearance: BoardAppearance,
     files: BoardAppearanceFiles,
+    expected: BoardAppearance,
   ) {
     if (Object.keys(files).length) throw new Error("演示模式不保存自定义图片");
     return this.manage((board) => {
+      if (JSON.stringify(board.settings.appearance) !== JSON.stringify(expected))
+        throw new Error("其他 GM 已修改外观，请重新打开后再调整。");
       board.settings.appearance = clone(appearance);
       board.settings.backgroundPath = appearance.room.imagePath;
       board.settings.backgroundUrl = null;

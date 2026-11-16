@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
 import roomImage from "../../../assets/room-kitchen-clean.jpg";
 import type { BoardAppearance as Appearance, BoardFrameKind } from "../../features/campaign/domain/boardAppearance";
 import { BOARD_FRAME_INSET, BOARD_HEIGHT, BOARD_WIDTH } from "../../features/campaign/domain/boardGeometry";
+const PerspectiveBackground = lazy(() => import("../../features/perspective/PerspectiveBackground")
+  .then((module) => ({ default: module.PerspectiveBackground })));
 
 /** 在新图解码成功前保留上一张已加载的图，避免签名刷新或网络失败造成闪屏。 */
 function useReadyImage(source: string | null, retainOnFailure = false) {
@@ -44,7 +46,12 @@ export function RoomBackground({ appearance, imageUrl, fullscreen = false }: {
     "--room-dim": room.dim,
   } as CSSProperties;
   return <div className={fullscreen ? "room-background is-wallpaper" : "room-background"} data-background-kind={room.kind}
-    data-background-error={failed || undefined} style={style} aria-hidden="true" />;
+    data-background-error={failed || undefined} style={style} aria-hidden="true">
+    {room.kind === "perspective" && <Suspense fallback={null}>
+      <PerspectiveBackground scene={room.scene ?? "crossing"} animated={room.animated ?? true} preview={!fullscreen}
+        fit={room.fit} positionX={room.positionX} positionY={room.positionY} />
+    </Suspense>}
+  </div>;
 }
 
 export function BoardSurface({ appearance, imageUrl }: {

@@ -7,9 +7,10 @@ import {
 import type {
   CampaignBoard,
   CampaignSectionKey,
-  CampaignSettingsPatch,
+  CampaignSettingsUpdate,
 } from "../../features/campaign/domain/types";
-import { PaperDialog } from "../composer/PaperDialog";
+import { settingsUpdate } from "../../features/campaign/domain/settingsUpdate";
+import { MenuPopover } from "./MenuPopover";
 
 /**
  * 恢复被隐藏的区块。区块藏起来之后标题和按钮都看不见了，
@@ -19,10 +20,12 @@ export function SectionVisibilityDialog({
   board,
   onClose,
   onSave,
+  anchor,
 }: {
   board: CampaignBoard;
   onClose: () => void;
-  onSave: (patch: CampaignSettingsPatch) => Promise<unknown>;
+  onSave: (update: CampaignSettingsUpdate) => Promise<unknown>;
+  anchor: HTMLElement;
 }) {
   const [busy, setBusy] = useState<CampaignSectionKey | null>(null);
   const [error, setError] = useState("");
@@ -35,10 +38,7 @@ export function SectionVisibilityDialog({
     setBusy(key);
     setError("");
     try {
-      const next = hidden.includes(key)
-        ? hidden.filter((item) => item !== key)
-        : [...hidden, key];
-      await onSave({ hiddenSections: next });
+      await onSave(settingsUpdate(board, { hiddenSections: { [key]: !hidden.includes(key) } }));
     } catch (toggleError) {
       setError(
         toggleError instanceof Error
@@ -51,14 +51,13 @@ export function SectionVisibilityDialog({
   };
 
   return (
-    <PaperDialog
+    <MenuPopover
+      anchor={anchor}
+      id="board-visibility-menu"
       title="公告板区块"
       className="section-visibility-dialog"
       onClose={onClose}
     >
-      <p className="dialog-hint">
-        隐藏只会收起区块，里面的数据全部保留，随时可以恢复。
-      </p>
       <div className="section-visibility-list">
         {campaignSections.map((section) => {
           const isHidden = hidden.includes(section.id);
@@ -117,6 +116,6 @@ export function SectionVisibilityDialog({
           完成
         </button>
       </footer>
-    </PaperDialog>
+    </MenuPopover>
   );
 }

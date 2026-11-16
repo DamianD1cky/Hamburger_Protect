@@ -17,7 +17,7 @@ import type {
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
-  CampaignSettingsDraft,
+  CampaignSettingsUpdate,
   MemberProfileDraft,
   NoteDraft,
   QuestDraft,
@@ -29,6 +29,8 @@ import type {
 } from "../domain/boardModules";
 import type { CampaignClockConfig } from "../domain/campaignClock";
 import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../domain/boardGeometry";
+import { validateEventClock, type EventClock, type EventClockDraft } from "../domain/eventClock";
+import { applySettingsPatch } from "../domain/settingsUpdate";
 
 type PendingNoteMove = { revision: number; x: number; y: number };
 type PendingModuleMove = { revision: number; x: number; y: number };
@@ -37,6 +39,7 @@ type PendingClockSave = {
   revision: number;
   config: CampaignClockConfig;
 };
+type EventClockWrite = { clock: EventClock | null; pending: boolean };
 
 function withPendingPositions(
   board: CampaignBoard,
@@ -44,8 +47,9 @@ function withPendingPositions(
   pendingModules: Map<BoardModuleKey, PendingModuleMove>,
   pendingClock: PendingClockSave | null,
   pendingStickers: Map<string, PendingSticker>,
+  eventClockWrites: Map<string, EventClockWrite>,
 ) {
-  if (!pendingNotes.size && !pendingModules.size && !pendingClock && !pendingStickers.size) {
+  if (!pendingNotes.size && !pendingModules.size && !pendingClock && !pendingStickers.size && !eventClockWrites.size) {
     return board;
   }
   const moduleLayout = { ...board.settings.moduleLayout };
@@ -54,6 +58,13 @@ function withPendingPositions(
   });
   return {
     ...board,
+    eventClocks: [...board.eventClocks.filter((clock) => eventClockWrites.get(clock.id)?.clock !== null)
+      .map((clock) => {
+        const entry = eventClockWrites.get(clock.id);
+        const override = entry?.clock;
+        return override && (entry.pending || override.revision >= clock.revision) ? override : clock;
+      }), ...[...eventClockWrites.values()].flatMap(({ clock }) =>
+        clock && !board.eventClocks.some((existing) => existing.id === clock.id) ? [clock] : [])],
     stickers: board.stickers.map((sticker) => pendingStickers.get(sticker.id)?.sticker ?? sticker),
     notes: board.notes.map((note) => {
       const pending = pendingNotes.get(note.id);
@@ -113,10 +124,26 @@ export function useCampaignBoard(
   const pendingStickers = useRef(new Map<string, PendingSticker>());
   const stickerWrites = useRef(new Map<string, Promise<unknown>>());
   const stickerRevision = useRef(0);
+  const eventClockWrites = useRef(new Map<string, EventClockWrite>());
+  const eventClockScope = useRef(requestedCampaignId);
+  if (eventClockScope.current !== requestedCampaignId) {
+    eventClockWrites.current.clear(); eventClockScope.current = requestedCampaignId;
+  }
   const options = campaignBoardQueryOptions(requestedCampaignId, publicView);
   const boardKey = options.queryKey;
   const query = useQuery({
     ...options,
+    queryFn: async () => {
+      const next = await options.queryFn();
+      // A fresh board read confirms successful writes and can then reflect
+      // another GM's deletion. Pending writes remain protected.
+      eventClockWrites.current.forEach((entry, id) => {
+        const saved = next.eventClocks.find((clock) => clock.id === id);
+        if (!entry.pending && (!saved || (entry.clock && saved.revision >= entry.clock.revision)))
+          eventClockWrites.current.delete(id);
+      });
+      return next;
+    },
     select: (data) =>
       withPendingPositions(
         data,
@@ -124,6 +151,7 @@ export function useCampaignBoard(
         moduleMoveRevisions.current,
         pendingClockSave.current,
         pendingStickers.current,
+        eventClockWrites.current,
       ),
     placeholderData: cloudEnabled ? undefined : cloneDefaultBoard,
     refetchInterval: cloudEnabled ? 5_000 : false,
@@ -139,6 +167,7 @@ export function useCampaignBoard(
       moduleMoveRevisions.current,
       pendingClockSave.current,
       pendingStickers.current,
+      eventClockWrites.current,
     );
   };
 
@@ -148,6 +177,56 @@ export function useCampaignBoard(
       throw new Error("登录账号已变更，请重新进入战役。");
     queryClient.setQueryData(boardKey, mergePendingPositions(next));
     return next;
+  };
+  const writeEventClock = async (id: string, optimistic: EventClock | null,
+    save: () => Promise<EventClock | string>) => {
+    if (eventClockWrites.current.get(id)?.pending) throw new Error("这个事件钟正在保存，请稍后重试。");
+    const previous = queryClient.getQueryData<CampaignBoard>(boardKey)?.eventClocks.find((clock) => clock.id === id);
+    const entry: EventClockWrite = { clock: optimistic, pending: true };
+    eventClockWrites.current.set(id, entry);
+    const refresh = () => queryClient.setQueryData<CampaignBoard>(boardKey,
+      (current) => current ? mergePendingPositions({ ...current }) : current);
+    await queryClient.cancelQueries({ queryKey: boardKey }); refresh();
+    try {
+      const result = await save();
+      if (cloudEnabled && getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId)
+        throw new Error("登录账号已变更，请重新进入战役。");
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      entry.clock = typeof result === "string" ? null : result;
+      entry.pending = false;
+      refresh();
+      void queryClient.invalidateQueries({ queryKey: boardKey });
+      return result;
+    } catch (error) {
+      // Restore the snapshot even if the optimistic version already carries
+      // a larger revision. A subsequent read supplies any newer GM update.
+      entry.clock = previous ?? null; entry.pending = true;
+      refresh();
+      eventClockWrites.current.delete(id);
+      void queryClient.invalidateQueries({ queryKey: boardKey });
+      throw error;
+    }
+  };
+  const saveEventClock = async (draft: EventClockDraft, id?: string, revision?: number) => {
+    const current = queryClient.getQueryData<CampaignBoard>(boardKey)?.eventClocks.find((clock) => clock.id === id);
+    const validated = validateEventClock(draft, current);
+    if (id) return await writeEventClock(id, current ? { ...current, ...validated, revision: current.revision + 1 } : null,
+      () => repository.saveEventClock(campaignId, validated, id, revision)) as EventClock;
+    const saved = await repository.saveEventClock(campaignId, validated);
+    if (cloudEnabled && getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId)
+      throw new Error("登录账号已变更，请重新进入战役。");
+    await queryClient.cancelQueries({ queryKey: boardKey });
+    eventClockWrites.current.set(saved.id, { clock: saved, pending: false });
+    queryClient.setQueryData<CampaignBoard>(boardKey, (current) => current ? mergePendingPositions({ ...current }) : current);
+    void queryClient.invalidateQueries({ queryKey: boardKey });
+    return saved;
+  };
+  const setEventClockProgress = async (id: string, progress: number, revision: number) => {
+    const current = queryClient.getQueryData<CampaignBoard>(boardKey)?.eventClocks.find((clock) => clock.id === id);
+    if (!current) throw new Error("EVENT_CLOCK_NOT_FOUND");
+    validateEventClock({ ...current, progress }, current);
+    return await writeEventClock(id, { ...current, progress, revision: current.revision + 1 },
+      () => repository.setEventClockProgress(campaignId, id, progress, revision)) as EventClock;
   };
 
   const setCachedNotePosition = (noteId: string, x: number, y: number) => {
@@ -467,8 +546,10 @@ export function useCampaignBoard(
       commit(() => repository.saveChecklistCategory(campaignId, name, id)),
     deleteChecklistCategory: (id: string) =>
       commit(() => repository.deleteChecklistCategory(campaignId, id)),
-    setBurgerIndex: (value: number) =>
-      commit(() => repository.setBurgerIndex(campaignId, value)),
+    saveEventClock,
+    setEventClockProgress,
+    deleteEventClock: (id: string, revision: number) =>
+      writeEventClock(id, null, () => repository.deleteEventClock(campaignId, id, revision)),
     toggleChecklist: (itemId: string) =>
       commit(() => repository.toggleChecklist(campaignId, itemId)),
     saveQuest: (draft: QuestDraft, questId?: string) =>
@@ -501,12 +582,21 @@ export function useCampaignBoard(
       commit(() => repository.updateMemberProfile(campaignId, draft)),
     removeMember: (userId: string, note?: string) =>
       commit(() => repository.removeMember(campaignId, userId, note)),
-    updateCampaignSettings: (draft: CampaignSettingsDraft) =>
-      commit(() => repository.updateCampaignSettings(campaignId, draft)),
+    updateCampaignSettings: async (update: CampaignSettingsUpdate) => {
+      if (!Object.keys(update.patch).length) return {};
+      const saved = await repository.updateCampaignSettings(campaignId, update);
+      if (cloudEnabled && getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId)
+        throw new Error("登录账号已变更，请重新进入战役。");
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
+        current ? mergePendingPositions(applySettingsPatch(current, saved)) : current);
+      if (Object.keys(saved).length) void queryClient.invalidateQueries({ queryKey: boardKey });
+      return saved;
+    },
     moveBoardModule,
     saveCampaignClock,
-    saveBoardAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles) =>
-      commit(() => repository.saveBoardAppearance(campaignId, appearance, files)),
+    saveBoardAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles, expected: BoardAppearance) =>
+      commit(() => repository.saveBoardAppearance(campaignId, appearance, files, expected)),
     setCampaignPublic: (isPublic: boolean) =>
       commit(() => repository.setCampaignPublic(campaignId, isPublic)),
     uploadCampaignMedia: (kind: CampaignMediaKind, file: File) =>

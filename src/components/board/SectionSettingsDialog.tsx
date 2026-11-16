@@ -1,267 +1,75 @@
-import { ListChecks, RotateCcw } from "lucide-react";
-import { useState } from "react";
-import {
-  campaignSections,
-  defaultSectionColors,
-  normalizeColor,
-  sectionTitle,
-} from "../../features/campaign/domain/campaignSettings";
-import {
-  resourceGroupTitle,
-  resourceGroups,
-} from "../../features/campaign/domain/resources";
-import type {
-  CampaignBoard,
-  CampaignSectionKey,
-  CampaignSettingsPatch,
-} from "../../features/campaign/domain/types";
+import { RotateCcw } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+import { campaignSections, defaultSectionColors, normalizeColor, sectionTitle } from "../../features/campaign/domain/campaignSettings";
+import type { CampaignBoard, CampaignSectionKey, CampaignSettingsPatch, CampaignSettingsUpdate } from "../../features/campaign/domain/types";
+import { applySettingsPatch, settingsUpdate } from "../../features/campaign/domain/settingsUpdate";
+import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { PaperDialog } from "../composer/PaperDialog";
+import { BoardSectionHeader } from "./BoardSectionPrimitives";
+import { ColorField } from "./ColorField";
 
-/**
- * 单个区块的标题、底色，以及物资区块里三张便签的小标题。
- * 入口是公告板上每个区块标题旁的铅笔按钮。
- */
-export function SectionSettingsDialog({
-  sectionKey,
-  board,
-  onClose,
-  onSave,
-  onEditChecklist,
-}: {
-  sectionKey: CampaignSectionKey;
-  board: CampaignBoard;
-  onClose: () => void;
-  onSave: (patch: CampaignSettingsPatch) => Promise<unknown>;
-  /** 只有每日检查清单用到：从同一个弹窗进到检查项编辑器。 */
-  onEditChecklist?: () => void;
+/** A fixed appearance form and a separate, type-specific editor share one dialog. */
+export function SectionSettingsDialog({ sectionKey, board, onClose, onSave, renderContent }: {
+  sectionKey: CampaignSectionKey; board: CampaignBoard; onClose: () => void;
+  onSave: (update: CampaignSettingsUpdate) => Promise<CampaignSettingsPatch>;
+  renderContent?: (onBusyChange: (busy: boolean) => void) => ReactNode;
 }) {
-  const section =
-    campaignSections.find((item) => item.id === sectionKey) ??
-    campaignSections[0];
-  const editable =
-    board.viewer.role === "gm" && board.campaign.status === "active";
-
-  const [title, setTitle] = useState(() =>
-    sectionTitle(sectionKey, board.settings.sectionTitles),
-  );
-  const [color, setColor] = useState(
-    () =>
-      normalizeColor(board.settings.sectionColors?.[sectionKey]) ??
-      defaultSectionColors[sectionKey],
-  );
-  const [groupTitles, setGroupTitles] = useState<Record<string, string>>(
-    () => {
-      const preset: Record<string, string> = {};
-      for (const group of resourceGroups) {
-        preset[String(group.id)] = resourceGroupTitle(
-          group.id,
-          board.settings.resourceTitles ?? {},
-        );
-      }
-      return preset;
-    },
-  );
-  const [busy, setBusy] = useState(false);
+  const section = campaignSections.find((item) => item.id === sectionKey) ?? campaignSections[0];
+  const editable = board.viewer.role === "gm" && board.campaign.status === "active";
+  const [title, setTitle] = useState(() => sectionTitle(sectionKey, board.settings.sectionTitles));
+  const [color, setColor] = useState(() =>
+    normalizeColor(board.settings.sectionColors?.[sectionKey]) ?? defaultSectionColors[sectionKey]);
+  const original = useRef(board);
+  const [busy, setBusy] = useState(false), [contentBusy, setContentBusy] = useState(false);
   const [error, setError] = useState("");
-  /** 输入框正在编辑时的原文；合法就同步到 color，失焦后回到规范化显示。 */
-  const [hexDraft, setHexDraft] = useState<string | null>(null);
-
-  const isInventory = sectionKey === "inventory";
-
+  const ime = useImeEnterGuard();
   const save = async () => {
-    if (busy || !editable) return;
+    if (busy || contentBusy || !editable) return;
     const trimmed = title.trim();
-    if (!trimmed) {
-      setError("标题不能为空。");
-      return;
-    }
-    setBusy(true);
-    setError("");
+    if (!trimmed) { setError("标题不能为空。"); return; }
+    setBusy(true); setError("");
     try {
-      const nextTitles = { ...board.settings.sectionTitles };
-      if (trimmed !== section.defaultTitle) {
-        nextTitles[sectionKey] = trimmed;
-      } else {
-        delete nextTitles[sectionKey];
-      }
-
-      const nextColors = { ...board.settings.sectionColors };
-      if (color !== defaultSectionColors[sectionKey]) {
-        nextColors[sectionKey] = color;
-      } else {
-        delete nextColors[sectionKey];
-      }
-
-      const patch: CampaignSettingsPatch = {
-        sectionTitles: nextTitles,
-        sectionColors: nextColors,
-      };
-
-      if (isInventory) {
-        const nextResourceTitles = { ...board.settings.resourceTitles };
-        for (const group of resourceGroups) {
-          const value = (groupTitles[String(group.id)] ?? "").trim();
-          if (value && value !== group.title) {
-            nextResourceTitles[String(group.id)] = value;
-          } else {
-            delete nextResourceTitles[String(group.id)];
-          }
-        }
-        patch.resourceTitles = nextResourceTitles;
-      }
-
-      await onSave(patch);
-      onClose();
-    } catch (saveError) {
-      setError(
-        saveError instanceof Error
-          ? saveError.message
-          : "保存失败，请检查权限后重试。",
-      );
-    } finally {
-      setBusy(false);
-    }
+      const saved = await onSave(settingsUpdate(original.current, {
+        sectionTitles: { [sectionKey]: trimmed === section.defaultTitle ? null : trimmed },
+        sectionColors: { [sectionKey]: color === defaultSectionColors[sectionKey] ? null : color },
+      }));
+      original.current = applySettingsPatch(original.current, saved);
+      // Keep the type-specific draft open; saving appearance never saves it.
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "保存失败，请重试。");
+    } finally { setBusy(false); }
   };
-
-  const resetDefaults = () => {
-    setTitle(section.defaultTitle);
-    setColor(defaultSectionColors[sectionKey]);
-    setHexDraft(null);
-    if (isInventory) {
-      const preset: Record<string, string> = {};
-      for (const group of resourceGroups) preset[String(group.id)] = group.title;
-      setGroupTitles(preset);
-    }
-  };
-
-  return (
-    <PaperDialog
-      title={"设置「" + section.defaultTitle + "」"}
-      className="section-settings-dialog"
-      onClose={onClose}
-    >
-      <p className="dialog-hint">
-        标题与底色只影响你自己的房间，玩家看到的是修改后的样子。
-      </p>
-
-      <section className="section-settings-block">
-        <label className="field">
-          <span>区块标题</span>
-          <input
-            value={title}
-            maxLength={32}
-            disabled={!editable || busy}
-            onChange={(event) => setTitle(event.target.value)}
-            aria-label={section.defaultTitle + "的标题"}
-          />
-        </label>
-        <div className="sign-color-field section-color-field">
-          <span>标题底色</span>
-          <span className="color-inputs">
-            <input
-              type="color"
-              className="sign-color-input"
-              value={color}
-              disabled={!editable || busy}
-              onChange={(event) => {
-                setColor(event.target.value);
-                setHexDraft(null);
-              }}
-              aria-label={section.defaultTitle + "的取色器"}
-            />
-            <input
-              type="text"
-              className="color-hex-input"
-              value={hexDraft ?? color}
-              maxLength={7}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="#rrggbb"
-              disabled={!editable || busy}
-              onChange={(event) => {
-                const raw = event.target.value;
-                setHexDraft(raw);
-                // 输全了才生效，半截输入不会把颜色刷成黑色。
-                const normalized = normalizeColor(raw);
-                if (normalized) setColor(normalized);
-              }}
-              onBlur={() => setHexDraft(null)}
-              aria-label={section.defaultTitle + "的十六进制色号"}
-              title="直接输入十六进制色号，例如 #df101d"
-            />
-          </span>
-        </div>
-      </section>
-
-      {isInventory && (
-        <section className="section-settings-block">
-          <h2 className="section-settings-heading">物资便签标题</h2>
-          {resourceGroups.map((group) => (
-            <label className="field" key={group.id}>
-              <span>{group.title}</span>
-              <input
-                value={groupTitles[String(group.id)] ?? ""}
-                maxLength={32}
-                disabled={!editable || busy}
-                onChange={(event) =>
-                  setGroupTitles((current) => ({
-                    ...current,
-                    [String(group.id)]: event.target.value,
-                  }))
-                }
-              />
-            </label>
-          ))}
-        </section>
-      )}
-
-      {onEditChecklist && (
-        <section className="section-settings-block">
-          <button
-            type="button"
-            className="text-button section-checklist-shortcut"
-            onClick={onEditChecklist}
-            disabled={!editable || busy}
-          >
-            <ListChecks aria-hidden="true" />
-            编辑检查项与分类
+  return <PaperDialog title={`设置「${section.defaultTitle}」`} className="section-settings-dialog"
+    onClose={() => { if (!busy && !contentBusy) onClose(); }}>
+    <div className="module-settings-layout">
+      <form className="module-common-settings" aria-label="模块外观设置" {...ime} onSubmit={(event) => {
+        event.preventDefault(); void save();
+      }}>
+        <h2 className="section-settings-heading">外观</h2>
+        <fieldset disabled={!editable || busy || contentBusy}>
+          <label className="field"><span>标题</span><input value={title} maxLength={32} required
+            onChange={(event) => setTitle(event.target.value)} aria-label={`${section.defaultTitle}的标题`} /></label>
+          <ColorField label="标题底色" accessibleLabel={section.defaultTitle} value={color} onChange={setColor}
+            disabled={!editable || busy || contentBusy} />
+          <div className="module-header-preview" aria-label="标题预览">
+            <BoardSectionHeader title={title || section.defaultTitle} color={color} />
+          </div>
+        </fieldset>
+        {error && <p className="access-error" role="alert">{error}</p>}
+        <footer className="composer-actions section-appearance-actions">
+          <button className="text-button" type="button" disabled={!editable || busy || contentBusy}
+            onClick={() => { setTitle(section.defaultTitle); setColor(defaultSectionColors[sectionKey]); setError(""); }}>
+            <RotateCcw aria-hidden="true" />恢复默认
           </button>
-        </section>
-      )}
-
-      {error && (
-        <p className="access-error" role="alert">
-          {error}
-        </p>
-      )}
-
-      <footer className="composer-actions">
-        <button
-          type="button"
-          className="text-button"
-          onClick={resetDefaults}
-          disabled={!editable || busy}
-        >
-          <RotateCcw aria-hidden="true" />
-          恢复默认
-        </button>
-        <button
-          type="button"
-          className="text-button"
-          onClick={onClose}
-          disabled={busy}
-        >
-          取消
-        </button>
-        <button
-          type="button"
-          className="publish-button"
-          onClick={() => void save()}
-          disabled={!editable || busy || !title.trim()}
-        >
-          {busy ? "保存中…" : "保存"}
-        </button>
-      </footer>
-    </PaperDialog>
-  );
+          <button className="publish-button" type="submit" disabled={!editable || busy || contentBusy || !title.trim()}>
+            {busy ? "保存中…" : "保存模块外观"}
+          </button>
+        </footer>
+      </form>
+      {renderContent && <fieldset className="module-specific-settings" disabled={busy}>
+        <legend className="section-settings-heading">内容</legend>
+        {renderContent(setContentBusy)}
+      </fieldset>}
+    </div>
+  </PaperDialog>;
 }

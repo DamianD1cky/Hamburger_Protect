@@ -18,7 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { BoardEditorKind } from "../components/board/BoardEditorDialog";
+import type { BoardDetailsKind } from "../components/board/BoardDetailsDialog";
 import { FocusDock } from "../components/board/FocusDock";
 import type {
   ComposeKind,
@@ -49,7 +49,6 @@ import { useAuthSession } from "../features/access/hooks/useAuthSession";
 import { defaultBoard } from "../features/campaign/domain/defaults";
 import type {
   CampaignSectionKey,
-  CampaignSettingsPatch,
   ComposerTarget,
   Quest,
   QuestStatus,
@@ -60,6 +59,7 @@ import { MotionText } from "../components/MotionText";
 import { useBoardViewport } from "../hooks/useBoardViewport";
 import { backend, backendError } from "../lib/backend";
 import { rpc } from "../lib/supabase/client";
+import { settingsUpdate } from "../features/campaign/domain/settingsUpdate";
 
 const loadBoardScene = () => import("../components/board/BoardScene").then(
   (module) => ({ default: module.BoardScene }),
@@ -76,11 +76,12 @@ const HandbookDialog = lazy(() =>
   })),
 );
 
-const BoardEditorDialog = lazy(() =>
-  import("../components/board/BoardEditorDialog").then((module) => ({
-    default: module.BoardEditorDialog,
-  })),
-);
+const ChecklistEditor = lazy(() => import("../components/board/BoardEditorDialog")
+  .then((module) => ({ default: module.ChecklistEditor })));
+const EventClockManager = lazy(() => import("../components/board/EventClockManager")
+  .then((module) => ({ default: module.EventClockManager })));
+const ResourceCategorySettings = lazy(() => import("../components/board/ResourceCategorySettings")
+  .then((module) => ({ default: module.ResourceCategorySettings })));
 const RosterDialog = lazy(() =>
   import("../components/board/RosterDialog").then((module) => ({
     default: module.RosterDialog,
@@ -96,6 +97,8 @@ const ActivityDialog = lazy(() =>
     default: module.ActivityDialog,
   })),
 );
+const BoardDetailsDialog = lazy(() => import("../components/board/BoardDetailsDialog")
+  .then((module) => ({ default: module.BoardDetailsDialog })));
 
 const NotesDialog = lazy(() =>
   import("../components/board/NotesDialog").then((module) => ({
@@ -193,6 +196,7 @@ function CloudCampaignApp() {
   const [publicCampaignId, setPublicCampaignId] = useState(
     () => new URLSearchParams(window.location.search).get("visit") ?? "",
   );
+  const inLobby = !session || (!selectedCampaignId && !publicCampaignId);
   useEffect(() => {
     const syncPublicVisit = () =>
       setPublicCampaignId(
@@ -219,7 +223,7 @@ function CloudCampaignApp() {
   const gmAccessQuery = useQuery({
     queryKey: ["gm-access", session?.user?.id ?? "signed-out"],
     queryFn: getGmAccess,
-    enabled: Boolean(session?.user),
+    enabled: Boolean(session?.user) && inLobby,
     staleTime: 5_000,
     refetchInterval: session?.user ? 5_000 : false,
     refetchIntervalInBackground: false,
@@ -228,6 +232,7 @@ function CloudCampaignApp() {
   const publicCampaignsQuery = useQuery({
     queryKey: ["public-campaigns"],
     queryFn: listPublicCampaigns,
+    enabled: inLobby,
     staleTime: 5_000,
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
@@ -237,7 +242,7 @@ function CloudCampaignApp() {
   const accessQuery = useQuery({
     queryKey: ["active-campaigns", session?.user?.id ?? "signed-out"],
     queryFn: getActiveCampaigns,
-    enabled: Boolean(session?.user),
+    enabled: Boolean(session?.user) && inLobby,
     staleTime: 5_000,
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
@@ -250,7 +255,7 @@ function CloudCampaignApp() {
   const joinRequestQuery = useQuery({
     queryKey: ["join-request", session?.user?.id ?? "signed-out"],
     queryFn: getOwnJoinRequest,
-    enabled: Boolean(session?.user) && !activePlayerCampaign,
+    enabled: Boolean(session?.user) && inLobby && !activePlayerCampaign,
     staleTime: 5_000,
     refetchInterval: 5_000,
     refetchIntervalInBackground: false,
@@ -260,17 +265,6 @@ function CloudCampaignApp() {
   useEffect(() => {
     setSelectedCampaignId("");
   }, [session?.user.authUserId]);
-  useEffect(() => {
-    if (
-      selectedCampaignId &&
-      accessQuery.isSuccess &&
-      !activeCampaigns.some(
-        (campaign) => campaign.campaignId === selectedCampaignId,
-      )
-    ) {
-      setSelectedCampaignId("");
-    }
-  }, [accessQuery.isSuccess, activeCampaigns, selectedCampaignId]);
 
   // Anonymous identities are retired: any surviving anonymous session is
   // signed out on sight and the visitor starts over with an account.
@@ -355,7 +349,7 @@ function CloudCampaignApp() {
   }
 
   if (
-    session?.user &&
+    session?.user && inLobby &&
     (gmAccessQuery.isLoading ||
       accessQuery.isLoading ||
       joinRequestQuery.isLoading)
@@ -506,27 +500,30 @@ function CampaignBoardWorkspace({
   const { worldRef, viewScaleRef, focusZone, setFocusZone } =
     useBoardViewport(campaign.board?.settings.moduleLayout);
   const [composer, setComposer] = useState<ComposerState>(closedComposer);
-  const [boardEditor, setBoardEditor] = useState<BoardEditorKind | null>(null);
   const [resourceSheet, setResourceSheet] = useState<number | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
-  const [rosterOpen, setRosterOpen] = useState(false);
-  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
+  const [boardDetails, setBoardDetails] = useState<BoardDetailsKind | null>(null);
+  const rosterTrigger = useRef<HTMLButtonElement>(null);
+  const [topMenu, setTopMenu] = useState<{
+    kind: "room" | "visibility" | "roster" | "visitors"; anchor: HTMLElement;
+  } | null>(null);
   const [clockSettingsOpen, setClockSettingsOpen] = useState(false);
-  const [visitorMessagesOpen, setVisitorMessagesOpen] = useState(false);
+  const openRoster = () => {
+    if (rosterTrigger.current) setTopMenu({ kind: "roster", anchor: rosterTrigger.current });
+  };
   const [sectionSettingsKey, setSectionSettingsKey] =
     useState<CampaignSectionKey | null>(null);
-  const [sectionVisibilityOpen, setSectionVisibilityOpen] = useState(false);
   const visitorMessages = useQuery({
     queryKey: ["visitor-messages", campaignId, campaign.board?.viewer.id],
     queryFn: () => getVisitorMessages(campaignId),
     enabled:
       !demo &&
-      Boolean(campaign.board) &&
+      topMenu?.kind === "visitors" && Boolean(campaign.board) &&
       (publicView ||
         campaign.board?.viewer.role === "gm" ||
         Boolean(campaign.board?.settings.isPublic)),
-    refetchInterval: visitorMessagesOpen ? 5_000 : 15_000,
+    refetchInterval: 5_000,
     refetchIntervalInBackground: false,
     staleTime: 5_000,
     retry: 1,
@@ -595,6 +592,7 @@ function CampaignBoardWorkspace({
       target: ComposerTarget | null,
       element: HTMLElement,
     ) => {
+      setTopMenu(null);
       setComposer({
         open: true,
         kind,
@@ -704,7 +702,8 @@ function CampaignBoardWorkspace({
     [campaign, showToast],
   );
 
-  if (campaign.error && (!campaign.board || publicView)) {
+  const accessDenied = campaign.error && /AUTH_REQUIRED|ACCOUNT_DISABLED|CAMPAIGN_ACCESS_REQUIRED|读取权限|not a campaign member/.test(campaign.error.message);
+  if (campaign.error && (!campaign.board || publicView || accessDenied)) {
     return (
       <div className="cloud-status-screen is-error">
         <div className="backdrop" aria-hidden="true" />
@@ -728,18 +727,7 @@ function CampaignBoardWorkspace({
   }
 
   const board = campaign.board;
-  /** 把公告板上的局部修改合进完整草稿，没改的字段沿用当前值。 */
-  const patchBoardSettings = async (patch: CampaignSettingsPatch) => {
-    await campaign.updateCampaignSettings({
-      name: board.campaign.name,
-      sectionTitles: board.settings.sectionTitles,
-      sectionColors: board.settings.sectionColors,
-      resourceTitles: board.settings.resourceTitles,
-      moduleLayout: board.settings.moduleLayout,
-      hiddenSections: board.settings.hiddenSections,
-      ...patch,
-    });
-  };
+  const patchBoardSettings = campaign.updateCampaignSettings;
   const roleLabel = publicView
     ? "访客 / 只读参观"
     : board.viewer.role === "gm"
@@ -747,6 +735,10 @@ function CampaignBoardWorkspace({
       : board.viewer.role === "player"
         ? board.viewer.jobTitle
         : "观察者";
+  const toggleChecklist = (id: string) =>
+    void campaign.toggleChecklist(id)
+      .then(() => showToast("防御检查已更新"))
+      .catch(() => showToast("检查更新失败，请重试"));
 
   return (
     <>
@@ -757,16 +749,13 @@ function CampaignBoardWorkspace({
           worldRef={worldRef}
           viewScaleRef={viewScaleRef}
           onOpenResourceSheet={setResourceSheet}
-          onManageIndex={() => setBoardEditor("index")}
-          onExpandRoster={() => setRosterOpen(true)}
+          onEventClockProgress={campaign.setEventClockProgress}
+          onViewChecklist={() => setBoardDetails("checklist")}
+          onViewQuests={(completed) => setBoardDetails(completed ? "completed-tasks" : "active-tasks")}
+          onExpandRoster={openRoster}
           onOpenNotes={() => setNotesOpen(true)}
           onOpenActivity={() => setActivityOpen(true)}
-          onToggleChecklist={(id) =>
-            void campaign
-              .toggleChecklist(id)
-              .then(() => showToast("防御检查已更新"))
-              .catch(() => showToast("检查更新失败，请重试"))
-          }
+          onToggleChecklist={toggleChecklist}
           onComposeQuest={(event) =>
             openComposer("quest", null, event.currentTarget)
           }
@@ -819,12 +808,9 @@ function CampaignBoardWorkspace({
           onUpdateNoteLinkLabel={campaign.updateNoteLinkLabel}
           onEditSection={(key) => setSectionSettingsKey(key)}
           onHideSection={(key) => {
-            const next = board.settings.hiddenSections.includes(key)
-              ? board.settings.hiddenSections
-              : [...board.settings.hiddenSections, key];
-            void patchBoardSettings({ hiddenSections: next })
+            void patchBoardSettings(settingsUpdate(board, { hiddenSections: { [key]: true } }))
               .then(() => showToast("区块已隐藏，可在顶栏恢复"))
-              .catch(() => showToast("隐藏失败，请检查权限后重试"));
+              .catch((error) => showToast(error instanceof Error ? error.message : "隐藏失败，请重试"));
           }}
           moduleLayout={board.settings.moduleLayout}
           onMoveModule={campaign.moveBoardModule}
@@ -862,27 +848,38 @@ function CampaignBoardWorkspace({
             <Copy aria-hidden="true" />
           </button>
         )}
-        {!demo && board.viewer.role === "gm" && (
+        {!publicView && board.viewer.role !== "observer" && (
           <button
             type="button"
+            ref={rosterTrigger}
             className={
               (joinInbox.data?.total ?? 0) > 0
                 ? "join-inbox-button has-pending"
                 : "join-inbox-button"
             }
-            onClick={() => setRosterOpen(true)}
-            aria-label={`入店申请，${joinInbox.data?.total ?? 0} 条待审批`}
-            title="审批玩家入店申请"
+            data-top-menu-trigger="roster"
+            aria-haspopup="dialog"
+            aria-expanded={topMenu?.kind === "roster"}
+            aria-controls="roster-menu"
+            onClick={(event) => setTopMenu(topMenu?.kind === "roster" ? null :
+              { kind: "roster", anchor: event.currentTarget })}
+            aria-label={board.viewer.role === "gm" ? `危机排班，${joinInbox.data?.total ?? 0} 条待审批` : "危机排班"}
+            title="危机排班"
           >
             <UserPlus aria-hidden="true" />
-            <MotionText value={joinInbox.data?.total ?? 0} />
+            {board.viewer.role === "gm" && <MotionText value={joinInbox.data?.total ?? 0} />}
           </button>
         )}
         {board.viewer.role === "gm" && (
           <button
             type="button"
             className="section-visibility-button"
-            onClick={() => setSectionVisibilityOpen(true)}
+            data-top-menu-trigger="visibility"
+            aria-haspopup="dialog"
+            aria-expanded={topMenu?.kind === "visibility"}
+            aria-controls="board-visibility-menu"
+            onClick={(event) => setTopMenu(topMenu?.kind === "visibility" ? null :
+              { kind: "visibility", anchor: event.currentTarget })}
             aria-label={
               "管理公告板区块" +
               (board.settings.hiddenSections.length
@@ -900,7 +897,12 @@ function CampaignBoardWorkspace({
         {board.viewer.role === "gm" && (
           <button
             type="button"
-            onClick={() => setRoomSettingsOpen(true)}
+            data-top-menu-trigger="room"
+            aria-haspopup="dialog"
+            aria-expanded={topMenu?.kind === "room"}
+            aria-controls="room-settings-menu"
+            onClick={(event) => setTopMenu(topMenu?.kind === "room" ? null :
+              { kind: "room", anchor: event.currentTarget })}
             aria-label="打开房间配置"
             title="房间配置"
           >
@@ -914,17 +916,22 @@ function CampaignBoardWorkspace({
             <button
               type="button"
               className="visitor-message-button"
-              onClick={() => setVisitorMessagesOpen(true)}
-              aria-label={`访客留言，${visitorMessages.data?.length ?? 0} 条`}
+              data-top-menu-trigger="visitors"
+              aria-haspopup="dialog"
+              aria-expanded={topMenu?.kind === "visitors"}
+              aria-controls="visitor-messages-menu"
+              onClick={(event) => setTopMenu(topMenu?.kind === "visitors" ? null :
+                { kind: "visitors", anchor: event.currentTarget })}
+              aria-label={visitorMessages.data ? `访客留言，${visitorMessages.data.length} 条` : "访客留言"}
               title="访客留言"
             >
               <MessageSquare aria-hidden="true" />
-              <MotionText value={visitorMessages.data?.length ?? 0} />
+              {visitorMessages.data && <MotionText value={visitorMessages.data.length} />}
             </button>
           )}
         <button
           type="button"
-          onClick={() => setHandbookOpen(true)}
+          onClick={() => { setTopMenu(null); setHandbookOpen(true); }}
           aria-label="打开员工手册"
           title="员工手册"
         >
@@ -974,18 +981,6 @@ function CampaignBoardWorkspace({
             }}
           />
         )}
-        {boardEditor && (
-          <BoardEditorDialog
-            kind={boardEditor}
-            board={board}
-            onClose={() => setBoardEditor(null)}
-            onSaveChecklist={campaign.saveChecklistItem}
-            onDeleteChecklist={campaign.deleteChecklistItem}
-            onSaveCategory={campaign.saveChecklistCategory}
-            onDeleteCategory={campaign.deleteChecklistCategory}
-            onSetIndex={campaign.setBurgerIndex}
-          />
-        )}
         {resourceSheet !== null && (
           <ResourceSheetDialog
             group={resourceSheet}
@@ -1002,6 +997,14 @@ function CampaignBoardWorkspace({
             loadPage={campaign.getActivities}
           />
         )}
+        {boardDetails && <BoardDetailsDialog kind={boardDetails} board={board}
+          onClose={() => setBoardDetails(null)}
+          onToggleChecklist={toggleChecklist}
+          onTransitionQuest={transitionQuest}
+          onEditQuest={(quest, event) => {
+            setBoardDetails(null);
+            openComposer("quest", { kind: "quest", id: quest.id }, event.currentTarget);
+          }} />}
         {notesOpen && (
           <NotesDialog
             board={board}
@@ -1017,16 +1020,18 @@ function CampaignBoardWorkspace({
             onTogglePin={campaign.setNotePinned}
           />
         )}
-        {roomSettingsOpen && (
+        {!publicView && board.viewer.role === "gm" && (
           <RoomSettingsDialog
+            anchor={topMenu?.kind === "room" ? topMenu.anchor : null}
             board={board}
-            onClose={() => setRoomSettingsOpen(false)}
+            onClose={() => setTopMenu((current) => current?.kind === "room" ? null : current)}
             onSave={async (draft) => {
-              await campaign.updateCampaignSettings(draft);
+              const saved = await campaign.updateCampaignSettings(draft);
               showToast("房间配置已保存");
+              return saved;
             }}
-            onSaveAppearance={async (appearance, files) => {
-              await campaign.saveBoardAppearance(appearance, files);
+            onSaveAppearance={async (appearance, files, expected) => {
+              await campaign.saveBoardAppearance(appearance, files, expected);
               showToast("公告板外观已保存");
             }}
             onUpload={async (kind, file) => {
@@ -1044,10 +1049,7 @@ function CampaignBoardWorkspace({
               });
               showToast(isPublic ? "房间已开放参观" : "房间已关闭参观");
             }}
-            onOpenRoster={() => {
-              setRoomSettingsOpen(false);
-              setRosterOpen(true);
-            }}
+            onOpenRoster={openRoster}
           />
         )}
         {clockSettingsOpen && (
@@ -1065,35 +1067,75 @@ function CampaignBoardWorkspace({
             sectionKey={sectionSettingsKey}
             board={board}
             onClose={() => setSectionSettingsKey(null)}
-            onEditChecklist={
-              sectionSettingsKey === "safety"
-                ? () => {
-                    setSectionSettingsKey(null);
-                    setBoardEditor("checklist");
-                  }
-                : undefined
-            }
+            key={sectionSettingsKey}
+            renderContent={(onBusyChange) => {
+              const openContent = (open: () => void) => { setSectionSettingsKey(null); open(); };
+              switch (sectionSettingsKey) {
+                case "inventory":
+                  return <ResourceCategorySettings board={board} onBusyChange={onBusyChange}
+                    onSave={patchBoardSettings} onOpenSheet={(group) => openContent(() => setResourceSheet(group))} />;
+                case "index":
+                  return <EventClockManager board={board} onSave={campaign.saveEventClock}
+                    onDelete={campaign.deleteEventClock} onBusyChange={onBusyChange} />;
+                case "safety":
+                  return <ChecklistEditor kind="checklist" board={board} onBusyChange={onBusyChange}
+                    onSaveChecklist={campaign.saveChecklistItem} onDeleteChecklist={campaign.deleteChecklistItem}
+                    onSaveCategory={campaign.saveChecklistCategory} onDeleteCategory={campaign.deleteChecklistCategory} />;
+                case "tasks":
+                  return <div className="module-content-directory">
+                    <button type="button" className="publish-button" onClick={(event) => {
+                      setSectionSettingsKey(null); openComposer("quest", null, event.currentTarget);
+                    }}>发布工作指示</button>
+                    {board.quests.map((quest) => <button type="button" className="module-content-row" key={quest.id}
+                      onClick={(event) => {
+                        setSectionSettingsKey(null); openComposer("quest", { kind: "quest", id: quest.id }, event.currentTarget);
+                      }}>{quest.title}</button>)}
+                  </div>;
+                case "shifts":
+                  return <div className="module-content-directory">
+                    <button type="button" className="text-button" onClick={() => openContent(openRoster)}>
+                      管理成员与角色
+                    </button>
+                    {board.members.filter((member) => member.active).map((member) =>
+                      <div className="module-content-row" key={member.userId}><span>{member.characterName}</span><span>{member.jobTitle}</span></div>)}
+                  </div>;
+                case "activity":
+                  return <div className="module-content-directory">
+                    <strong>{board.activities.length}{board.hasMoreActivity ? "+" : ""} 条操作记录</strong>
+                    <button type="button" className="text-button" onClick={() => openContent(() => setActivityOpen(true))}>
+                      查看工作记录
+                    </button>
+                  </div>;
+                default:
+                  return null;
+              }
+            }}
             onSave={async (patch) => {
-              await patchBoardSettings(patch);
+              const saved = await patchBoardSettings(patch);
               showToast("区块设置已保存");
+              return saved;
             }}
           />
         )}
-        {sectionVisibilityOpen && (
+        {topMenu?.kind === "visibility" && (
           <SectionVisibilityDialog
+            anchor={topMenu.anchor}
             board={board}
-            onClose={() => setSectionVisibilityOpen(false)}
+            onClose={() => setTopMenu(null)}
             onSave={async (patch) => {
               await patchBoardSettings(patch);
             }}
           />
         )}
-        {visitorMessagesOpen && (
+        {!demo && (publicView || board.viewer.role === "gm" || board.settings.isPublic) && (
           <VisitorMessagesDialog
+            anchor={topMenu?.kind === "visitors" ? topMenu.anchor : null}
             messages={visitorMessages.data ?? []}
+            loading={visitorMessages.isFetching && !visitorMessages.data}
+            loadError={visitorMessages.error instanceof Error ? visitorMessages.error.message : ""}
             defaultName={board.viewer.displayName}
             canModerate={!publicView && board.viewer.role === "gm"}
-            onClose={() => setVisitorMessagesOpen(false)}
+            onClose={() => setTopMenu((current) => current?.kind === "visitors" ? null : current)}
             onSubmit={async (displayName, body) => {
               await submitVisitorMessage({
                 campaignId,
@@ -1114,8 +1156,9 @@ function CampaignBoardWorkspace({
             }}
           />
         )}
-        {rosterOpen && (
+        {!publicView && board.viewer.role !== "observer" && (
           <RosterDialog
+            anchor={topMenu?.kind === "roster" ? topMenu.anchor : null}
             board={board}
             joinInbox={
               board.viewer.role === "gm" && !demo
@@ -1138,7 +1181,7 @@ function CampaignBoardWorkspace({
               await joinInbox.refetch();
               showToast("成员已移出，未提交任务已释放");
             }}
-            onClose={() => setRosterOpen(false)}
+            onClose={() => setTopMenu((current) => current?.kind === "roster" ? null : current)}
           />
         )}
 

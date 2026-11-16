@@ -1,5 +1,18 @@
 # Supabase 迁移运维步骤
 
+## 事件钟
+
+`20261116000000_event_clocks.sql` 增加事件钟表、GM 写入 RPC、成员及公开房间读取与活动记录。
+迁移将现有战役的汉堡屋指数保留为状态刻度，不把绿3当成后果触发；新战役默认无事件钟。
+各事件钟保存时校验独立 revision，冲突时拒绝覆盖。进度填满与回退只记录事件，不自动执行规则后果。
+上线前应用迁移；前端可在旧服务器上继续读取旧指数，新增及修改需要新 RPC。
+
+## 透视背景配置
+
+`20261115010000_perspective_background.sql` 扩展既有 GM 外观 RPC，允许保存路口/车站
+与动态开关。旧主题仍有效，图片路径、成员权限和物件坐标校验保持一致。
+部署新前端前应用该迁移；无需上传视频或新增 Storage 资源。
+
 ## 直接执行
 
 本目录提供新的 Supabase 后端与迁移工具。目标项目 `wnutyroweeipsxyhlocx` 已完成生产切换：Supabase 负责读写，Nhost 业务数据冻结保留为恢复基准。18 项云端 SQL 检查、匿名身份恢复及并发验收均已通过；默认保留全部历史数据。
@@ -125,7 +138,11 @@ Auth 云配置需要逐项与生产核对，不能把本地 `site_url` 覆盖到
 
 ## 深度交互
 
-骰盘表情与贴纸缩放使用 `20261115000000_dice_reactions_sticker_scale.sql`。部署后可运行 `supabase db query --linked --file supabase/tests/dice_social_sticker_smoke.sql`；临时战役、表情与贴纸均在事务结束时回滚。表情只保存每位成员的最新一条，显示期限为 4 秒，服务器限制每秒最多一条。`get_dice_social` 只返回可见投掷的成员 ID，不返回公式或点数；`dice_reactions` 已加入 Realtime publication，前端另以短轮询补查过期和断线状态。
+骰盘表情与贴纸缩放使用 `20261115000000_dice_reactions_sticker_scale.sql`。部署后可运行 `supabase db query --linked --file supabase/tests/dice_social_sticker_smoke.sql`；临时战役、表情与贴纸均在事务结束时回滚。表情只保存每位成员的最新一条，显示期限为 4 秒，服务器限制每秒最多一条。`get_dice_social` 只返回可见投掷的成员 ID 和过期时间，不返回公式或点数；`dice_reactions` 已加入 Realtime publication。表情及投掷状态在本地按服务端时间过期，订阅正常时每 30 秒兜底校验，订阅失败时每 5 秒补查，关闭骰盘后停用社交查询。
+
+配置优化使用 `20261116010000_settings_patch_social_expiry.sql`。先部署迁移再发布前端；新前端不回退到会覆盖整份设置的旧 RPC。`patch_campaign_settings` 仅更新请求中的键，`null` 删除某个自定义标题／颜色，显隐以模块键和布尔值提交；模块位置继续通过 `move_board_module` 单独保存。提交包含编辑时的原值，冲突返回 `CAMPAIGN_SETTINGS_CONFLICT`；已成功请求的重复提交可安全重试。`patch_board_appearance` 对整个外观草稿执行同样的原值检查。
+
+本地发布检查包括 `npm run check`、`npm run check:board-objects`、`npm run check:dice` 和构建。迁移部署后运行 `supabase db query --linked --file supabase/tests/settings_patch_smoke.sql`，临时房间和操作日志全部回滚。历史 `supabase/migrations/` 与 Nhost 迁移资料保留；Nhost CLI 不再默认安装。配置成功替换的旧纸张素材暂时保留，避免并发页面的签名 URL 失效，后续按引用扫描与保留期回收。
 
 初始方案未假设旧密码可迁移；实际执行已保留 24 个来源 bcrypt 密码，仍不承诺开放写入后的即时回退。匿名身份在新平台仍依赖浏览器会话，长期角色找回机制需要单独设计。生产执行必须同时具备来源和目标授权连接；只有前端 URL 和 publishable key，仍不足以导入历史数据。
 

@@ -16,19 +16,40 @@ export interface TrayDie {
   initialPose?: DiePose;
 }
 type DieGeometry = { body: BufferGeometry; marks: BufferGeometry; recessed: boolean };
+export type DieAppearance = "numbered" | "rolling" | "secret";
+interface DieModel { group: Group; body: Mesh; marks: Mesh; shape: ReturnType<typeof getDieShape> }
 
 /** One geometry per die type/hidden state, shared across all instances. */
 export function createModelLibrary(surfaces: SurfaceLibrary) {
   const geometries = new Map<string, DieGeometry>();
+  const geometryFor = (sides: TrayDie["sides"], hidden: boolean) => {
+    const key = `${sides}:${hidden}`;
+    let geometry = geometries.get(key);
+    if (!geometry) {
+      geometry = buildDieGeometry(sides, hidden);
+      geometries.set(key, geometry);
+    }
+    return geometry;
+  };
+  const appearance = (model: DieModel, skin: string, state: DieAppearance) => {
+    const sides = model.group.userData.sides as TrayDie["sides"];
+    const geometry = geometryFor(sides, state === "secret");
+    model.body.geometry = geometry.body;
+    model.body.material = surfaces.material("body", skin);
+    model.marks.geometry = geometry.marks;
+    model.marks.material = surfaces.material("marks", skin, !geometry.recessed);
+    model.marks.visible = true;
+    // Fixed markings: neither numeric results nor network timing can rotate
+    // pips, numbers or the body independently of the whole die.
+    model.body.quaternion.identity();
+    model.marks.quaternion.identity();
+    model.group.userData.appearance = state;
+    model.group.userData.hidden = state === "secret";
+  };
   return {
     create(die: TrayDie, skin: string) {
       const hidden = !!die.rollId && die.value === null;
-      const key = `${die.sides}:${hidden}`;
-      let geometry = geometries.get(key);
-      if (!geometry) {
-        geometry = buildDieGeometry(die.sides, hidden);
-        geometries.set(key, geometry);
-      }
+      const geometry = geometryFor(die.sides, hidden);
       const group = new Group();
       const body = new Mesh(geometry.body, surfaces.material("body", skin));
       body.name = "body"; body.userData.surfaceSlot = "body";
@@ -39,9 +60,12 @@ export function createModelLibrary(surfaces: SurfaceLibrary) {
       group.add(marks);
       group.userData.dieId = die.id;
       group.userData.model = String(die.sides);
+      group.userData.sides = die.sides;
       group.userData.hidden = hidden;
-      return { group, body, shape: getDieShape(die.sides) };
+      group.userData.appearance = hidden ? "secret" : "numbered";
+      return { group, body, marks, shape: getDieShape(die.sides) };
     },
+    appearance,
     dispose() {
       for (const geometry of geometries.values()) {
         geometry.body.dispose(); geometry.marks.dispose();

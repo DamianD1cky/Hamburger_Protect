@@ -18,6 +18,7 @@ const entityLabels: Record<string, string> = {
   campaign: "战役",
   member: "成员",
   settings: "房间配置",
+  event_clock: "事件钟",
 };
 const fieldLabels: Record<string, string> = {
   title: "标题",
@@ -45,6 +46,10 @@ const fieldLabels: Record<string, string> = {
   background_path: "场景背景",
   note_texture_path: "便签纸张",
   is_public: "公开参观",
+  segments: "总格数",
+  progress: "进度",
+  consequence: "事件后果",
+  mode: "追踪方式",
 };
 const colorLabels: Record<string, string> = {
   yellow: "黄色",
@@ -70,6 +75,12 @@ export function activitySummary(event: BoardActivity) {
   const subject = title ? `「${title}」` : "";
   const label = entityLabels[event.entityType] ?? "公告板";
   switch (event.eventType) {
+    case "event_clock_completed":
+      return `事件钟${subject}已填满：${String(target.consequence ?? "")}`;
+    case "event_clock_reopened":
+      return `回退了事件钟${subject}的进度`;
+    case "event_clock_progress_changed":
+      return `将事件钟${subject}调整为 ${target.progress}/${target.segments}`;
     case "join_requested":
       return `申请加入班次（${event.payload.job_title ?? ""}）`;
     case "join_approved":
@@ -124,6 +135,7 @@ function displayValue(
   if (field === "completed") return value ? "已完成" : "未完成";
   if (field === "pinned") return value ? "已置顶" : "未置顶";
   if (field === "burger_index") return burgerIndexInfo(Number(value)).label;
+  if (field === "mode" && event.entityType === "event_clock") return value === "scale" ? "状态刻度" : "进度钟";
   if (field === "color") return colorLabels[String(value)] ?? String(value);
   if (field === "group_index")
     return (
@@ -164,7 +176,7 @@ export function activityDetails(event: BoardActivity) {
     )
     .map((field) => ({
       field,
-      label: fieldLabels[field] ?? field,
+      label: field === "color" && event.entityType === "event_clock" ? "事件钟颜色" : fieldLabels[field] ?? field,
       before: before ? displayValue(event, field, before[field]) : null,
       after: after ? displayValue(event, field, after[field]) : null,
     }));

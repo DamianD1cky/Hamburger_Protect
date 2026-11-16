@@ -7,7 +7,7 @@ export const campaignSections: Array<{
   { id: "inventory", defaultTitle: "可用物资与设施" },
   { id: "tasks", defaultTitle: "工作指示与报告" },
   { id: "shifts", defaultTitle: "危机排班" },
-  { id: "index", defaultTitle: "汉堡屋指数" },
+  { id: "index", defaultTitle: "事件钟" },
   { id: "activity", defaultTitle: "工作记录" },
   { id: "safety", defaultTitle: "每日检查清单" },
   { id: "notes", defaultTitle: "便签" },
@@ -70,7 +70,7 @@ export function readableTextColor(background: string) {
   return luminance > 0.62 ? "#2b2517" : "#ffffff";
 }
 
-/** 给标题牌（.sign / .index-heading）用的内联样式。 */
+/** 给所有模块的统一标题栏用的内联样式。 */
 export function titleColorStyle(background: string) {
   const text = readableTextColor(background);
   return {

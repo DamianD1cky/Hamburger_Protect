@@ -1,5 +1,20 @@
 # Third-Party Notices
 
+## Perspective scene recreation
+
+The optional crossing and station backgrounds adapt the Canvas renderer supplied
+in `perspective_recreation/renderer.js`. The recreation references the perspective
+and composition of Yuma Garments' work. It is an independent drawing recreation,
+not the author's source project or a pixel-identical reproduction.
+
+References:
+
+- <https://x.com/garments__/status/2118313545939243322>
+- <https://x.com/garments__/status/2110341300772069576>
+
+The application bundles only drawing code. It does not include the reference
+videos, their soundtracks, the recreated MP4 exports, or the comparison player.
+
 ## Dice and 3D dependencies
 
 - RPG Dice Roller 5.5.1 — MIT, copyright GreenImp / Dice Roller contributors.

@@ -346,7 +346,6 @@ export function AccessPortal({
                   >
                     <span>
                       <strong>{campaign.name}</strong>
-                      <small>汉堡屋指数 {campaign.burgerIndex}</small>
                     </span>
                     <span className="public-room-message-count">
                       <MessageSquare aria-hidden="true" />

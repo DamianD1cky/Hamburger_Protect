@@ -5,6 +5,7 @@ export type EmployeePosition = string;
 import type { BoardModuleLayout } from "./boardModules";
 import type { BoardAppearance } from "./boardAppearance";
 import type { CampaignClockConfig } from "./campaignClock";
+import type { EventClock } from "./eventClock";
 
 export type CampaignSectionKey =
   "inventory" | "tasks" | "shifts" | "index" | "activity" | "safety" | "notes";
@@ -187,6 +188,7 @@ export interface CampaignBoard {
   activities: BoardActivity[];
   stickers: BoardSticker[];
   hasMoreActivity: boolean;
+  eventClocks: EventClock[];
 }
 
 export type ResourceDraft = Pick<
@@ -204,17 +206,20 @@ export interface MemberProfileDraft {
   profileText: string;
 }
 
-export interface CampaignSettingsDraft {
-  name: string;
-  sectionTitles: Partial<Record<CampaignSectionKey, string>>;
-  sectionColors: Partial<Record<CampaignSectionKey, string>>;
-  resourceTitles: Partial<Record<string, string>>;
-  hiddenSections: CampaignSectionKey[];
-  moduleLayout: BoardModuleLayout;
+/** Only edited keys are sent; null restores the default for a map entry. */
+export interface CampaignSettingsPatch {
+  name?: string;
+  sectionTitles?: Partial<Record<CampaignSectionKey, string | null>>;
+  sectionColors?: Partial<Record<CampaignSectionKey, string | null>>;
+  resourceTitles?: Partial<Record<string, string | null>>;
+  hiddenSections?: Partial<Record<CampaignSectionKey, boolean>>;
+  noteTexturePath?: string | null;
 }
 
-/** 只改其中几项时用这个，未出现的键沿用当前值。 */
-export type CampaignSettingsPatch = Partial<CampaignSettingsDraft>;
+export interface CampaignSettingsUpdate {
+  patch: CampaignSettingsPatch;
+  expected: CampaignSettingsPatch;
+}
 
 export interface QuestDraft {
   title: string;

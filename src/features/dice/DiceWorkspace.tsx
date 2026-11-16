@@ -13,6 +13,8 @@ import type { DiceSelection, DiceSceneHandle } from "./DiceScene";
 import type { ThrowLaunch } from "./trayPhysics";
 import { expandDiceSelection, replaceTrayDice, rollTrayDice, standardDice, trayNotation } from "./traySelection";
 import { useDice } from "./useDice";
+import { PreparedRoll } from "./preparedRoll";
+import { DiceRequestRejected } from "./invocationError";
 import {
   closeDiceCheck, createDiceCheck, deleteDicePreset, getDiceState,
   revealDice, saveDicePreset,
@@ -56,6 +58,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   const [busy, setBusy] = useState(false);
   const [casting, setCasting] = useState(false);
   const [waitingIds, setWaitingIds] = useState<string[]>([]);
+  const [reserved, setReserved] = useState(false);
   const rollInFlight = useRef(false);
   const [rolling, setRolling] = useState(false);
   const [panel, setPanel] = useState<"settings" | "history" | "checks" | null>(null);
@@ -76,10 +79,6 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   const [throwId, setThrowId] = useState<string | null>(null);
   const [throwLaunch, setThrowLaunch] = useState<ThrowLaunch | null>(null);
   const scene = useRef<DiceSceneHandle | null>(null);
-  const launches = useRef(new Map<string, ThrowLaunch>());
-  // Bind the replacement scope to its request, including uncertain retries.
-  // Another result arriving through Realtime cannot consume this selection.
-  const replacements = useRef(new Map<string, string[]>());
   const [error, setError] = useState("");
   const [last, setLast] = useState<DiceRoll | null>(null);
   const [notice, setNotice] = useState<DiceRoll | null>(null);
@@ -93,27 +92,27 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
     try { return JSON.parse(localStorage.getItem(preferenceKey) ?? "{}") as { three?: boolean; sound?: boolean; skin?: string }; }
     catch { return {}; }
   });
-  const pending = useRef<RollInput | null>(null);
+  const pending = useRef<PreparedRoll | null>(null);
+  const pendingLaunch = useRef<ThrowLaunch | undefined>(undefined);
   const noticeTimer = useRef(0);
   const active = board.campaign.status === "active";
   const gm = board.viewer.role === "gm";
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const social = useDiceSocial(board, open);
   const dice = useDice(board, (roll) => {
+    // The request owner decides when a prepared result is presented.
+    // Realtime/refetch must never start a throw while it is still being held.
+    if (roll.actor_id === board.viewer.id) return;
     setNotice(roll);
     clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setNotice(null), 4500);
     if (preferences.sound && roll.result) playSound();
-    if (roll.actor_id === board.viewer.id) {
-      setLast(roll);
-      showRoll(roll);
-    }
   });
-  function showRoll(roll: DiceRoll) {
-    const replacing = replacements.current.get(roll.id);
-    replacements.current.delete(roll.id);
-    setThrowLaunch(launches.current.get(roll.id) ?? null);
-    launches.current.delete(roll.id);
+  function showRoll(roll: DiceRoll, replacing?: string[], launch?: ThrowLaunch) {
+    setLast(roll);
+    if (preferences.sound && roll.result) playSound();
+    setThrowLaunch(launch ?? null);
+    setWaitingIds(replacing ?? []);
     setTrayDice((current) => replaceTrayDice(current, replacing,
       rollTrayDice(roll, replacing ? current.filter((die) => replacing.includes(die.id)) : undefined)));
     setThrowId(`${roll.id}:${performance.now()}`);
@@ -137,31 +136,46 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
     rollInFlight.current = true;
     const originalPanel = panel;
     setBusy(true); setCasting(true); setError("");
-    const retrying = pending.current !== null;
-    const input = pending.current ?? {
-      requestId: crypto.randomUUID(), notation, label, visibility, ...overrides,
-    };
-    if (!retrying && selectedIds) replacements.current.set(input.requestId, selectedIds);
-    if (!retrying && launch) launches.current.set(input.requestId, launch);
-    setWaitingIds(replacements.current.get(input.requestId) ?? []);
+    const request = reserveRoll(overrides, selectedIds);
+    if (launch) pendingLaunch.current = launch;
+    setWaitingIds(request.ids ?? []);
     setPanel(null); setAddOpen(false); setToolsAnchor(null);
-    pending.current = input;
     try {
-      await dice.roll(input);
+      const saved = await request.resolve(dice.roll);
+      // Lock controls until the scene finishes preparing/playing the replay.
+      setRolling(true);
+      showRoll(saved, request.ids, pendingLaunch.current);
       pending.current = null;
+      pendingLaunch.current = undefined;
+      setReserved(false);
       return true;
     } catch (cause) {
       setPanel(originalPanel);
-      setError(errorMessage(cause));
+      handleRollError(cause);
       return false;
     } finally { setCasting(false); setBusy(false); rollInFlight.current = false; }
   };
+  function handleRollError(cause: unknown) {
+    if (cause instanceof DiceRequestRejected) {
+      pending.current = null; pendingLaunch.current = undefined; setReserved(false);
+    }
+    setError(errorMessage(cause));
+  }
+  function reserveRoll(overrides?: Partial<RollInput>, ids?: string[]) {
+    if (!pending.current) {
+      pending.current = new PreparedRoll({
+        requestId: crypto.randomUUID(), notation, label, visibility, ...overrides,
+      }, ids);
+      setReserved(true);
+    }
+    return pending.current;
+  }
   const quickDie = (sides: number) => {
-    pending.current = null;
+    if (reserved) return;
     setNotation(`${quantity}d${sides}${modifier ? `${modifier > 0 ? "+" : ""}${modifier}` : ""}`);
   };
   const stageDie = (sides: TrayDie["sides"]) => {
-    if (busy || rolling || !active) return;
+    if (busy || rolling || reserved || !active) return;
     const types: TrayDie["sides"][] = sides === 100 ? [100, 10] : [sides];
     if (trayDice.length + types.length > 20) { setError("骰盘最多摆放 20 颗，更多骰子请用公式投掷。"); return; }
     const poses = scene.current?.allocate(types);
@@ -173,14 +187,26 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
     setError("");
     setSelection(null); setAddOpen(false); setThrowId(null);
   };
-  const castTray = (selected?: TrayDie[], launch?: ThrowLaunch) => {
+  const trayInput = (selected?: TrayDie[]) => {
     const settings = selected ? selectionSettings : { modifier, label, visibility };
     const previous = new Set(selected?.map((die) => die.rollId).filter((id) => id !== undefined));
-    return submitRoll({
+    return {
       notation: trayNotation(selected ?? trayDice, settings.modifier),
       label: settings.label, visibility: settings.visibility,
       ...(previous.size === 1 ? { parentId: [...previous][0] } : {}),
-    }, selected?.map((die) => die.id), launch);
+    };
+  };
+  const castTray = (selected?: TrayDie[], launch?: ThrowLaunch) =>
+    submitRoll(trayInput(selected), (selected ?? trayDice).map((die) => die.id), launch);
+  const prepareTray = async (ids: string[]): Promise<TrayDie[] | null> => {
+    if (!active) return null;
+    const selected = trayDice.filter((die) => ids.includes(die.id));
+    const request = reserveRoll(trayInput(selected), ids);
+    setError("");
+    try {
+      const saved = await request.resolve(dice.roll);
+      return rollTrayDice(saved, selected);
+    } catch (cause) { handleRollError(cause); return null; }
   };
   const canReveal = (roll: DiceRoll) => roll.result && !roll.revealed_at && roll.visibility !== "public" &&
     (roll.visibility === "self" ? roll.actor_id === board.viewer.id :
@@ -197,6 +223,8 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   const selectedLocked = selectedDice.some((die) => die.rollId !== undefined && die.value === null);
   const selectionPanel = panel === "settings" && selectedDice.length > 0;
   const selectDice = (next: DiceSelection | null) => {
+    if (pending.current?.ids && next &&
+      (next.ids.length !== pending.current.ids.length || next.ids.some((id) => !pending.current!.ids!.includes(id)))) return;
     const ids = next ? expandDiceSelection(trayDice, next.ids) : [];
     const normalized = next && ids.length ? { ...next, ids } : null;
     const scope = ids.join("|");
@@ -240,7 +268,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   };
   const addAction: DiceFanAction = {
     id: "add", label: "加一颗", accessibleLabel: "选择新增骰型",
-    icon: <Plus size={25} />, disabled: busy || rolling || !active,
+    icon: <Plus size={25} />, disabled: busy || rolling || reserved || !active,
     onClick: (button) => openAdd(button, true),
   };
   const fanActions: DiceFanAction[] = selectedDice.length > 1 ? [
@@ -253,12 +281,12 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
     addAction,
     {
       id: "settings", label: "设置", accessibleLabel: "统一设置选中骰子",
-      icon: <SlidersHorizontal size={23} />,
+      icon: <SlidersHorizontal size={23} />, disabled: reserved,
       onClick: (button) => changePanel("settings", true, button),
     },
     {
       id: "remove", label: "移出", accessibleLabel: "移出选中骰子",
-      icon: <Trash2 size={22} />, tone: "destructive", disabled: busy || rolling,
+      icon: <Trash2 size={22} />, tone: "destructive", disabled: busy || rolling || reserved,
       onClick: () => {
         setTrayDice((current) => current.filter((die) => !selection?.ids.includes(die.id)));
         setSelection(null); setThrowId(null);
@@ -276,7 +304,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
     addAction,
     {
       id: "settings", label: "设置", accessibleLabel: "修正与可见范围",
-      icon: <SlidersHorizontal size={23} />, onClick: (button) => changePanel("settings", true, button),
+      icon: <SlidersHorizontal size={23} />, disabled: reserved, onClick: (button) => changePanel("settings", true, button),
     },
     ...(selectedRoll ? [{
       id: "details", label: "明细", accessibleLabel: "查看明细",
@@ -291,7 +319,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
     }] : []),
     {
       id: "remove", label: "移出", accessibleLabel: "移出骰盘",
-      icon: <Trash2 size={22} />, tone: "destructive", disabled: busy || rolling,
+      icon: <Trash2 size={22} />, tone: "destructive", disabled: busy || rolling || reserved,
       onClick: () => {
         setTrayDice((current) => current.filter((die) => die.id !== selectedDie.id));
         setSelection(null); setThrowId(null);
@@ -309,21 +337,21 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
       <span>{notice.actor_name} {notice.label || notice.notation}</span>
       <strong>{notice.result?.total ?? "已投出"}</strong>
     </button>}
-    {open && <DiceLayer onClose={() => setOpen(false)}>
+    {open && <DiceLayer onClose={() => { setOpen(false); setSelection(null); setRolling(false); }}>
       <header className="dice-layer-header">
         <strong><Dice5 size={19} />骰盘</strong>
         <nav aria-label="骰盘工具">
           <button type="button" aria-label="骰盘更多操作" title="更多" aria-expanded={!!toolsAnchor} onClick={(event) => {
             setToolsAnchor(toolsAnchor ? null : dicePopoverAnchor(event.currentTarget)); setPanel(null); setAddOpen(false);
           }}><Ellipsis />{awaiting > 0 && <span>{awaiting}</span>}</button>
-          <button type="button" aria-label="关闭" title="关闭" onClick={() => setOpen(false)}><X /></button>
+          <button type="button" aria-label="关闭" title="关闭" onClick={() => { setOpen(false); setSelection(null); setRolling(false); }}><X /></button>
         </nav>
       </header>
       <DiceMembers board={board} social={social.data} rolling={casting || rolling} onReact={social.react} />
       {toolsAnchor && <DicePopover anchor={toolsAnchor} title="骰盘" label="骰盘更多操作" compact onClose={() => setToolsAnchor(null)}>
         <div className="dice-tools-menu">
-          <button type="button" disabled={busy || rolling || !active} onClick={(event) => openAdd(event.currentTarget, false)}><Plus size={18} />添加骰子</button>
-          <button type="button" onClick={(event) => changePanel("settings", false, event.currentTarget)}><SlidersHorizontal size={18} />公式与预设</button>
+          <button type="button" disabled={busy || rolling || reserved || !active} onClick={(event) => openAdd(event.currentTarget, false)}><Plus size={18} />添加骰子</button>
+          <button type="button" disabled={reserved} onClick={(event) => changePanel("settings", false, event.currentTarget)}><SlidersHorizontal size={18} />公式与预设</button>
           <button type="button" onClick={(event) => changePanel("history", false, event.currentTarget)}><History size={18} />投掷记录</button>
           <button type="button" onClick={(event) => changePanel("checks", false, event.currentTarget)}><Users size={18} />全员检定</button>
         </div>
@@ -340,8 +368,9 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
         <Suspense fallback={<p className="dice-stage-loading">正在展开骰盘…</p>}>
           <DiceScene ref={scene} dice={trayDice} skin={preferences.skin ?? "jade"}
             throwId={throwId} throwLaunch={throwLaunch} selection={selection} disabled={busy || panel !== null || addOpen || !!toolsAnchor}
-            canThrow={active && !pending.current && !selectedLocked} reducedMotion={reducedMotion}
+            canThrow={active && !selectedLocked && (!pending.current || !!pending.current.ids?.length)} reducedMotion={reducedMotion}
             waiting={casting} waitingIds={waitingIds}
+            onPrepare={prepareTray}
             onThrow={(ids, launch) => castTray(trayDice.filter((die) => ids.includes(die.id)), launch)}
             onSelect={selectDice} onRolling={setRolling} />
         </Suspense>
@@ -358,7 +387,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
             last.result.dice.some((die) => die.sides !== "F" && !standardDice.includes(die.sides))) && <small>完整结果见投掷记录</small>}
         </div>
         <button type="button" className="dice-stage-roll" disabled={busy || rolling || !active || !trayDice.length || (!!selectedDice.length && selectedLocked && !pending.current)}
-          onClick={() => castTray(selectedDice.length ? selectedDice : undefined)}><Dice5 size={20} />{busy ? "正在确认…" : rolling ? "滚动中…" : pending.current ? "重试这次投掷" : selectedDice.length ? `投掷选中（${selectedDice.length}）` : "投掷全部"}</button>
+          onClick={() => castTray(selectedDice.length ? selectedDice : undefined)}><Dice5 size={20} />{busy ? "正在准备…" : rolling ? "投掷中…" : pending.current ? error ? "重试这次投掷" : "继续这次投掷" : selectedDice.length ? `投掷选中（${selectedDice.length}）` : "投掷全部"}</button>
       </footer>
       {!panel && !addOpen && error && <p className="dice-stage-error dice-error" role="alert">{error}</p>}
       {panel && panelAnchor && <DicePopover key={`${panel}:${panelFromSelection}`} anchor={panelAnchor}
@@ -395,23 +424,23 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
             <form onSubmit={(event) => { event.preventDefault(); void submitRoll(); }}>
               <fieldset disabled={busy || rolling || !active}>
                 <div className="dice-quick-fields">
-                  <label>数量<input type="number" min={1} max={100} value={quantity}
+                  <label>数量<input type="number" min={1} max={100} value={quantity} disabled={reserved}
                     onChange={(e) => setQuantity(Math.max(1, Math.min(100, Number(e.target.value))))} /></label>
-                  <label>修正<input type="number" min={-10000} max={10000} value={modifier} onChange={(e) => setModifier(Number(e.target.value))} /></label>
+                  <label>修正<input type="number" min={-10000} max={10000} value={modifier} disabled={reserved} onChange={(e) => setModifier(Number(e.target.value))} /></label>
                 </div>
                 <div className="dice-quick">
-                  {standardDice.map((sides) => <button type="button" key={sides} onClick={() => quickDie(sides)}>d{sides}</button>)}
+                  {standardDice.map((sides) => <button type="button" key={sides} disabled={reserved} onClick={() => quickDie(sides)}>d{sides}</button>)}
                 </div>
-                <label className="dice-field">公式<input aria-label="骰子公式" value={notation} maxLength={160}
-                  onChange={(e) => { pending.current = null; setNotation(e.target.value); }} autoCapitalize="off" spellCheck={false} /></label>
+                <label className="dice-field">公式<input aria-label="骰子公式" value={notation} maxLength={160} disabled={reserved}
+                  onChange={(e) => setNotation(e.target.value)} autoCapitalize="off" spellCheck={false} /></label>
                 <div className="dice-examples">
                   {["2d20kh1", "2d20kl1", "4d6dl1", "6d6>=5", "1d6!", "4dF"].map((formula) =>
-                    <button type="button" key={formula} onClick={() => { pending.current = null; setNotation(formula); }}>{formula}</button>)}
+                    <button type="button" key={formula} disabled={reserved} onClick={() => setNotation(formula)}>{formula}</button>)}
                 </div>
-                <label className="dice-field">用途<input value={label} aria-label="投掷用途" maxLength={80}
-                  onChange={(e) => { pending.current = null; setLabel(e.target.value); }} placeholder="例如：潜行检定" /></label>
-                <label className="dice-field">谁能查看<select aria-label="投掷可见性" value={visibility}
-                  onChange={(e) => { pending.current = null; setVisibility(e.target.value as DiceVisibility); }}>
+                <label className="dice-field">用途<input value={label} aria-label="投掷用途" maxLength={80} disabled={reserved}
+                  onChange={(e) => setLabel(e.target.value)} placeholder="例如：潜行检定" /></label>
+                <label className="dice-field">谁能查看<select aria-label="投掷可见性" value={visibility} disabled={reserved}
+                  onChange={(e) => setVisibility(e.target.value as DiceVisibility)}>
                   {Object.entries(diceVisibilityLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
                 </select></label>
                 <button type="submit" className="dice-roll-button"><Dice5 />{busy ? "投掷中…" : pending.current ? "重试这次投掷" : "投掷"}</button>
@@ -419,8 +448,8 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
             </form>
             <div className="dice-preset-list">
               {dice.data?.presets.map((preset) => <div key={preset.id}>
-                <button type="button" disabled={busy} onClick={() => {
-                  pending.current = null; setNotation(preset.notation); setVisibility(preset.visibility); setLabel(preset.name);
+                <button type="button" disabled={busy || reserved} onClick={() => {
+                  setNotation(preset.notation); setVisibility(preset.visibility); setLabel(preset.name);
                 }}>{preset.shared && <Users size={13} />}<span>{preset.name}</span><code>{preset.notation}</code></button>
                 {preset.owner_id === board.viewer.id && <button type="button" aria-label={`删除预设 ${preset.name}`} disabled={busy}
                   onClick={() => void operation(() => deleteDicePreset(board, preset.id))}><Trash2 size={14} /></button>}
@@ -464,8 +493,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
               <p>{diceVisibilityLabels[check.visibility]} · {Object.keys(check.responses).length}/{check.targets.length} 已完成{!check.open && " · 已结束"}</p>
               <ul>{check.targets.map((t) => <li key={t.id}>{t.name}<span>{check.responses[t.id] ? "已投出" : "待投掷"}</span></li>)}</ul>
               {check.open && check.targets.some((t) => t.id === board.viewer.id) && !check.responses[board.viewer.id] &&
-                <button type="button" disabled={busy || !active} onClick={() => {
-                  pending.current = null;
+                <button type="button" disabled={busy || rolling || reserved || !active} onClick={() => {
                   void submitRoll({ notation: check.notation, label: check.title, visibility: check.visibility, checkId: check.id });
                 }}>响应检定</button>}
               {gm && check.open && <button type="button" disabled={busy || !active}
@@ -504,11 +532,10 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
               </> : <p>结果仅供 GM 查看</p>}
             </details>
             <div className="dice-record-actions">
-              {active && roll.result && <button type="button" disabled={busy} onClick={() => {
-                pending.current = null;
+              {active && roll.result && <button type="button" disabled={busy || rolling || reserved} onClick={() => {
                 void submitRoll({ notation: roll.notation, label: roll.label, visibility: roll.visibility, parentId: roll.id });
               }}><RotateCcw size={13} />重投</button>}
-              {roll.status === "complete" && <button type="button" disabled={busy || rolling} onClick={() => { setLast(roll); showRoll(roll); }}>在骰盘查看</button>}
+              {roll.status === "complete" && <button type="button" disabled={busy || rolling || reserved} onClick={() => { setRolling(true); showRoll(roll); }}>在骰盘查看</button>}
               {active && canReveal(roll) && <button type="button" disabled={busy} onClick={() => void operation(() => revealDice(board, roll.id))}>公开结果</button>}
             </div>
           </article>)}

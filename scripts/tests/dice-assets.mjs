@@ -44,6 +44,43 @@ const first = library.create(die, "jade"), second = library.create({ ...die, id:
 assert.equal(first.body.geometry, second.body.geometry);
 assert.equal(first.body.material, second.body.material);
 assert.notEqual(first.group, second.group);
+const pipDie = library.create({ id: "pip", sides: 6, value: 4, kept: true, rollId: "result" }, "jade");
+pipDie.group.quaternion.setFromAxisAngle(new Vector3(0, 1, 0), .3);
+const rootPose = pipDie.group.quaternion.clone();
+const numberedBody = pipDie.body.geometry;
+library.appearance(pipDie, "jade", "rolling");
+assert.equal(pipDie.marks.visible, true, "unconfirmed motion keeps the numbered dice visible");
+assert.equal(pipDie.body.geometry, numberedBody, "rolling d6 keeps its recessed pips instead of becoming a blank cube");
+const correction = faceCorrection(pipDie.shape, rootPose, 4);
+pipDie.group.quaternion.copy(rootPose.clone().multiply(correction));
+const settledPose = pipDie.group.quaternion.clone();
+library.appearance(pipDie, "jade", "numbered");
+assert.ok(pipDie.group.quaternion.equals(settledPose), "result publication never changes the completed root pose");
+assert.equal(readDieFace(pipDie.shape, pipDie.group.quaternion).value, 4);
+assert.ok(pipDie.body.quaternion.equals(new Quaternion()) && pipDie.marks.quaternion.equals(new Quaternion()),
+  "the printed pips and body never rotate independently");
+assert.equal(pipDie.body.geometry, numberedBody, "confirmation reuses the original numbered geometry");
+library.appearance(pipDie, "jade", "secret");
+assert.equal(pipDie.group.userData.hidden, true, "blind dice remain secret instead of revealing a local point value");
+assert.equal(pipDie.marks.visible, true, "secret dice show only their question-mark glyph");
+for (const sides of [4, 6, 8, 10, 12, 20, 100, "F"]) {
+  const shape = getDieShape(sides);
+  const die = library.create({ id: `visible-${sides}`, sides, value: null, kept: true }, "jade");
+  const root = new Quaternion().setFromUnitVectors(shape.faces[0].readNormal, new Vector3(0, 1, 0));
+  die.group.quaternion.copy(root);
+  for (const face of shape.faces) {
+    library.appearance(die, "jade", "rolling");
+    assert.equal(die.marks.visible, true);
+    die.group.quaternion.copy(root.clone().multiply(faceCorrection(shape, root, face.value)));
+    const completed = die.group.quaternion.clone();
+    library.appearance(die, "jade", "numbered");
+    assert.equal(readDieFace(shape, die.group.quaternion.clone().multiply(die.body.quaternion)).value, face.value,
+      `d${sides}: the first numbered presentation already has the authoritative value`);
+    assert.ok(die.group.quaternion.equals(completed), `d${sides}: confirmation cannot rotate a settled physical pose`);
+    assert.ok(die.body.quaternion.equals(new Quaternion()) && die.marks.quaternion.equals(new Quaternion()),
+      `d${sides}: each printed face remains fixed relative to the die`);
+  }
+}
 let disposed = false;
 first.body.geometry.addEventListener("dispose", () => { disposed = true; });
 disposeModel(first.group);

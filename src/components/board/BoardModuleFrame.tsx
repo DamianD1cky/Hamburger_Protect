@@ -13,7 +13,7 @@ import {
 /**
  * 包住一个公告板区块，让它能被 GM 拖动。
  *
- * 拖动只认标题牌（.sign / .index-heading）：按在正文里的按钮上仍然是正常点击，
+ * 拖动只认统一标题栏：按在正文里的按钮上仍然是正常点击，
  * 不会因为手抖把整块面板拖走。移动超过 4px 才算拖动，吸附到 10px 网格，
  * 目标位置压到别的模块时原地不动，松手后保存最后一次合法位置。
  */
@@ -165,7 +165,7 @@ export function BoardModuleFrame({
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (!canDrag || event.button !== 0) return;
     const handle = (event.target as HTMLElement).closest(
-      ".sign, .index-heading, .board-module-handle",
+      ".board-section-heading, .board-module-handle",
     );
     if (!handle) return;
     // 标题牌上的操作按钮不触发拖动。

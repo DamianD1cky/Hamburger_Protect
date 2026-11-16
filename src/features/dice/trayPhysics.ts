@@ -10,7 +10,7 @@ export interface ThrowLaunch {
   dice: { sides: TrayDie["sides"]; pose: DiePose }[];
   velocity: [number, number, number];
 }
-export interface ThrowTrack { die: TrayDie; frames: DiePose[]; correction: Quaternion }
+export interface ThrowTrack { die: TrayDie; frames: DiePose[]; preparationFrames: number }
 export interface StationaryDie { die: TrayDie; shape: DieShape; pose: DiePose }
 
 function collisionShape(die: TrayDie, shape: DieShape) {
@@ -22,7 +22,8 @@ function collisionShape(die: TrayDie, shape: DieShape) {
     });
 }
 
-export function buildThrow(dice: TrayDie[], shapes: DieShape[], stationary: StationaryDie[] = [], launch?: ThrowLaunch | null): ThrowTrack[] {
+/** Offline simulation. Rendering never advances an unconfirmed physical roll. */
+function createThrowSimulation(dice: TrayDie[], shapes: DieShape[], stationary: StationaryDie[] = [], launch?: ThrowLaunch | null) {
   const world = new C.World({ gravity: new C.Vec3(0, -18, 0), allowSleep: true });
   world.broadphase = new C.SAPBroadphase(world);
   const material = new C.Material("dice");
@@ -48,7 +49,6 @@ export function buildThrow(dice: TrayDie[], shapes: DieShape[], stationary: Stat
       position: new C.Vec3(...pose.position), quaternion: new C.Quaternion(...pose.quaternion),
     }));
   }
-  const tracks: ThrowTrack[] = [];
   const sources = [...launch?.dice ?? []];
   const bodies = dice.map((die, i) => {
     const shape = shapes[i];
@@ -71,21 +71,31 @@ export function buildThrow(dice: TrayDie[], shapes: DieShape[], stationary: Stat
       body.angularVelocity.set(launch.velocity[2] * 1.2 + 3, 4 + i % 3, -launch.velocity[0] * 1.2 - 3);
     }
     world.addBody(body);
-    tracks.push({ die, frames: [{
-      position: [body.position.x, body.position.y, body.position.z],
-      quaternion: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w],
-    }], correction: new Quaternion() });
     return body;
   });
-  // Replay a precomputed local physical trajectory, then apply a model
-  // symmetry for the committed face. No face/texture changes at rest.
+  return {
+    step() { world.step(1 / 120); },
+    poses(): DiePose[] {
+      return bodies.map((body) => ({
+        position: [body.position.x, body.position.y, body.position.z],
+        quaternion: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w],
+      }));
+    },
+    sleeping() { return bodies.every((body) => body.sleepState === C.Body.SLEEPING); },
+  };
+}
+
+export function buildThrow(dice: TrayDie[], shapes: DieShape[], stationary: StationaryDie[] = [], launch?: ThrowLaunch | null): ThrowTrack[] {
+  const simulation = createThrowSimulation(dice, shapes, stationary, launch);
+  const initial = simulation.poses();
+  const tracks: ThrowTrack[] = dice.map((die, i) => ({
+    die, frames: [{ position: [...initial[i].position], quaternion: [...initial[i].quaternion] }], preparationFrames: 18,
+  }));
+  // Result matching and all geometric settlement happen before playback.
   for (let step = 0; step < 480; step++) {
-    world.step(1 / 120);
-    bodies.forEach((body, i) => tracks[i].frames.push({
-      position: [body.position.x, body.position.y, body.position.z],
-      quaternion: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w],
-    }));
-    if (step > 60 && bodies.every((body) => body.sleepState === C.Body.SLEEPING)) break;
+    simulation.step();
+    simulation.poses().forEach((pose, i) => tracks[i].frames.push(pose));
+    if (step > 60 && simulation.sleeping()) break;
   }
   const stationaryFootprints = stationary.map(({ shape, pose }) => footprint(dieBounds(shape.geometry, pose)));
   // A sharp collision hull can sleep wedged against another die or a wall.
@@ -137,10 +147,36 @@ export function buildThrow(dice: TrayDie[], shapes: DieShape[], stationary: Stat
     });
   }
   tracks.forEach((track, i) => {
-    if (track.die.value === null) return;
-    const faceValue = track.die.sides === "F" ? track.die.value < 0 ? 1 : track.die.value === 0 ? 3 : 5 : track.die.value;
-    const final = track.frames.at(-1)!;
-    track.correction.copy(faceCorrection(shapes[i], new Quaternion(...final.quaternion), faceValue));
+    if (track.die.value !== null) {
+      const faceValue = track.die.sides === "F" ? track.die.value < 0 ? 1 : track.die.value === 0 ? 3 : 5 : track.die.value;
+      const correction = faceCorrection(shapes[i], new Quaternion(...track.frames.at(-1)!.quaternion), faceValue);
+      for (const frame of track.frames) {
+        frame.quaternion = new Quaternion(...frame.quaternion).multiply(correction).normalize().toArray();
+      }
+    }
+    // Orient the whole die while it is still held, before the flight starts.
+    // This prefix is also immutable replay data, never a late result patch.
+    const ready = new Quaternion(...track.frames[0].quaternion);
+    const held = new Quaternion(...initial[i].quaternion);
+    // Ease-in/out peaks at 1.5 times the average angular speed. Keep a
+    // half-turn preparation from looking like a one-frame face change.
+    track.preparationFrames = Math.max(18, Math.ceil(held.angleTo(ready) * 1.5 / 10 * 120));
+  });
+  // Dice that collided in the simulation must share the same playback time.
+  const preparationFrames = Math.max(18, ...tracks.map((track) => track.preparationFrames));
+  tracks.forEach((track, i) => {
+    track.preparationFrames = preparationFrames;
+    const ready = new Quaternion(...track.frames[0].quaternion);
+    const held = new Quaternion(...initial[i].quaternion);
+    const prefix: DiePose[] = [];
+    for (let step = 0; step < track.preparationFrames; step++) {
+      const t = step / track.preparationFrames;
+      prefix.push({
+        position: [...initial[i].position],
+        quaternion: held.clone().slerp(ready, t * t * (3 - 2 * t)).toArray(),
+      });
+    }
+    track.frames.unshift(...prefix);
   });
   return tracks;
 }

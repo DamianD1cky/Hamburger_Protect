@@ -62,7 +62,25 @@ try {
     .sort();
   for (const migration of migrations) {
     await db.exec(await readFile(`supabase/migrations/${migration}`, "utf8"));
+    // Seed one historical board immediately before the clock migration so its
+    // old status value can be verified after migration, without real data.
+    if (migration === "20261115010000_perspective_background.sql") {
+      await db.exec(`
+        insert into public.profiles(id,account_kind,display_name)
+          values('99000000-0000-4000-8000-000000000001','gm','历史 GM');
+        insert into public.campaigns(id,name,join_code,created_by,burger_index)
+          values('99000000-0000-4000-8000-000000000002','历史指数','LEGACY',
+            '99000000-0000-4000-8000-000000000001',8);
+      `);
+    }
   }
+  const migratedIndex = (await db.query(
+    "select * from public.event_clocks where campaign_id='99000000-0000-4000-8000-000000000002'",
+  )).rows[0];
+  assert.equal(migratedIndex.progress, 8);
+  assert.equal(migratedIndex.mode, "scale");
+  assert.equal(migratedIndex.stages[7].label, "绿2");
+  assert.equal(migratedIndex.consequence, "", "old green index never becomes an invented threat consequence");
 
   await db.query(
     "insert into auth.users(id,email) values($1,'board-objects@example.test')",
@@ -116,6 +134,21 @@ try {
   ]) {
     await assert.rejects(asUser(() => db.query("select public.update_board_appearance($1,$2::jsonb)", [campaign, JSON.stringify(invalid)])), /INVALID_BOARD_APPEARANCE/);
   }
+  for (const [scene, animated] of [["crossing", true], ["station", false]]) {
+    const perspective = { ...appearance, room: { ...appearance.room, kind: "perspective", scene, animated } };
+    await asUser(() => db.query("select public.update_board_appearance($1,$2::jsonb)", [campaign, JSON.stringify(perspective)]));
+    assert.deepEqual(
+      (await db.query("select appearance from public.campaign_settings where campaign_id=$1", [campaign])).rows[0].appearance,
+      perspective,
+      "the selected perspective scene and motion preference persist without changing board objects",
+    );
+    for (const patch of [{ scene: "unknown" }, { animated: "yes" }, { animated: null }, { fit: "tile" }]) {
+      const invalid = { ...perspective, room: { ...perspective.room, ...patch } };
+      await assert.rejects(asUser(() => db.query("select public.update_board_appearance($1,$2::jsonb)",
+        [campaign, JSON.stringify(invalid)])), /INVALID_BOARD_APPEARANCE/);
+    }
+  }
+  await asUser(() => db.query("select public.update_board_appearance($1,$2::jsonb)", [campaign, JSON.stringify(appearance)]));
   await db.query("insert into auth.users(id,email) values('10000000-0000-4000-8000-000000000099','theme-outsider@example.test')");
   await assert.rejects(db.exec(`
     begin;
@@ -140,6 +173,74 @@ try {
       [campaign, userId, uid === observerAuth ? "observer" : "player", uid.slice(-4)]);
   }
   const [playerActor] = actors;
+  assert.equal((await db.query("select count(*)::int n from public.event_clocks where campaign_id=$1", [campaign])).rows[0].n,
+    0, "new campaigns do not inherit rule-specific clocks");
+  const createClock = (uid = authId, target = campaign, progress = 1) => asUser(() => db.query(
+    "select public.save_event_clock($1,'被追捕',6,$2,'追兵发现藏身处，立即进入冲突。','#b24b37') value", [target, progress],
+  ), uid);
+  let clock = (await createClock()).rows[0].value;
+  assert.equal(clock.progress, 1); assert.equal(clock.segments, 6);
+  assert.equal(clock.revision, 1);
+  for (const uid of [playerAuth, observerAuth]) {
+    assert.equal((await asUser(() => db.query("select public.get_event_clocks($1) value", [campaign]), uid)).rows[0].value[0].name,
+      "被追捕", "members see shared progress");
+    await assert.rejects(createClock(uid), /CAMPAIGN_ROLE_REQUIRED/);
+    await assert.rejects(asUser(() => db.query("select public.set_event_clock_progress($1,$2,6,1)", [campaign, clock.id]), uid),
+      /CAMPAIGN_ROLE_REQUIRED/);
+    await assert.rejects(asUser(() => db.query("select public.delete_event_clock($1,$2,1)", [campaign, clock.id]), uid),
+      /CAMPAIGN_ROLE_REQUIRED/);
+  }
+  const outsideAuth = "10000000-0000-4000-8000-000000000099";
+  await asUser(() => db.query("select public.ensure_actor()"), outsideAuth);
+  await assert.rejects(asUser(() => db.query("select public.get_event_clocks($1)", [campaign]), outsideAuth), /ACCESS_REQUIRED/);
+  await asUser(() => db.query("select public.set_campaign_public($1,true)", [campaign]));
+  assert.equal((await asUser(() => db.query("select public.get_event_clocks($1) value", [campaign]), outsideAuth)).rows[0].value.length, 1);
+  await assert.rejects(createClock(outsideAuth), /CAMPAIGN_ROLE_REQUIRED/);
+  await asUser(() => db.query("select public.set_campaign_public($1,false)", [campaign]));
+  await assert.rejects(asUser(() => db.query("update public.event_clocks set progress=6 where id=$1", [clock.id]), playerAuth),
+    /permission denied/);
+  for (const badProgress of [-1, 7, 100]) {
+    await assert.rejects(asUser(() => db.query("select public.set_event_clock_progress($1,$2,$3,1)", [campaign, clock.id, badProgress])),
+      /INVALID_EVENT_CLOCK/);
+  }
+  clock = (await asUser(() => db.query("select public.set_event_clock_progress($1,$2,6,1) value", [campaign, clock.id]))).rows[0].value;
+  assert.equal(clock.progress, 6); assert.equal(clock.revision, 2);
+  assert.equal((await db.query("select count(*)::int n from public.event_log where entity_id=$1 and event_type='event_clock_completed'",
+    [clock.id])).rows[0].n, 1, "filling a clock records one consequence event");
+  await asUser(() => db.query("select public.set_event_clock_progress($1,$2,6,2)", [campaign, clock.id]));
+  assert.equal((await db.query("select count(*)::int n from public.event_log where entity_id=$1 and event_type='event_clock_completed'",
+    [clock.id])).rows[0].n, 1, "saving full progress again does not retrigger the event");
+  await assert.rejects(asUser(() => db.query("select public.set_event_clock_progress($1,$2,2,1)", [campaign, clock.id])),
+    /EVENT_CLOCK_CONFLICT/);
+  await assert.rejects(asUser(() => db.query("select public.save_event_clock($1,'旧草稿',6,1,'旧后果','#b24b37',$2,1)",
+    [campaign, clock.id])), /EVENT_CLOCK_CONFLICT/);
+  clock = (await asUser(() => db.query("select public.set_event_clock_progress($1,$2,5,2) value", [campaign, clock.id]))).rows[0].value;
+  assert.equal(clock.progress, 5);
+  assert.equal((await db.query("select event_type from public.event_log where entity_id=$1 order by id desc limit 1",
+    [clock.id])).rows[0].event_type, "event_clock_reopened");
+  await assert.rejects(asUser(() => db.query("select public.save_event_clock($1,'无后果',6,0,'','#b24b37')", [campaign])),
+    /INVALID_EVENT_CLOCK/);
+  const secondClock = (await createClock(authId, campaign, 0)).rows[0].value;
+  await asUser(() => db.query("select public.set_event_clock_progress($1,$2,3,1)", [campaign, secondClock.id]));
+  assert.equal((await db.query("select progress from public.event_clocks where id=$1", [clock.id])).rows[0].progress, 5,
+    "progress writes affect only their own clock");
+  await assert.rejects(asUser(() => db.query("select public.delete_event_clock($1,$2,1)", [campaign, clock.id])), /EVENT_CLOCK_CONFLICT/);
+  await asUser(() => db.query("select public.delete_event_clock($1,$2,3)", [campaign, clock.id]));
+  assert.equal((await db.query("select count(*)::int n from public.event_clocks where id=$1", [clock.id])).rows[0].n, 0);
+  assert.equal((await db.query("select count(*)::int n from public.event_clocks where id=$1", [secondClock.id])).rows[0].n, 1);
+  const fullClock = (await createClock(authId, campaign, 6)).rows[0].value;
+  assert.equal((await db.query("select event_type from public.event_log where entity_id=$1 order by id desc limit 1",
+    [fullClock.id])).rows[0].event_type, "event_clock_completed", "a clock started full highlights and records its consequence");
+  const archivedRoom = (await asUser(() => db.query("select id from public.create_campaign('归档事件测试','GM','店长')"))).rows[0].id;
+  const archivedClock = (await createClock(authId, archivedRoom)).rows[0].value;
+  await db.query("update public.campaigns set status='archived',archived_at=now() where id=$1", [archivedRoom]);
+  assert.equal((await asUser(() => db.query("select public.get_event_clocks($1) value", [archivedRoom]))).rows[0].value[0].id,
+    archivedClock.id, "archived clocks remain readable to members");
+  await assert.rejects(asUser(() => db.query("select public.set_event_clock_progress($1,$2,2,1)",
+    [archivedRoom, archivedClock.id])), /CAMPAIGN_NOT_ACTIVE/);
+  const limitRoom = (await asUser(() => db.query("select id from public.create_campaign('事件数量测试','GM','店长')"))).rows[0].id;
+  for (let i = 0; i < 24; i++) await createClock(authId, limitRoom);
+  await assert.rejects(createClock(authId, limitRoom), /EVENT_CLOCK_LIMIT/);
   const diceEventsBefore = (await db.query("select count(*)::int n from public.event_log")).rows[0].n;
   const outcome = { total: 14, output: "1d20: [14] = 14", dice: [{ value: 14, sides: 20, kept: true, flags: "" }], detail: [] };
   const beginRoll = (uid, id, visibility, check = null) => asUser(() => db.query(
@@ -221,7 +322,12 @@ try {
   await finishRoll(socialRollId);
   await asUser(() => db.query("select public.send_dice_reaction($1,'👏')", [campaign]), otherAuth);
   const feedback = await social(authId);
-  assert.deepEqual(Object.keys(feedback).sort(), ["reactions", "rolling"]);
+  assert.deepEqual(Object.keys(feedback).sort(), ["reactions", "rolling", "rolling_until", "server_time"]);
+  assert.deepEqual(feedback.rolling_until, [], "expiration metadata does not expose private dice activity");
+  const ownPresence = await social(playerAuth);
+  assert.equal(ownPresence.rolling_until[0].actor_id, playerActor);
+  assert.ok(Date.parse(ownPresence.rolling_until[0].expires_at) > Date.parse(ownPresence.server_time));
+  assert.ok(Date.parse(ownPresence.rolling_until[0].expires_at) - Date.parse(ownPresence.server_time) <= 6000);
   assert.equal(feedback.reactions[0].actor_id, actors[1], "reaction author comes from authenticated identity");
   assert.equal(feedback.reactions[0].emoji, "👏");
   assert.equal(JSON.stringify(feedback).includes("1d20"), false);
@@ -438,6 +544,74 @@ try {
   await db.exec(await readFile("supabase/tests/note_pins_stickers_smoke.sql", "utf8"));
   await db.exec(await readFile("supabase/tests/board_appearance_smoke.sql", "utf8"));
   await db.exec(await readFile("supabase/tests/wide_board_smoke.sql", "utf8"));
+
+  // Two GM drafts can merge different keys, but never overwrite the same key.
+  const patchSettings = async (patch, expected, uid = authId) => (await asUser(() => db.query(
+    "select public.patch_campaign_settings($1,$2::jsonb,$3::jsonb) value",
+    [campaign, JSON.stringify(patch), JSON.stringify(expected)],
+  ), uid)).rows[0].value;
+  const readSettings = async () => (await db.query(
+    "select * from public.campaign_settings where campaign_id=$1", [campaign],
+  )).rows[0];
+  await assert.rejects(patchSettings({ sectionTitles: { inventory: "不能保存" } },
+    { sectionTitles: { inventory: null } }, playerAuth), /REQUIRED/);
+  await assert.rejects(patchSettings({ hiddenSections: { inventory: true } },
+    { hiddenSections: { inventory: false } }, outsideAuth), /REQUIRED/);
+  const secondGmAuth = "10000000-0000-4000-8000-000000000777";
+  await db.query("insert into auth.users(id,email) values($1,'second-gm@example.test')", [secondGmAuth]);
+  await asUser(() => db.query("select public.ensure_actor()"), secondGmAuth);
+  const secondGmActor = (await db.query("select id from public.profiles where auth_user_id=$1", [secondGmAuth])).rows[0].id;
+  await asUser(() => db.query("select public.request_gm_access()"), secondGmAuth);
+  await db.query("update public.gm_access set status='approved' where user_id=$1", [secondGmActor]);
+  await db.query("insert into public.campaign_members(campaign_id,user_id,role,character_name,job_title) values($1,$2,'gm','第二位 GM','GM')",
+    [campaign, secondGmActor]);
+  const initialSettings = await readSettings();
+  const nameBefore = (await db.query("select name from public.campaigns where id=$1", [campaign])).rows[0].name;
+  const firstExpected = initialSettings.section_titles.inventory ?? null;
+  const otherExpected = initialSettings.section_titles.tasks ?? null;
+  await asUser(() => db.query("select public.move_board_module($1,'tasks',1700,50)", [campaign]), secondGmAuth);
+  await patchSettings({ sectionTitles: { tasks: "另一位 GM 的任务" } }, { sectionTitles: { tasks: otherExpected } }, secondGmAuth);
+  assert.deepEqual(await patchSettings({ sectionTitles: { inventory: "  补给站  " } },
+    { sectionTitles: { inventory: firstExpected } }), { sectionTitles: { inventory: "补给站" } });
+  let settings = await readSettings();
+  assert.equal(settings.section_titles.tasks, "另一位 GM 的任务");
+  assert.equal(settings.section_titles.inventory, "补给站");
+  assert.deepEqual(settings.module_layout.tasks, { x: 1700, y: 50 }, "title saves never carry an old layout");
+  assert.deepEqual(settings.appearance, initialSettings.appearance, "title saves never carry an old appearance");
+  await assert.rejects(patchSettings({ name: "失败事务不应改名", sectionTitles: { inventory: "旧草稿" } },
+    { name: nameBefore, sectionTitles: { inventory: firstExpected } }), /CAMPAIGN_SETTINGS_CONFLICT/);
+  assert.equal((await db.query("select name from public.campaigns where id=$1", [campaign])).rows[0].name, nameBefore);
+  assert.deepEqual(await patchSettings({ sectionTitles: { inventory: "补给站" } },
+    { sectionTitles: { inventory: firstExpected } }), { sectionTitles: { inventory: "补给站" } }, "retried successful saves are idempotent");
+  await patchSettings({ sectionTitles: { inventory: null } }, { sectionTitles: { inventory: "补给站" } });
+  assert.equal("inventory" in (await readSettings()).section_titles, false, "null restores only the requested default");
+  for (const patch of [
+    { moduleLayout: {} }, { backgroundPath: null }, { sectionTitles: { unknown: "未知" } },
+    { sectionTitles: { inventory: "" } }, { sectionTitles: { inventory: 1 } },
+    { sectionColors: { inventory: "#xyzxyz" } }, { hiddenSections: { safety: "yes" } },
+    { noteTexturePath: "other-room/image.webp" }, { sectionTitles: [] },
+  ]) await assert.rejects(patchSettings(patch, patch), /INVALID_CAMPAIGN_SETTINGS/);
+  await assert.rejects(patchSettings({ sectionTitles: { inventory: "缺少原值" } }, { sectionTitles: {} }),
+    /INVALID_CAMPAIGN_SETTINGS/);
+  await patchSettings({ hiddenSections: { inventory: true } }, { hiddenSections: { inventory: initialSettings.hidden_sections.includes("inventory") } });
+  await patchSettings({ hiddenSections: { tasks: true } }, { hiddenSections: { tasks: initialSettings.hidden_sections.includes("tasks") } }, secondGmAuth);
+  assert.ok((await readSettings()).hidden_sections.includes("inventory") && (await readSettings()).hidden_sections.includes("tasks"));
+  await patchSettings({ hiddenSections: { inventory: false } }, { hiddenSections: { inventory: true } });
+  assert.ok((await readSettings()).hidden_sections.includes("tasks"), "restoring one section preserves another GM's visibility changes");
+  await patchSettings({ noteTexturePath: `${campaign}/new-paper.webp` }, { noteTexturePath: initialSettings.note_texture_path });
+  settings = await readSettings();
+  assert.equal(settings.note_texture_path, `${campaign}/new-paper.webp`);
+  assert.deepEqual(settings.module_layout.tasks, { x: 1700, y: 50 });
+  const currentAppearance = settings.appearance;
+  const newAppearance = { ...currentAppearance, frame: "metal" };
+  await asUser(() => db.query("select public.patch_board_appearance($1,$2::jsonb,$3::jsonb)",
+    [campaign, JSON.stringify(newAppearance), JSON.stringify(currentAppearance)]), secondGmAuth);
+  await assert.rejects(asUser(() => db.query("select public.patch_board_appearance($1,$2::jsonb,$3::jsonb)",
+    [campaign, JSON.stringify({ ...currentAppearance, frame: "none" }), JSON.stringify(currentAppearance)])),
+    /CAMPAIGN_SETTINGS_CONFLICT/);
+  assert.equal((await readSettings()).appearance.frame, "metal");
+  await db.exec(await readFile("supabase/tests/settings_patch_smoke.sql", "utf8"));
+  console.log("Settings patches: concurrent GM keys, stale drafts, idempotency, defaults, media and permissions passed.");
 
   console.log(
     `${migrations.length} migrations applied; board objects, clock, dice privacy and checks passed.`,

@@ -2,7 +2,7 @@ import { backend } from "../../lib/backend";
 import { requireSupabase, rpc } from "../../lib/supabase/client";
 import type { CampaignBoard } from "../campaign/domain/types";
 import { evaluateDice, validateDiceNotation } from "./engine";
-import { diceInvocationError } from "./invocationError";
+import { diceInvocationError, DiceRequestRejected } from "./invocationError";
 import type { DiceCheck, DicePreset, DiceRoll, DiceState, DiceVisibility, RollInput } from "./types";
 
 const storageKey = (campaign: string) => `hp-dice:${campaign}`;
@@ -35,13 +35,18 @@ export async function getDiceState(board: CampaignBoard, before?: string): Promi
 }
 
 export async function rollDice(board: CampaignBoard, input: RollInput): Promise<DiceRoll> {
-  const notation = validateDiceNotation(input.notation);
+  let notation: string;
+  try { notation = validateDiceNotation(input.notation); }
+  catch (error) { throw new DiceRequestRejected(error instanceof Error ? error.message : "骰子公式不合法。"); }
   if (backend === "supabase") {
     const { data, error, response } = await requireSupabase().functions.invoke("roll-dice", {
       body: { ...input, notation, campaignId: board.campaign.id },
     });
     if (error) {
-      throw new Error(await diceInvocationError(error, response));
+      const message = await diceInvocationError(error, response);
+      const http = response ?? (error.context instanceof Response ? error.context : undefined);
+      if (http?.status === 400 || http?.status === 413) throw new DiceRequestRejected(message);
+      throw new Error(message);
     }
     if (data?.error) throw new Error(data.error);
     return data as DiceRoll;
@@ -51,11 +56,14 @@ export async function rollDice(board: CampaignBoard, input: RollInput): Promise<
     roll.id === input.requestId || (input.checkId && roll.check_id === input.checkId && roll.actor_id === board.viewer.id));
   if (existing) return localVisible(board, existing) ? existing : { ...existing, result: null };
   const engine = await import("@dice-roller/rpg-dice-roller");
+  let outcome;
+  try { outcome = evaluateDice(notation, engine); }
+  catch (error) { throw new DiceRequestRejected(error instanceof Error ? error.message : "骰子公式无法计算。"); }
   const roll: DiceRoll = {
     id: input.requestId, campaign_id: board.campaign.id,
     actor_id: board.viewer.id, actor_name: board.viewer.displayName,
     notation, label: input.label, visibility: input.visibility, status: "complete",
-    result: evaluateDice(notation, engine), parent_id: input.parentId ?? null,
+    result: outcome, parent_id: input.parentId ?? null,
     check_id: input.checkId ?? null, revealed_at: null, created_at: new Date().toISOString(),
   };
   state.rolls.unshift(roll);

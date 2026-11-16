@@ -3,6 +3,19 @@ import type { DiceRoll } from "./types";
 
 export const standardDice = [4, 6, 8, 10, 12, 20, 100];
 
+/** Formulas may regroup mixed dice; preserve the original hand positions. */
+export function matchThrowDice(source: TrayDie[], results: TrayDie[]): Map<string, TrayDie> | null {
+  if (source.length !== results.length) return null;
+  const available = [...results];
+  const matches = new Map<string, TrayDie>();
+  for (const die of source) {
+    const index = available.findIndex((result) => result.sides === die.sides);
+    if (index < 0) return null;
+    matches.set(die.id, available.splice(index, 1)[0]);
+  }
+  return matches;
+}
+
 /** The two physical percentile dice always represent one logical d100. */
 export function expandDiceSelection(dice: TrayDie[], ids: string[]): string[] {
   const selected = new Set(ids);

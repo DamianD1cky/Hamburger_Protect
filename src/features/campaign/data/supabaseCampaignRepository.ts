@@ -1,4 +1,5 @@
 import type { CampaignRepository } from "../domain/repository";
+import { legacyIndexClock, type EventClock, type EventClockDraft } from "../domain/eventClock";
 import { defaultBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
 import { compressImage, blobToFile } from "../../../lib/imageCompress";
 import type {
@@ -11,7 +12,8 @@ import type {
   ChecklistDraft,
   CampaignMediaKind,
   CampaignSectionKey,
-  CampaignSettingsDraft,
+  CampaignSettingsUpdate,
+  CampaignSettingsPatch,
   MemberProfileDraft,
   NoteColor,
   EmployeePosition,
@@ -30,6 +32,7 @@ import {
   getSupabaseAppSession,
   requireSupabaseSession,
 } from "../../access/data/supabaseSession";
+import { settingsConflictMessage, settingsUpdate } from "../domain/settingsUpdate";
 interface RemoteNoteLink {
   id: string;
   from_note_id: string;
@@ -239,11 +242,12 @@ async function toBoard(
   if (!publicView && !viewer)
     throw new Error("Current user is not a campaign member");
   const appearance = remote.settings.appearance ?? defaultBoardAppearance(remote.settings.background_path);
-  const [backgroundUrl, noteTextureUrl, boardTextureUrl, stickers] = await Promise.all([
+  const [backgroundUrl, noteTextureUrl, boardTextureUrl, stickers, eventClocks] = await Promise.all([
     signedMediaUrl(appearance.room.imagePath, publicView),
     signedMediaUrl(remote.settings.note_texture_path, publicView),
     signedMediaUrl(appearance.surface.imagePath, publicView),
     loadBoardStickers(remote.id),
+    loadEventClocks(remote.id, remote.burger_index),
   ]);
   return {
     campaign: {
@@ -253,6 +257,7 @@ async function toBoard(
       burgerIndex: remote.burger_index,
       status: remote.status,
     },
+    eventClocks,
     viewer: publicView
       ? {
           id: user?.id ?? "public-visitor",
@@ -371,6 +376,13 @@ export async function getPublicActivities(
   );
 }
 
+async function loadEventClocks(campaignId: string, legacyValue: number): Promise<EventClock[]> {
+  const { data, error } = await requireSupabase().rpc("get_event_clocks", { p_campaign_id: campaignId });
+  if (error?.code === "PGRST202") return [legacyIndexClock(campaignId, legacyValue)];
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 class SupabaseCampaignRepository implements CampaignRepository {
   async getBoard(campaignId: string) {
     await requireSupabaseSession();
@@ -436,12 +448,19 @@ class SupabaseCampaignRepository implements CampaignRepository {
     });
     return this.getBoard(campaignId);
   }
-  async setBurgerIndex(campaignId: string, value: number) {
-    await rpc("set_burger_index", {
-      p_campaign_id: campaignId,
-      p_value: value,
+  async saveEventClock(campaignId: string, draft: EventClockDraft, id?: string, revision?: number) {
+    return rpc<EventClock>("save_event_clock", {
+      p_campaign_id: campaignId, p_id: id ?? null, p_revision: revision ?? null,
+      p_name: draft.name, p_segments: draft.segments, p_progress: draft.progress,
+      p_consequence: draft.consequence, p_color: draft.color,
     });
-    return this.getBoard(campaignId);
+  }
+  async setEventClockProgress(campaignId: string, id: string, progress: number, revision: number) {
+    return rpc<EventClock>("set_event_clock_progress", { p_campaign_id: campaignId, p_id: id,
+      p_progress: progress, p_revision: revision });
+  }
+  async deleteEventClock(campaignId: string, id: string, revision: number) {
+    return rpc<string>("delete_event_clock", { p_campaign_id: campaignId, p_id: id, p_revision: revision });
   }
   async toggleChecklist(campaignId: string, id: string) {
     await rpc("toggle_checklist", { p_campaign_id: campaignId, p_id: id });
@@ -650,25 +669,18 @@ class SupabaseCampaignRepository implements CampaignRepository {
   }
   async updateCampaignSettings(
     campaignId: string,
-    draft: CampaignSettingsDraft,
+    update: CampaignSettingsUpdate,
   ) {
-    const board = await this.getBoard(campaignId);
-    const name = draft.name.trim();
-    if (!name || name.length > 80) throw new Error("战役名称需要 1–80 个字符");
-    if (name !== board.campaign.name) {
-      await rpc("rename_campaign", {
-        p_campaign_id: campaignId,
-        p_name: name,
+    if (!Object.keys(update.patch).length) return {};
+    try {
+      return await rpc<CampaignSettingsPatch>("patch_campaign_settings", {
+        p_campaign_id: campaignId, p_patch: update.patch, p_expected: update.expected,
       });
+    } catch (error) {
+      if (error instanceof Error && error.message === "CAMPAIGN_SETTINGS_CONFLICT")
+        throw new Error(settingsConflictMessage);
+      throw error;
     }
-    await this.persistSettings(campaignId, board, {
-      sectionTitles: draft.sectionTitles,
-      sectionColors: draft.sectionColors,
-      resourceTitles: draft.resourceTitles,
-      moduleLayout: draft.moduleLayout,
-      hiddenSections: draft.hiddenSections,
-    });
-    return this.getBoard(campaignId);
   }
   async moveBoardModule(
     campaignId: string,
@@ -709,7 +721,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
       const board = await this.getBoard(campaignId);
       const appearance = structuredClone(board.settings.appearance);
       appearance.room.kind = "image";
-      return this.saveBoardAppearance(campaignId, appearance, { background: file });
+      return this.saveBoardAppearance(campaignId, appearance, { background: file }, board.settings.appearance);
     }
     const extensions: Record<string, string> = {
       "image/jpeg": "jpg",
@@ -729,19 +741,14 @@ class SupabaseCampaignRepository implements CampaignRepository {
     });
     if (upload.error) throw new Error("图片上传失败");
     try {
-      await this.persistSettings(campaignId, board, {
-        noteTexturePath: path,
-      });
+      await this.updateCampaignSettings(campaignId, settingsUpdate(board, { noteTexturePath: path }));
     } catch (error) {
       await bucket.remove([path]);
       throw error;
     }
     const previous = board.settings.noteTexturePath;
-    if (previous) {
-      await bucket.remove([previous]);
-      mediaUrlCache.delete(`member:${previous}`);
-      mediaUrlCache.delete(`public:${previous}`);
-    }
+    // Keep the previous object for active signed URLs and delayed collection.
+    if (previous) this.clearMediaUrl(previous);
     return this.getBoard(campaignId);
   }
 
@@ -749,6 +756,7 @@ class SupabaseCampaignRepository implements CampaignRepository {
     campaignId: string,
     appearance: BoardAppearance,
     files: BoardAppearanceFiles,
+    expected: BoardAppearance,
   ) {
     const next = structuredClone(appearance);
     const uploaded: string[] = [];
@@ -773,9 +781,13 @@ class SupabaseCampaignRepository implements CampaignRepository {
         if (kind === "background") next.room.imagePath = path;
         else next.surface.imagePath = path;
       }
-      await rpc("update_board_appearance", { p_campaign_id: campaignId, p_appearance: next });
+      await rpc("patch_board_appearance", {
+        p_campaign_id: campaignId, p_appearance: next, p_expected: expected,
+      });
     } catch (error) {
       if (uploaded.length) await bucket.remove(uploaded);
+      if (error instanceof Error && error.message === "CAMPAIGN_SETTINGS_CONFLICT")
+        throw new Error(settingsConflictMessage);
       throw error;
     }
     // 旧素材暂时保留，避免并发替换或已打开页面的签名链接失效。
@@ -787,50 +799,18 @@ class SupabaseCampaignRepository implements CampaignRepository {
       const appearance = structuredClone(board.settings.appearance);
       appearance.room.kind = "default";
       appearance.room.imagePath = null;
-      return this.saveBoardAppearance(campaignId, appearance, {});
+      return this.saveBoardAppearance(campaignId, appearance, {}, board.settings.appearance);
     }
     const previous = board.settings.noteTexturePath;
-    await this.persistSettings(campaignId, board, {
-      noteTexturePath: null,
-    });
+    await this.updateCampaignSettings(campaignId, settingsUpdate(board, { noteTexturePath: null }));
     if (previous) {
-      await requireSupabase().storage.from("campaign-media").remove([previous]);
-      mediaUrlCache.delete(`member:${previous}`);
-      mediaUrlCache.delete(`public:${previous}`);
+      this.clearMediaUrl(previous);
     }
     return this.getBoard(campaignId);
   }
-  private async persistSettings(
-    campaignId: string,
-    board: CampaignBoard,
-    changes: Partial<{
-      sectionTitles: CampaignSettingsDraft["sectionTitles"];
-      sectionColors: CampaignSettingsDraft["sectionColors"];
-      resourceTitles: CampaignSettingsDraft["resourceTitles"];
-      moduleLayout: CampaignSettingsDraft["moduleLayout"];
-      hiddenSections: CampaignSettingsDraft["hiddenSections"];
-      backgroundPath: string | null;
-      noteTexturePath: string | null;
-    }>,
-  ) {
-    await rpc("update_campaign_settings", {
-      p_campaign_id: campaignId,
-      p_section_titles: changes.sectionTitles ?? board.settings.sectionTitles,
-      p_section_colors: changes.sectionColors ?? board.settings.sectionColors,
-      p_resource_titles:
-        changes.resourceTitles ?? board.settings.resourceTitles,
-      p_module_layout: changes.moduleLayout ?? board.settings.moduleLayout,
-      p_hidden_sections:
-        changes.hiddenSections ?? board.settings.hiddenSections,
-      p_background_path:
-        changes.backgroundPath === undefined
-          ? board.settings.backgroundPath
-          : changes.backgroundPath,
-      p_note_texture_path:
-        changes.noteTexturePath === undefined
-          ? board.settings.noteTexturePath
-          : changes.noteTexturePath,
-    });
+  private clearMediaUrl(path: string) {
+    mediaUrlCache.delete(`member:${path}`);
+    mediaUrlCache.delete(`public:${path}`);
   }
 }
 export const supabaseCampaignRepository = new SupabaseCampaignRepository();

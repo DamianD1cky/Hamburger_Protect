@@ -1,4 +1,5 @@
-export type RoomBackgroundKind = "default" | "color" | "image";
+export type RoomBackgroundKind = "default" | "color" | "image" | "perspective";
+export type PerspectiveScene = "crossing" | "station";
 export type BackgroundFit = "cover" | "contain" | "tile";
 export type BoardSurfaceKind = "felt" | "cork" | "paper" | "image";
 export type BoardFrameKind = "burger" | "wood" | "metal" | "none";
@@ -12,6 +13,8 @@ export interface BoardAppearance {
     positionX: number;
     positionY: number;
     dim: number;
+    scene?: PerspectiveScene;
+    animated?: boolean;
   };
   surface: {
     kind: BoardSurfaceKind;

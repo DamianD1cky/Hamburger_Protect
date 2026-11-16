@@ -7,7 +7,7 @@ import type {
   CampaignMember,
   MemberProfileDraft,
 } from "../../features/campaign/domain/types";
-import { PaperDialog } from "../composer/PaperDialog";
+import { MenuPopover } from "./MenuPopover";
 
 function JoinRequestRow({
   request,
@@ -200,6 +200,7 @@ function MemberDetail({
           <label className="field">
             <span>角色资料（房间成员可见）</span>
             <textarea
+              aria-label="角色资料（房间成员可见）"
               value={profileText}
               onChange={(event) => setProfileText(event.target.value)}
               maxLength={2000}
@@ -266,6 +267,7 @@ function MemberDetail({
 }
 
 export function RosterDialog({
+  anchor,
   board,
   onClose,
   joinInbox,
@@ -275,6 +277,7 @@ export function RosterDialog({
   onUpdateProfile,
   onRemoveMember,
 }: {
+  anchor: HTMLElement | null;
   board: CampaignBoard;
   onClose: () => void;
   joinInbox?: { requests: CampaignJoinRequest[]; total: number };
@@ -292,15 +295,33 @@ export function RosterDialog({
       "",
   );
   const selected = board.members.find((member) => member.userId === selectedId);
+  const [tab, setTab] = useState<"members" | "requests">("members");
   return (
-    <PaperDialog
-      title={`危机排班（${active.length} 人在岗）`}
+    <MenuPopover
+      anchor={anchor}
+      id="roster-menu"
+      keepMounted
+      width={560}
+      title="危机排班"
       className="roster-dialog"
       onClose={onClose}
     >
-      <div className={joinInbox ? "roster-shell has-inbox" : "roster-shell"}>
+      {joinInbox && <div className="room-settings-tabs" role="tablist" aria-label="排班分类">
+        {([["members", `成员 · ${active.length}`], ["requests", `入店申请 · ${joinInbox.total}`]] as const).map(([key, label]) =>
+          <button type="button" role="tab" key={key} aria-selected={tab === key}
+            aria-controls={`roster-panel-${key}`} id={`roster-tab-${key}`} tabIndex={tab === key ? 0 : -1}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? "members" : event.key === "End" ? "requests" :
+                tab === "members" ? "requests" : "members";
+              setTab(next); document.getElementById(`roster-tab-${next}`)?.focus();
+            }} onClick={() => setTab(key)}>{label}</button>)}
+      </div>}
+      <div className="roster-shell">
       {joinInbox && (
-        <section className="join-request-inbox" aria-label="待审批入店申请">
+        <section className="join-request-inbox" aria-label="待审批入店申请"
+          id="roster-panel-requests" role="tabpanel" aria-labelledby="roster-tab-requests" hidden={tab !== "requests"}>
           <div className="join-inbox-heading">
             <h2>入店申请（{joinInbox.total} 条待审批）</h2>
             <button
@@ -338,7 +359,8 @@ export function RosterDialog({
           ))}
         </section>
       )}
-      <div className="roster-layout">
+      <div className="roster-layout" id="roster-panel-members" role={joinInbox ? "tabpanel" : undefined}
+        aria-labelledby={joinInbox ? "roster-tab-members" : undefined} hidden={!!joinInbox && tab !== "members"}>
         <div className="roster-member-list" role="list" aria-label="房间成员">
           {active.map((member) => (
             <button
@@ -386,6 +408,9 @@ export function RosterDialog({
         )}
       </div>
       </div>
-    </PaperDialog>
+      <footer className="composer-actions">
+        <button type="button" className="text-button" onClick={onClose}>完成</button>
+      </footer>
+    </MenuPopover>
   );
 }

@@ -2,20 +2,21 @@ import {
   activityActor,
   activitySummary,
 } from "../../features/campaign/domain/activity";
-import { Circle, EyeOff, Plus, RotateCcw, ShieldCheck, Pencil } from "lucide-react";
+import { Circle, Plus, RotateCcw, ShieldCheck } from "lucide-react";
 import { useState, type MouseEvent } from "react";
 import type {
   CampaignBoard,
   Quest,
   QuestStatus,
 } from "../../features/campaign/domain/types";
-import { burgerIndexInfo } from "../../features/campaign/domain/burgerIndex";
 import {
   resourceGroupTitle,
   resourceGroups,
   resourceLabels,
 } from "../../features/campaign/domain/resources";
-import { titleColorStyle } from "../../features/campaign/domain/campaignSettings";
+import { defaultSectionColors } from "../../features/campaign/domain/campaignSettings";
+import { BoardContentCard, BoardSectionHeader, type SectionActions } from "./BoardSectionPrimitives";
+export type { SectionActions } from "./BoardSectionPrimitives";
 import { nextQuestStatus } from "../../features/campaign/domain/types";
 import { MotionText } from "../MotionText";
 
@@ -37,47 +38,8 @@ const transitionLabels: Partial<Record<QuestStatus, string>> = {
   failed: "重新执行",
 };
 
-/** 只有 GM 拿得到：编辑该区块的标题与底色，或直接收起这个区块。 */
-export interface SectionActions {
-  onEdit: () => void;
-  onHide: () => void;
-}
-
-function SectionActionButtons({
-  actions,
-  label,
-}: {
-  actions?: SectionActions;
-  label: string;
-}) {
-  if (!actions) return null;
-  return (
-    <>
-      <button
-        className="sign-action"
-        type="button"
-        onClick={actions.onEdit}
-        aria-label={"编辑" + label + "的标题与底色"}
-        title="编辑标题与底色"
-      >
-        <Pencil aria-hidden="true" />
-      </button>
-      <button
-        className="sign-action"
-        type="button"
-        onClick={actions.onHide}
-        aria-label={"隐藏" + label}
-        title="隐藏区块"
-      >
-        <EyeOff aria-hidden="true" />
-      </button>
-    </>
-  );
-}
-
 export function InventorySection({
   resources,
-  canManage,
   onOpenSheet,
   title,
   color,
@@ -85,7 +47,6 @@ export function InventorySection({
   actions,
 }: {
   resources: CampaignBoard["resources"];
-  canManage: boolean;
   onOpenSheet: (group: number) => void;
   title: string;
   color?: string;
@@ -97,52 +58,45 @@ export function InventorySection({
       className="board-section inventory-section"
       data-section="inventory"
     >
-      <div
-        className="sign sign-red section-heading"
-        style={color ? titleColorStyle(color) : undefined}
-      >
-        <span>{title}</span>
-        <SectionActionButtons actions={actions} label={title} />
-      </div>
+      <BoardSectionHeader title={title} color={color ?? defaultSectionColors.inventory} actions={actions} />
       <div className="inventory-stack">
         {resourceGroups.map((sheet) => {
           const items = resources.filter((item) => item.group === sheet.id);
           const sheetTitle = resourceGroupTitle(sheet.id, resourceTitles);
           return (
-            <button
+            <BoardContentCard
               className="inventory-card"
-              type="button"
               key={sheet.id}
-              onClick={() => onOpenSheet(sheet.id)}
-              aria-label={`${canManage ? "编辑" : "查看"}便签：${sheetTitle}`}
-              aria-haspopup="dialog"
+              label={sheetTitle}
             >
-              <span className="inventory-sheet-title">
+              <div className="inventory-sheet-title">
                 {sheetTitle}
                 <small>{items.length} 项</small>
-              </span>
-              <span className="inventory-preview">
+              </div>
+              <div className="inventory-preview" role="list" aria-label={`${sheetTitle}条目`}>
                 {items.slice(0, 3).map((item) => (
-                  <span className="inventory-row" key={item.id}>
+                  <div className="inventory-row" role="listitem" key={item.id}>
                     <span className="quantity">
                       {item.name}　{item.quantity}
                     </span>
                     <span className="inventory-status" data-state={item.status}>
                       {resourceLabels[item.status]}
                     </span>
-                  </span>
+                  </div>
                 ))}
-              </span>
-              {!items.length && (
-                <span className="sheet-empty">
-                  {canManage ? "空白便签，点开登记" : "等待 GM 登记"}
-                </span>
-              )}
-              <span className="inventory-sheet-hint">
-                {items.length > 3 ? `共 ${items.length} 项，` : ""}点开
-                {canManage ? "修改" : "查看"} →
-              </span>
-            </button>
+                {!items.length && (
+                  <span className="sheet-empty">
+                    暂无物资
+                  </span>
+                )}
+              </div>
+              <button className="board-view-more" type="button"
+                aria-label={`${items.length > 3 ? "查看更多" : "查看"}${sheetTitle}，共 ${items.length} 项`} aria-haspopup="dialog"
+                onClick={() => onOpenSheet(sheet.id)}>
+                {items.length > 3 ? "查看更多" : "查看明细"}
+                {items.length > 3 && <span>+{items.length - 3}</span>}
+              </button>
+            </BoardContentCard>
           );
         })}
       </div>
@@ -158,6 +112,7 @@ interface TaskSectionProps {
   campaignActive: boolean;
   onCompose: (event: MouseEvent<HTMLElement>) => void;
   onEdit: (quest: Quest, event: MouseEvent<HTMLElement>) => void;
+  onViewMore: (completed: boolean) => void;
   onTransition: (
     quest: Quest,
     status: QuestStatus,
@@ -165,13 +120,13 @@ interface TaskSectionProps {
   ) => Promise<void>;
 }
 
-function TaskItem({
+export function TaskItem({
   quest,
   viewer,
   campaignActive,
   onEdit,
   onTransition,
-}: Omit<TaskSectionProps, "quests" | "onCompose" | "title" | "color"> & {
+}: Pick<TaskSectionProps, "viewer" | "campaignActive" | "onEdit" | "onTransition"> & {
   quest: Quest;
 }) {
   const [busy, setBusy] = useState(false);
@@ -278,6 +233,7 @@ export function TaskSection({
   onCompose,
   onEdit,
   onTransition,
+  onViewMore,
   actions,
 }: TaskSectionProps & { actions?: SectionActions }) {
   const active = quests.filter((quest) => quest.status !== "completed");
@@ -285,30 +241,16 @@ export function TaskSection({
 
   return (
     <section className="board-section task-section" data-section="tasks">
-      <div
-        className="sign sign-red task-sign"
-        style={color ? titleColorStyle(color) : undefined}
-      >
-        <span>{title}</span>
-        {viewer.role === "gm" && campaignActive && (
-          <button
-            className="sign-action"
-            type="button"
-            onClick={onCompose}
-            aria-label="发布工作指示"
-            title="发布工作指示"
-          >
-            <Plus aria-hidden="true" />
-          </button>
-        )}
-        <SectionActionButtons actions={actions} label={title} />
-      </div>
+      <BoardSectionHeader title={title} color={color ?? defaultSectionColors.tasks} actions={actions} />
       <div className="task-papers">
-        <article className="paper task-paper todo-paper">
-          <h2>进行中 <small className="task-count"><MotionText value={active.length} /></small></h2>
+        <BoardContentCard className="paper task-paper todo-paper">
+          <h2><span>进行中 <small className="task-count"><MotionText value={active.length} /></small></span>
+            {viewer.role === "gm" && campaignActive && <button type="button" className="card-action"
+              onClick={onCompose} aria-label="发布工作指示" title="发布工作指示"><Plus aria-hidden="true" /></button>}
+          </h2>
           <div className="task-list">
             {!active.length && <p className="board-empty">暂无工作指示</p>}
-            {active.map((quest) => (
+            {active.slice(0, 4).map((quest) => (
               <TaskItem
                 key={quest.id}
                 quest={quest}
@@ -319,12 +261,15 @@ export function TaskSection({
               />
             ))}
           </div>
-        </article>
-        <article className="paper task-paper done-paper">
+          {active.length > 4 && <button type="button" className="board-view-more"
+            aria-label={`查看更多进行中的工作指示，共 ${active.length} 项`} aria-haspopup="dialog"
+            onClick={() => onViewMore(false)}>查看更多 <span>+{active.length - 4}</span></button>}
+        </BoardContentCard>
+        <BoardContentCard className="paper task-paper done-paper">
           <h2>已完成 <small className="task-count"><MotionText value={completed.length} /></small></h2>
           <div className="task-list">
             {!completed.length && <p className="board-empty">暂无完成记录</p>}
-            {completed.map((quest) => (
+            {completed.slice(0, 4).map((quest) => (
               <TaskItem
                 key={quest.id}
                 quest={quest}
@@ -335,7 +280,10 @@ export function TaskSection({
               />
             ))}
           </div>
-        </article>
+          {completed.length > 4 && <button type="button" className="board-view-more"
+            aria-label={`查看更多已完成的工作指示，共 ${completed.length} 项`} aria-haspopup="dialog"
+            onClick={() => onViewMore(true)}>查看更多 <span>+{completed.length - 4}</span></button>}
+        </BoardContentCard>
       </div>
     </section>
   );
@@ -359,24 +307,16 @@ export function ShiftSection({
   const active = members.filter((member) => member.active);
   return (
     <section className="board-section shift-section" data-section="shifts">
-      <div
-        className="sign sign-blue"
-        style={color ? titleColorStyle(color) : undefined}
-      >
-        <span>{title}</span>
-        <SectionActionButtons actions={actions} label={title} />
-      </div>
-      <button
+      <BoardSectionHeader title={title} color={color ?? defaultSectionColors.shifts} actions={actions} />
+      <BoardContentCard
         className="shift-paper roster-preview"
-        type="button"
         disabled={!canExpand}
         onClick={onExpand}
-        aria-label={
+        label={
           canExpand
             ? `查看全部 ${active.length} 位在岗成员`
             : `${active.length} 位成员在岗`
         }
-        aria-haspopup={canExpand ? "dialog" : undefined}
       >
         <strong><MotionText value={`${active.length} 人在岗`} /></strong>
         <span className="roster-preview-list">
@@ -387,71 +327,8 @@ export function ShiftSection({
             </span>
           ))}
         </span>
-        <span className="roster-more">
-          {active.length > 3 ? `还有 ${active.length - 3} 人` : ""}
-          {canExpand && `${active.length > 3 ? "，" : ""}点击查看完整排班 →`}
-        </span>
-      </button>
-    </section>
-  );
-}
-
-export function BurgerIndexSection({
-  value,
-  canManage,
-  onManage,
-  title,
-  color,
-  actions,
-}: {
-  value: number;
-  canManage: boolean;
-  onManage: () => void;
-  title: string;
-  color?: string;
-  actions?: SectionActions;
-}) {
-  const info = burgerIndexInfo(value);
-  return (
-    <section
-      className="board-section burger-index-section"
-      data-section="index"
-      data-color={info.color}
-    >
-      <div
-        className={color ? "index-heading has-custom-color" : "index-heading"}
-        style={color ? titleColorStyle(color) : undefined}
-      >
-        <span>{title}</span>
-        {canManage && (
-          <button
-            type="button"
-            className="icon-button"
-            onClick={onManage}
-            aria-label="调整汉堡屋指数"
-          >
-            <Pencil />
-          </button>
-        )}
-        <SectionActionButtons actions={actions} label={title} />
-      </div>
-      <div className="index-current">
-        <strong><MotionText value={info.label} /></strong>
-        <span><MotionText value={info.service} /></span>
-      </div>
-      <div className="index-track" aria-label={`当前指数 ${info.label}`}>
-        {Array.from({ length: 9 }, (_, i) => (
-          <span
-            key={i}
-            data-color={i < 3 ? "red" : i < 6 ? "yellow" : "green"}
-            className={value === i + 1 ? "is-current" : ""}
-          />
-        ))}
-      </div>
-      <p className="index-bonus">{info.bonus}</p>
-      <p className="index-description">
-        {value === 1 ? "红1：立即败北，请由 GM 处理结局。" : info.description}
-      </p>
+        {active.length > 3 && <span className="board-view-more">查看更多 <span>+{active.length - 3}</span></span>}
+      </BoardContentCard>
     </section>
   );
 }
@@ -470,31 +347,27 @@ export function MemoSection({
   actions?: SectionActions;
 }) {
   return (
-    <section className="board-section memo-section" data-section="notes">
-      <div
-        className="sign sign-yellow"
-        style={color ? titleColorStyle(color) : undefined}
-      >
-        <span>{title}</span>
-        <SectionActionButtons actions={actions} label={title} />
-      </div>
-      <button
+    <section className="board-section memo-section" data-section="activity">
+      <BoardSectionHeader title={title} color={color ?? defaultSectionColors.activity} actions={actions} />
+      <BoardContentCard
         className="paper memo-paper notes-preview"
-        type="button"
         onClick={onOpen}
-        aria-label="查看全部工作记录"
-        aria-haspopup="dialog"
+        label="查看全部工作记录"
       >
         <strong>
           <MotionText value={`${board.activities.length}${board.hasMoreActivity ? "+" : ""} 条操作记录`} />
         </strong>
-        {board.activities.slice(0, 2).map((event) => (
-          <span key={event.id}>
-            {activityActor(event, board.members)}　{activitySummary(event)}
-          </span>
-        ))}
-        {!board.activities.length && <span>等待员工更新公告板</span>}
-      </button>
+        {board.activities.length ? <span className="activity-preview-list" role="list" aria-label="最近工作记录">
+          {board.activities.slice(0, 5).map((event) => (
+            <span className="activity-preview-row" role="listitem" key={event.id}>
+              <b>{activityActor(event, board.members)}</b>
+              <span>{activitySummary(event)}</span>
+            </span>
+          ))}
+        </span> : <span>暂无操作记录</span>}
+        {(board.activities.length > 5 || board.hasMoreActivity) &&
+          <span className="board-view-more activity-view-more">查看更多</span>}
+      </BoardContentCard>
     </section>
   );
 }
@@ -504,9 +377,9 @@ interface SafetySectionProps {
   categories: CampaignBoard["checklistCategories"];
   title: string;
   color?: string;
-  canManage: boolean;
   canToggle: boolean;
   onToggle: (id: string) => void;
+  onViewMore: () => void;
   actions?: SectionActions;
 }
 
@@ -515,67 +388,43 @@ export function SafetySection({
   categories,
   title,
   color,
-  canManage,
   canToggle,
   onToggle,
+  onViewMore,
   actions,
 }: SafetySectionProps) {
+  const preview = checklist.slice(0, 8);
   return (
     <section className="board-section safety-section" data-section="safety">
-      <div
-        className="sign sign-green section-heading"
-        style={color ? titleColorStyle(color) : undefined}
-      >
-        <span>{title}</span>
-        <SectionActionButtons actions={actions} label={title} />
-      </div>
-      <article className="paper safety-paper">
+      <BoardSectionHeader title={title} color={color ?? defaultSectionColors.safety} actions={actions} />
+      <BoardContentCard className="paper safety-paper">
+        <div className="card-content-heading">
+          <strong><MotionText value={`${checklist.filter((item) => item.completed).length}/${checklist.length}`} /></strong>
+        </div>
         <div className="safety-list">
           {!checklist.length && (
             <p className="board-empty">
               暂无检查项
-              {canManage ? "，点标题旁的铅笔进入设置后添加。" : "，等待 GM 登记。"}
             </p>
           )}
-          {[...categories, { id: "", name: "未分类" }].map((category) => {
-            const items = checklist.filter(
-              (item) => (item.categoryId ?? "") === category.id,
-            );
-            if (!items.length) return null;
-            return (
-              <details
-                className="safety-group"
-                key={category.id || "uncategorized"}
-                open
-              >
-                <summary>
-                  {category.name} <span>{items.length}</span>
-                </summary>
-                {items.map((item) => (
-                  <button
-                    className={`safety-item ${item.completed ? "is-done" : ""}`}
-                    type="button"
-                    key={item.id}
-                    disabled={!canToggle}
-                    title={
-                      canToggle ? "更新检查状态" : "仅在岗员工可以更新检查状态"
-                    }
-                    onClick={() => onToggle(item.id)}
-                  >
-                    <span className="safety-box" aria-hidden="true" />
-                    <span>{item.label}</span>
-                  </button>
-                ))}
-              </details>
-            );
+          {preview.map((item) => {
+            const category = categories.find((category) => category.id === item.categoryId)?.name ?? "未分类";
+            return <button
+              className={`safety-item ${item.completed ? "is-done" : ""}`}
+              type="button" key={item.id} disabled={!canToggle}
+              aria-label={`${item.label}，${category}`}
+              title={canToggle ? "更新检查状态" : "仅在岗员工可以更新检查状态"}
+              onClick={() => onToggle(item.id)}>
+              <span className="safety-box" aria-hidden="true" />
+              <span className="safety-label">{item.label}</span>
+              <small className="safety-category">{category}</small>
+            </button>;
           })}
         </div>
-        <div className="inspection-stamp" aria-hidden="true">
-          <small>汉堡店防御检查</small>
-          <strong>戒备</strong>
-          <small>每日一检</small>
-        </div>
-      </article>
+        {checklist.length > preview.length && <button type="button" className="board-view-more"
+          aria-label={`查看更多检查项，共 ${checklist.length} 项`} aria-haspopup="dialog"
+          onClick={onViewMore}>查看更多 <span>+{checklist.length - preview.length}</span></button>}
+      </BoardContentCard>
     </section>
   );
 }

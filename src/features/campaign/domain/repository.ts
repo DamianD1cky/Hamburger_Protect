@@ -6,7 +6,8 @@ import type {
   ResourceDraft,
   ChecklistDraft,
   CampaignMediaKind,
-  CampaignSettingsDraft,
+  CampaignSettingsUpdate,
+  CampaignSettingsPatch,
   MemberProfileDraft,
   NoteDraft,
   QuestDraft,
@@ -15,6 +16,7 @@ import type {
 import type { BoardAppearance, BoardAppearanceFiles } from "./boardAppearance";
 import type { BoardModuleKey, BoardModuleLayout } from "./boardModules";
 import type { CampaignClockConfig } from "./campaignClock";
+import type { EventClock, EventClockDraft } from "./eventClock";
 
 export interface CampaignRepository {
   getBoard(campaignId: string): Promise<CampaignBoard>;
@@ -40,7 +42,9 @@ export interface CampaignRepository {
     campaignId: string,
     id: string,
   ): Promise<CampaignBoard>;
-  setBurgerIndex(campaignId: string, value: number): Promise<CampaignBoard>;
+  saveEventClock(campaignId: string, draft: EventClockDraft, id?: string, revision?: number): Promise<EventClock>;
+  setEventClockProgress(campaignId: string, id: string, progress: number, revision: number): Promise<EventClock>;
+  deleteEventClock(campaignId: string, id: string, revision: number): Promise<string>;
   toggleChecklist(campaignId: string, itemId: string): Promise<CampaignBoard>;
   saveQuest(
     campaignId: string,
@@ -113,8 +117,8 @@ export interface CampaignRepository {
   ): Promise<CampaignBoard>;
   updateCampaignSettings(
     campaignId: string,
-    draft: CampaignSettingsDraft,
-  ): Promise<CampaignBoard>;
+    update: CampaignSettingsUpdate,
+  ): Promise<CampaignSettingsPatch>;
   moveBoardModule(
     campaignId: string,
     key: BoardModuleKey,
@@ -129,6 +133,7 @@ export interface CampaignRepository {
     campaignId: string,
     appearance: BoardAppearance,
     files: BoardAppearanceFiles,
+    expected: BoardAppearance,
   ): Promise<CampaignBoard>;
   setCampaignPublic(
     campaignId: string,

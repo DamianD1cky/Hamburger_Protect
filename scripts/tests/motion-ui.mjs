@@ -44,6 +44,7 @@ const backgroundImage = await readFile(
   new URL("../../assets/felt.webp", import.meta.url),
 );
 let checks = 0;
+let releaseHeldResponse = () => {};
 const check = (condition, message) => { assert.ok(condition, message); checks++; };
 try {
   for (const scenario of [
@@ -99,14 +100,28 @@ try {
     let rejectStickerResize = false;
     let appearanceWrites = 0;
     let clockWrites = 0;
+    let rejectEventClock = false;
+    let eventClockGate = null;
+    let eventClocks = [{
+      id: campaignId, name: "汉堡屋指数", segments: 9, progress: 5, consequence: "", color: "#406b50", mode: "scale", revision: 1,
+      stages: Array.from({ length: 9 }, (_, i) => ({
+        label: `${i < 3 ? "红" : i < 6 ? "黄" : "绿"}${i % 3 + 1}`,
+        color: i < 3 ? "#ab3326" : i < 6 ? "#e7a723" : "#406b50",
+        description: i < 3 ? "餐厅关闭 · 全员生存力 +1" : i < 6 ? "有限服务 · 全员无额外加值" : "正常服务 · 全员智力 +1",
+      })),
+    }];
     const diceState = { rolls: [], presets: [], checks: [], hasMore: false };
     const dicePosts = [];
+    let forcedD6Value = null;
     const socialState = { rolling: [peerId], reactions: [] };
     const reactionPosts = [];
     let rejectDiceOnce = false;
     let redactBlindReceipt = false;
     let imageUploads = 0;
     let rejectAppearance = false;
+    let rejectModuleSettings = false;
+    const settingsPosts = [];
+    const reads = {};
     let delayNextModuleMove = false;
     let delayedModuleMoveGate = null;
     let releaseDelayedModuleMove;
@@ -150,9 +165,39 @@ try {
       },
       events: [],
     };
+    const channels = new Map();
+    await context.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => {
+      socket.onMessage((raw) => {
+        if (typeof raw !== "string") return;
+        const [join, ref, topic, event, payload] = JSON.parse(raw);
+        if (event === "phx_join") {
+          const filters = (payload.config?.postgres_changes ?? []).map((filter, i) => ({ ...filter, id: i + 1 }));
+          channels.set(topic, { socket, join, filters });
+          socket.send(JSON.stringify([join, ref, topic, "phx_reply", { status: "ok", response: { postgres_changes: filters } }]));
+          socket.send(JSON.stringify([join, null, topic, "system", { extension: "postgres_changes", status: "ok" }]));
+        } else if (event === "heartbeat" || event === "phx_leave") {
+          if (event === "phx_leave") channels.delete(topic);
+          socket.send(JSON.stringify([join, ref, topic, "phx_reply", { status: "ok", response: {} }]));
+        }
+      });
+    });
+    const socialChannel = () => [...channels.entries()].find(([topic]) => topic.includes("dice-social:"));
+    const notifyReaction = (reaction) => {
+      const channel = socialChannel();
+      assert.ok(channel, "the social Realtime channel joined");
+      const [topic, { socket, join, filters }] = channel;
+      socket.send(JSON.stringify([join, null, topic, "postgres_changes", {
+        ids: filters.filter((filter) => filter.table === "dice_reactions").map((filter) => filter.id),
+        data: { schema: "public", table: "dice_reactions", type: "UPDATE", record: reaction,
+          old_record: {}, columns: [], commit_timestamp: new Date().toISOString(), errors: null },
+      }]));
+    };
     await context.route(`${origin}/**`, async (route) => {
       const request = route.request();
       const path = new URL(request.url()).pathname;
+      if (request.method() === "GET" || path.endsWith("/get_dice_social") || path.endsWith("/get_campaign_board") ||
+        path.endsWith("/get_gm_access") || path.endsWith("/list_public_campaigns"))
+        reads[path] = (reads[path] ?? 0) + 1;
       const body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() : null;
       let result = [];
       let status = 200;
@@ -181,10 +226,37 @@ try {
       else if (path.endsWith("/list_public_campaigns")) result = [{ id: campaignId, name, burger_index: 5, published_at: date, message_count: 0 }];
       else if (path.endsWith("/get_note_links")) result = noteLinks;
       else if (path.endsWith("/get_board_stickers")) result = boardStickers;
-      else if (path.endsWith("/update_campaign_settings")) {
-        board.settings = { ...board.settings, section_titles: body.p_section_titles, hidden_sections: body.p_hidden_sections,
-          module_layout: body.p_module_layout, section_colors: body.p_section_colors, resource_titles: body.p_resource_titles };
-        result = board.settings;
+      else if (path.endsWith("/patch_campaign_settings")) {
+        settingsPosts.push(body);
+        if (rejectModuleSettings) { status = 400; result = { message: "模块设置保存失败" }; }
+        else {
+          const fields = { sectionTitles: "section_titles", sectionColors: "section_colors", resourceTitles: "resource_titles" };
+          let conflict = false;
+          for (const [field, changes] of Object.entries(body.p_patch)) {
+            for (const [key, value] of Object.entries(fields[field] ? changes : {})) {
+              const before = board.settings[fields[field]]?.[key] ?? null;
+              if (before !== body.p_expected[field]?.[key] && before !== value) conflict = true;
+            }
+          }
+          if (conflict) { status = 400; result = { message: "CAMPAIGN_SETTINGS_CONFLICT" }; }
+          else {
+            for (const [field, changes] of Object.entries(body.p_patch)) {
+              if (fields[field]) {
+                const merged = { ...board.settings[fields[field]] };
+                for (const [key, value] of Object.entries(changes)) {
+                  if (value === null) delete merged[key]; else merged[key] = value;
+                }
+                board.settings[fields[field]] = merged;
+              } else if (field === "hiddenSections") {
+                const hidden = new Set(board.settings.hidden_sections);
+                for (const [key, value] of Object.entries(changes)) value ? hidden.add(key) : hidden.delete(key);
+                board.settings.hidden_sections = [...hidden];
+              } else if (field === "name") board.name = changes;
+              else if (field === "noteTexturePath") board.settings.note_texture_path = changes;
+            }
+            result = body.p_patch;
+          }
+        }
       }
       else if (path.endsWith("/move_board_module")) {
         if (delayNextModuleMove) {
@@ -207,7 +279,9 @@ try {
       }
       else if (path.endsWith("/get_dice_state")) result = diceState;
       else if (path.endsWith("/get_dice_social")) result = {
+        server_time: new Date().toISOString(),
         rolling: socialState.rolling,
+        rolling_until: socialState.rolling.map((actor_id) => ({ actor_id, expires_at: new Date(Date.now() + 6000).toISOString() })),
         reactions: socialState.reactions.filter((reaction) => Date.now() - Date.parse(reaction.sent_at) < 4000),
       };
       else if (path.endsWith("/send_dice_reaction")) {
@@ -226,7 +300,7 @@ try {
             const rolled = [...body.notation.matchAll(/(\d+)d(\d+)/g)].flatMap((match) => {
               const sides = Number(match[2]);
               return Array.from({ length: Number(match[1]) }, () => ({
-                value: sides === 6 ? 4 : Math.min(12, sides), sides, kept: true, flags: "",
+                value: sides === 6 ? forcedD6Value ?? 4 : Math.min(12, sides), sides, kept: true, flags: "",
               }));
             });
             const bonus = Number(body.notation.match(/([+-]\d+)$/)?.[1] ?? 0);
@@ -265,7 +339,7 @@ try {
       else if (path.endsWith("/close_dice_check")) {
         const item = diceState.checks.find((c) => c.id === body.p_id); item.open = false; result = null;
       }
-      else if (path.endsWith("/update_board_appearance")) {
+      else if (path.endsWith("/patch_board_appearance")) {
         if (rejectAppearance) { status = 400; result = { message: "主题保存失败" }; }
         else {
           appearanceWrites++;
@@ -339,6 +413,25 @@ try {
         boardStickers = boardStickers.filter((sticker) => sticker.id !== body.p_id);
         result = body.p_id;
       }
+      else if (path.endsWith("/get_event_clocks")) result = eventClocks;
+      else if (path.endsWith("/save_event_clock") || path.endsWith("/set_event_clock_progress") || path.endsWith("/delete_event_clock")) {
+        if (eventClockGate) await eventClockGate;
+        const clock = eventClocks.find((item) => item.id === body.p_id);
+        if (rejectEventClock) { status = 400; result = { message: "EVENT_CLOCK_CONFLICT" }; }
+        else if (body.p_id && clock?.revision !== body.p_revision) {
+          status = 400; result = { message: "EVENT_CLOCK_CONFLICT" };
+        } else if (path.endsWith("/delete_event_clock")) {
+          eventClocks = eventClocks.filter((item) => item.id !== body.p_id); result = body.p_id;
+        } else if (path.endsWith("/set_event_clock_progress")) {
+          result = { ...clock, progress: body.p_progress, revision: clock.revision + 1 };
+          eventClocks = eventClocks.map((item) => item.id === result.id ? result : item);
+        } else {
+          result = { id: body.p_id ?? crypto.randomUUID(), name: body.p_name, segments: body.p_segments,
+            progress: body.p_progress, consequence: body.p_consequence, color: body.p_color,
+            mode: clock?.mode ?? "progress", stages: clock?.stages ?? null, revision: (clock?.revision ?? 0) + 1 };
+          eventClocks = clock ? eventClocks.map((item) => item.id === result.id ? result : item) : [...eventClocks, result];
+        }
+      }
       else if (path.endsWith("/get_campaign_board") || path.endsWith("/get_public_campaign_board")) {
         boardRequests++;
         if (body.p_campaign_id === deniedId) { status = 400; result = { message: "FORBIDDEN" }; }
@@ -372,7 +465,59 @@ try {
     check(await page.locator('.board > .board-surface[data-surface="felt"]').count() === 1,
       "legacy rooms keep their board material");
     check(boardRequests === 1, "mounted board reuses prepared query data");
-    if (["desktop", "mobile", "reduced"].includes(scenario.label) || process.env.HP_MOTION_DICE_ONLY) {
+    if (scenario.label === "desktop") {
+      const lobbyReads = Object.fromEntries(Object.entries(reads).filter(([path]) =>
+        /get_gm_access|list_public_campaigns|campaign_members|campaign_join_requests/.test(path)));
+      // A board refresh proves a poll interval elapsed without sleeping.
+      await page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/get_campaign_board"));
+      const afterReads = Object.fromEntries(Object.entries(reads).filter(([path]) =>
+        /get_gm_access|list_public_campaigns|campaign_members|campaign_join_requests/.test(path)));
+      // The GM inbox remains enabled, so exclude it from the lobby projection.
+      delete lobbyReads["/rest/v1/campaign_join_requests"];
+      delete afterReads["/rest/v1/campaign_join_requests"];
+      check(JSON.stringify(lobbyReads) === JSON.stringify(afterReads), "entering a room stops hidden lobby polling");
+      check(!reads["/rest/v1/visitor_messages"], "closed visitor messages do not poll");
+    }
+    if (process.env.HP_MOTION_SKIP_DICE || scenario.label === "desktop") {
+      await page.locator('[data-module="inventory"] .board-section-actions button').first().click();
+      const moduleDialog = page.locator(".section-settings-dialog");
+      const common = moduleDialog.getByRole("form", { name: "模块外观设置" });
+      const categoryDraft = moduleDialog.getByLabel("食材与补给的分类标题", { exact: true });
+      const beforeClocks = JSON.stringify(eventClocks);
+      const beforeLayout = JSON.stringify(board.settings.module_layout ?? {});
+      const beforeResources = JSON.stringify(board.resources);
+      await categoryDraft.fill("未保存的分类");
+      await common.getByLabel("可用物资与设施的十六进制色号", { exact: true }).fill("#123");
+      rejectModuleSettings = true;
+      await common.getByRole("button", { name: "保存模块外观", exact: true }).click();
+      await common.getByRole("alert").waitFor();
+      check(!board.settings.section_colors?.inventory && await categoryDraft.inputValue() === "未保存的分类",
+        "failed appearance save preserves both stored settings and the independent category draft");
+      rejectModuleSettings = false;
+      const appearanceSaved = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/patch_campaign_settings"));
+      await common.getByRole("button", { name: "保存模块外观", exact: true }).click(); await appearanceSaved;
+      check(board.settings.section_colors.inventory === "#112233" && !board.settings.resource_titles?.["0"],
+        "shared color input normalizes hex and never saves unfinished content");
+      check(JSON.stringify(Object.keys(settingsPosts.at(-1).p_patch)) === JSON.stringify(["sectionColors"]) &&
+        JSON.stringify(settingsPosts.at(-1).p_patch.sectionColors) === JSON.stringify({ inventory: "#112233" }),
+        "an appearance save sends only the edited module key");
+      check(JSON.stringify(board.resources) === beforeResources && JSON.stringify(eventClocks) === beforeClocks &&
+        JSON.stringify(board.settings.module_layout ?? {}) === beforeLayout, "appearance saves preserve data types and layout");
+      const defaultsSaved = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/patch_campaign_settings"));
+      await common.getByRole("button", { name: "恢复默认", exact: true }).click();
+      await common.getByRole("button", { name: "保存模块外观", exact: true }).click(); await defaultsSaved;
+      check(await categoryDraft.inputValue() === "未保存的分类", "restoring module defaults preserves the content draft");
+      board.settings.section_colors.inventory = "#445566";
+      await common.getByLabel("可用物资与设施的十六进制色号", { exact: true }).fill("#123456");
+      await common.getByRole("button", { name: "保存模块外观", exact: true }).click();
+      await common.getByRole("alert").filter({ hasText: "其他 GM 已修改" }).waitFor();
+      check(board.settings.section_colors.inventory === "#445566" &&
+        await common.getByLabel("可用物资与设施的十六进制色号", { exact: true }).inputValue() === "#123456",
+        "a stale editor shows a conflict without overwriting the other GM or discarding its draft");
+      delete board.settings.section_colors.inventory;
+      await moduleDialog.getByRole("button", { name: "关闭", exact: true }).click();
+    }
+    if ((["desktop", "mobile", "reduced"].includes(scenario.label) || process.env.HP_MOTION_DICE_ONLY) && !process.env.HP_MOTION_SKIP_DICE) {
       const toolButtons = await page.getByRole("navigation", { name: "公告板工具", exact: true })
         .locator(".board-tool-button").evaluateAll((buttons) => buttons.map((button) => {
           const rect = button.getBoundingClientRect(), style = getComputedStyle(button);
@@ -397,9 +542,22 @@ try {
       await page.screenshot({ path: join(screenshots, `${scenario.label}-dice-reaction.png`) });
       socialState.rolling = [];
       socialState.reactions = [{ actor_id: peerId, emoji: "👏", sent_at: new Date().toISOString() }];
+      notifyReaction(socialState.reactions[0]);
       await tray.getByRole("status", { name: "验收玩家：👏", exact: true }).waitFor();
       check(await tray.getByRole("status", { name: "验收玩家：👏", exact: true }).isVisible(),
         "a remote member's reaction appears beside their own avatar");
+      if (scenario.label === "desktop") {
+        const socialPath = "/rest/v1/rpc/get_dice_social";
+        const beforeExpiry = reads[socialPath];
+        await tray.getByRole("status", { name: "验收玩家：👏", exact: true }).waitFor({ state: "detached" });
+        check(reads[socialPath] === beforeExpiry, "connected social presence expires locally without polling");
+        const [topic, channel] = socialChannel();
+        const fallbackRead = page.waitForResponse((response) => new URL(response.url()).pathname === socialPath);
+        channel.socket.send(JSON.stringify([channel.join, null, topic, "system", { extension: "postgres_changes", status: "error" }]));
+        await fallbackRead;
+        check(reads[socialPath] > beforeExpiry, "a failed Realtime subscription enables fallback polling");
+        channel.socket.send(JSON.stringify([channel.join, null, topic, "system", { extension: "postgres_changes", status: "ok" }]));
+      }
       const openTool = async (name) => {
         await tray.getByRole("button", { name: "骰盘更多操作", exact: true }).click();
         await tray.getByRole("dialog", { name: "骰盘更多操作", exact: true }).getByRole("button", { name, exact: true }).click();
@@ -520,7 +678,7 @@ try {
         check(footprints.every((a, i) => footprints.slice(i + 1).every((b) =>
           a[1] <= b[0] || a[0] >= b[1] || a[3] <= b[2] || a[2] >= b[3])),
         "new mixed dice occupy separate free floor areas");
-        const staged = await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => {
+        let staged = await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => {
           const rect = target.getBoundingClientRect();
           return { id: target.dataset.dieId, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
         }));
@@ -554,9 +712,24 @@ try {
         await page.screenshot({ path: join(screenshots, "desktop-dice-dragging.png") });
         await page.keyboard.press("Escape");
         await page.mouse.up();
-        check(dicePosts.length === beforeDrag, "cancelled dragging never submits a roll");
+        check(dicePosts.length === beforeDrag + 1, "grabbing prepares exactly one roll before release");
         check(JSON.stringify(await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => target.dataset.position))) === JSON.stringify(beforePoses),
           "Escape restores every dragged die to its original pose");
+        const preparedId = dicePosts.at(-1).requestId;
+        await tray.getByRole("button", { name: "关闭", exact: true }).click();
+        await page.getByRole("button", { name: /^打开骰盘/ }).click();
+        await tray.locator('.dice-tray-scene[data-ready="true"]').waitFor();
+        check(dicePosts.length === beforeDrag + 1, "closing and reopening the tray preserves the prepared request");
+        await tray.locator(".dice-stage-roll").click();
+        await page.waitForFunction((id) => document.querySelector(".dice-pick-target")?.dataset.dieId.startsWith(id), preparedId);
+        await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
+        check(dicePosts.length === beforeDrag + 1, "continuing a cancelled prepared roll does not generate a second result");
+        staged = await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => {
+          const rect = target.getBoundingClientRect();
+          return { id: target.dataset.dieId, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        }));
+        await drawBox(staged.slice(0, 2));
+        await page.mouse.up();
         await page.waitForFunction(() => document.querySelector(".dice-fan-menu")?.dataset.interactive === "true");
         await page.keyboard.down("Shift");
         await drawBox([staged[2]]);
@@ -583,6 +756,7 @@ try {
           .every((animation) => animation.playState === "finished"));
         await page.screenshot({ path: join(screenshots, "desktop-dice-selection-settings.png") });
         const beforeBatch = dicePosts.length;
+        const resultsBeforeBatch = diceState.rolls.length;
         rejectDiceOnce = true;
         await selectedPanel.getByRole("button", { name: "投掷选中（2）", exact: true }).click();
         await tray.getByRole("alert").waitFor();
@@ -594,10 +768,11 @@ try {
         await page.keyboard.press("Escape");
         await tray.locator(".dice-fan-menu").waitFor({ state: "detached" });
         await page.mouse.click(staged[2].x, staged[2].y);
-        await page.waitForFunction(() => document.querySelectorAll('.dice-pick-target[aria-pressed="true"]').length === 1);
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 0,
+          "a pending roll cannot switch to a different selected pool");
         await tray.locator(".dice-stage-roll").click();
         await page.waitForFunction((id) => document.querySelector(`[data-die-id="${id}:1"]`)?.dataset.faceValue === "12", batchRequest);
-        await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+        await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
         check(dicePosts.length === beforeBatch + 2 && dicePosts.at(-1).requestId === batchRequest,
           "batch retry remains one idempotent request after selection changes");
         check(dicePosts.at(-1).notation === "1d6+1d20+3" &&
@@ -609,7 +784,7 @@ try {
           Math.abs(stationaryAfter.y + stationaryAfter.height / 2 - staged[2].y) < 1 &&
           await stationary.getAttribute("data-face-value") === "",
         "batch throw preserves the unselected die position and value");
-        check(await tray.locator(".dice-pick-target").count() === 3 && diceState.rolls.length === 1,
+        check(await tray.locator(".dice-pick-target").count() === 3 && diceState.rolls.length === resultsBeforeBatch + 1,
           "selected dice are replaced together without replacing the whole tray");
         for (const [index, value] of [4, 12].entries()) {
           check(await tray.locator(`[data-die-id="${batchRequest}:${index}"]`).getAttribute("data-top-face") === String(value),
@@ -630,25 +805,51 @@ try {
         await page.waitForFunction(() => document.querySelector(".dice-fan-menu")?.dataset.interactive === "true");
         const throwPick = await tossTargets.nth(0).boundingBox();
         const postsBeforeToss = dicePosts.length;
+        const resultsBeforeToss = diceState.rolls.length;
         const stationaryPose = await stationary.getAttribute("data-position");
         const posesBeforeToss = await tossTargets.evaluateAll((targets) => targets.map((target) => target.dataset.position));
+        let releaseTossResponse;
+        diceResponseGate = new Promise((resolve) => { releaseTossResponse = resolve; releaseHeldResponse = resolve; });
+        rejectDiceOnce = true;
+        const tossSaved = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/functions/v1/roll-dice"))
+          .catch(() => null);
         await page.mouse.move(throwPick.x + throwPick.width / 2, throwPick.y + throwPick.height / 2);
         await page.mouse.down();
         await tray.locator('.dice-tray-scene[data-gesture="lift"]').waitFor();
         await page.mouse.move(throwPick.x + throwPick.width / 2 + 110, throwPick.y + throwPick.height / 2 - 50, { steps: 12 });
-        rejectDiceOnce = true;
-        const tossSaved = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/functions/v1/roll-dice"));
+        const releasePoses = await tossTargets.evaluateAll((targets) => targets.slice(0, 2).map((target) => target.dataset.position.split(",").map(Number)));
         await page.mouse.up();
+        await tray.locator('.dice-tray-scene[data-phase="request"]').waitFor();
+        const flightFrames = await page.evaluate(() => new Promise((resolve) => {
+          const start = performance.now(), frames = [];
+          const sample = (now) => {
+            frames.push([...document.querySelectorAll(".dice-pick-target")].slice(0, 2)
+              .map((target) => target.dataset.position.split(",").map(Number)));
+            if (now - start < 350) requestAnimationFrame(sample);
+            else resolve(frames);
+          };
+          requestAnimationFrame(sample);
+        }));
+        check(flightFrames.length > 2 && flightFrames.every((frame) => JSON.stringify(frame) === JSON.stringify(releasePoses)),
+          "released dice stay held while the authoritative result is unavailable");
+        check(await tossTargets.evaluateAll((targets) => targets.slice(0, 2).every((target) =>
+          target.dataset.appearance === "numbered")),
+        "preparation keeps the existing numbered dice visible");
+        check(diceState.rolls.length === resultsBeforeToss &&
+          await tray.locator(".dice-tray-scene").getAttribute("data-rolling") === "false",
+        "neither local physics nor local results start ahead of the server");
+        await page.screenshot({ path: join(screenshots, "desktop-dice-unconfirmed-flight.png") });
+        releaseTossResponse(); diceResponseGate = null;
         await tossSaved;
         const tossId = dicePosts.at(-1).requestId;
         await tray.getByRole("alert").waitFor();
         await page.waitForFunction(() => document.querySelector(".dice-tray-scene")?.dataset.gesture === "");
         check(JSON.stringify(await tossTargets.evaluateAll((targets) => targets.map((target) => target.dataset.position))) === JSON.stringify(posesBeforeToss),
           "a failed gesture request restores original dice positions");
-        check(dicePosts.length === postsBeforeToss + 1, "releasing the held group submits once");
+        check(dicePosts.length === postsBeforeToss + 1, "grabbing and releasing the held group share one request");
         await tray.locator(".dice-stage-roll").click();
         await page.waitForFunction((id) => !!document.querySelector(`[data-die-id="${id}:1"]`), tossId);
-        await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+        await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
         check(dicePosts.length === postsBeforeToss + 2 && dicePosts.at(-1).requestId === tossId && dicePosts.at(-1).notation === "1d6+1d20",
           "a dragged selection retries the same grouped roll");
         check(dicePosts.at(-1).result === undefined && dicePosts.at(-1).velocity === undefined,
@@ -667,7 +868,7 @@ try {
         await tray.locator(".dice-roll-button").click();
         await page.waitForFunction(() => document.querySelectorAll(".dice-pick-target").length === 1 &&
           document.querySelector(".dice-pick-target")?.dataset.faceValue === "4");
-        await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+        await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
       }
       const d6Pick = await tray.locator(".dice-pick-target").first().boundingBox();
       const d6Before = await tray.locator(".dice-pick-target").first().getAttribute("data-die-id");
@@ -677,7 +878,7 @@ try {
         const target = document.querySelector(".dice-pick-target");
         return target?.dataset.dieId !== oldId && target?.dataset.faceValue === "4";
       }, d6Before);
-      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
       check(await tray.locator(".dice-pick-target").first().getAttribute("data-top-face") === "4",
         "default d6 lands with the server's four pips facing up");
       const landedPick = await tray.locator(".dice-pick-target").first().boundingBox();
@@ -687,7 +888,7 @@ try {
       await tray.getByRole("button", { name: "重投这颗骰子", exact: true }).click();
       await rerollSaved;
       await page.waitForFunction((oldId) => document.querySelector(".dice-pick-target")?.dataset.dieId !== oldId, oldDieId);
-      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
       check(dicePosts.at(-1).parentId !== undefined, "single-die reroll links to its original record");
       const retainedId = await tray.locator(".dice-pick-target").first().getAttribute("data-die-id");
       const retainedBefore = await tray.locator(".dice-pick-target").first().boundingBox();
@@ -704,7 +905,7 @@ try {
       await tray.getByRole("button", { name: "投掷这颗骰子", exact: true }).click();
       await extraSaved;
       await page.waitForFunction(() => [...document.querySelectorAll(".dice-pick-target")].every((target) => target.dataset.faceValue === "4"));
-      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
       const retainedAfter = await tray.locator(`[data-die-id="${retainedId}"]`).boundingBox();
       check(Math.abs(retainedAfter.x - retainedBefore.x) < 1 && Math.abs(retainedAfter.y - retainedBefore.y) < 1,
         "single-die throw preserves other dice positions");
@@ -720,7 +921,7 @@ try {
       await page.waitForFunction(() => document.querySelector(".dice-pick-target")?.dataset.faceValue === "12");
       check(dicePosts.at(-1).requestId === firstRequest, "failed roll retries preserve request identity");
       check(dicePosts.at(-1).result === undefined, "client never submits a random result");
-      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
       check(await tray.locator(".dice-pick-target").first().getAttribute("data-top-face") === "12",
         "3D top face matches the server die result");
       check(await tray.locator(".dice-pick-target").first().getAttribute("data-face-value") === "12",
@@ -766,7 +967,7 @@ try {
       redactBlindReceipt = true;
       await tray.locator(".dice-roll-button").click();
       await page.waitForFunction(() => document.querySelector(".dice-pick-target")?.getAttribute("aria-label")?.includes("暗骰"));
-      await tray.locator('.dice-tray-scene[data-rolling="false"]').waitFor();
+      await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
       check(await tray.locator(".dice-pick-target").first().getAttribute("data-face-value") === "",
         "blind receipt does not expose a result on its 3D die");
       check(await tray.locator(".dice-pick-target").first().getAttribute("data-top-face") === "",
@@ -781,21 +982,162 @@ try {
         [...document.querySelectorAll(".dice-pick-target")].every((target) => target.dataset.position));
       check(await tray.locator(".dice-pick-target").count() === 2, "empty tray can add a percentile pair through More");
       if (!scenario.reduced) {
+        await openTool("公式与预设");
+        await tray.getByLabel("投掷可见性").selectOption("public");
+        await tray.getByRole("button", { name: "收起面板", exact: true }).click();
+        await tray.locator(".dice-popover").waitFor({ state: "detached" });
         let releaseResponse;
-        diceResponseGate = new Promise((resolve) => { releaseResponse = resolve; });
+        diceResponseGate = new Promise((resolve) => { releaseResponse = resolve; releaseHeldResponse = resolve; });
         const beforeResponse = diceState.rolls.length;
         await tray.locator(".dice-stage-roll").click();
         await tray.locator('.dice-tray-scene[data-phase="request"]').waitFor();
-        const firstFrame = await tray.locator(".dice-tray-scene canvas").screenshot();
-        const nextFrame = await tray.locator(".dice-tray-scene canvas").screenshot();
-        check(!firstFrame.equals(nextFrame) && diceState.rolls.length === beforeResponse,
-          "dice move while the network response is still held, without a local result");
+        const waitingFrames = await page.evaluate(() => new Promise((resolve) => {
+          const started = performance.now(), frames = [];
+          const sample = () => {
+            frames.push([...document.querySelectorAll(".dice-pick-target")].map((target) =>
+              [target.dataset.position, target.dataset.orientation]));
+            if (performance.now() - started < 350) setTimeout(sample, 16);
+            else resolve(frames);
+          };
+          sample();
+        }));
+        check(waitingFrames.every((frame) => JSON.stringify(frame) === JSON.stringify(waitingFrames[0])) &&
+          diceState.rolls.length === beforeResponse,
+          "button rolls remain at rest while the server response is pending");
+        check(await tray.locator(".dice-tray-scene").getAttribute("data-rolling") === "false",
+          "the player never starts a provisional roll");
+        check(await tray.locator(".dice-pick-target").evaluateAll((targets) =>
+          targets.every((target) => target.dataset.appearance === "numbered" && target.dataset.faceTransform === "0,0,0,1")),
+          "waiting uses the original numbered models without blank faces");
+        await page.screenshot({ path: join(screenshots, `${scenario.label}-dice-result-first-wait.png`) });
         releaseResponse(); diceResponseGate = null;
         await tray.locator('.dice-tray-scene[data-rolling="true"]').waitFor();
         await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
+        check(await tray.locator(".dice-pick-target").count() === 2, "one prepared replay includes both percentile dice");
         check(await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.every((target) =>
           target.dataset.topFace === target.dataset.faceValue && Number(target.dataset.faceAlignment) > .9999)),
           "delayed percentile results settle with an unambiguous face");
+      }
+      if (scenario.label === "desktop") {
+        // A previous 4 must not remain visible as an unconfirmed 4, then turn
+        // into 2 after the server replies. Exercise real numbered geometry.
+        await openTool("公式与预设");
+        await tray.getByLabel("骰子公式", { exact: true }).fill("1d6");
+        await tray.locator(".dice-roll-button").click();
+        await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
+        await page.waitForFunction(() => document.querySelectorAll(".dice-pick-target").length === 1 &&
+          document.querySelector(".dice-pick-target")?.dataset.topFace === "4");
+        const readyD6 = tray.locator(".dice-pick-target");
+        await readyD6.focus(); await page.keyboard.press("Enter");
+        await page.waitForFunction(() => document.querySelector(".dice-fan-menu")?.dataset.interactive === "true");
+        const previousFour = await readyD6.getAttribute("data-die-id");
+        const originalModel = await readyD6.getAttribute("data-model-instance");
+        const location = await readyD6.boundingBox();
+        forcedD6Value = 2;
+        const postsBeforePreparation = dicePosts.length;
+        const preparedResponse = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/functions/v1/roll-dice"));
+        await page.mouse.move(location.x + location.width / 2, location.y + location.height / 2);
+        await page.mouse.down();
+        await tray.locator('.dice-tray-scene[data-gesture="lift"]').waitFor();
+        await preparedResponse;
+        await page.mouse.move(location.x + location.width / 2 - 70, location.y + location.height / 2 + 30, { steps: 8 });
+        await tray.locator('.dice-tray-scene[data-hand-preparation="ready"]').waitFor();
+        check(await readyD6.getAttribute("data-die-id") === previousFour &&
+          await readyD6.getAttribute("data-appearance") === "numbered",
+          "a result arriving while held does not replace or roll the selected die");
+        check(dicePosts.length === postsBeforePreparation + 1, "long press starts result preparation before release");
+        const heldPose = await readyD6.evaluate((target) => ({
+          position: target.dataset.position.split(",").map(Number),
+          orientation: target.dataset.orientation.split(",").map(Number),
+        }));
+        const releasedAt = await page.evaluate(() => performance.now());
+        await page.mouse.up();
+        await tray.locator('.dice-tray-scene[data-phase="replay"][data-rolling="true"]').waitFor();
+        const firstFlight = await readyD6.evaluate((target) => ({
+          time: performance.now(), y: Number(target.dataset.position.split(",")[1]),
+        }));
+        check(firstFlight.time - releasedAt < 200,
+          "a prepared hand throw starts flying without replaying the stationary preparation prefix");
+        check(firstFlight.y <= heldPose.position[1] + .08, "release follows the prepared pose instead of lifting again");
+        await page.bringToFront();
+        const handoffFrames = await page.evaluate(() => new Promise((resolve) => {
+          const started = performance.now(), frames = [];
+          let idleAt = null;
+          const collect = (now) => {
+            const target = document.querySelector(".dice-pick-target");
+            const phase = document.querySelector(".dice-tray-scene")?.dataset.phase;
+            frames.push({
+              time: Number(document.querySelector(".dice-tray-scene")?.dataset.frameTime ?? now), phase, face: target?.dataset.visibleFace,
+              model: target?.dataset.modelInstance, body: target?.dataset.faceTransform,
+              marks: target?.dataset.marksTransform, rotation: target?.dataset.orientation.split(",").map(Number),
+            });
+            if (phase === "idle" && idleAt === null) idleAt = now;
+            if (now - started < 8000 && (idleAt === null || now - idleAt < 350))
+              setTimeout(() => collect(performance.now()), 16);
+            else resolve(frames);
+          };
+          collect(performance.now());
+        }));
+        check(handoffFrames.every((frame) => frame.model === originalModel && frame.body === "0,0,0,1" && frame.marks === "0,0,0,1"),
+          "response handoff never replaces the d6 model or rotates its pips separately from its body");
+        const jumps = handoffFrames.flatMap((frame, i) => {
+          if (!i) return [];
+          const previous = handoffFrames[i - 1];
+          const dot = Math.abs(frame.rotation.reduce((sum, value, axis) => sum + value * previous.rotation[axis], 0));
+          const angle = 2 * Math.acos(Math.min(1, dot));
+          return angle <= Math.max(.18, 26 * (frame.time - previous.time) / 1000) ? [] :
+            [{ phase: frame.phase, angle, deltaMs: frame.time - previous.time }];
+        });
+        check(jumps.length === 0, `preparation and replay have no orientation snaps: ${JSON.stringify(jumps.slice(0, 3))}`);
+        check(handoffFrames.filter((frame) => frame.phase === "idle").every((frame) => frame.face === "2"),
+          "the first and every subsequent settled face is the server's two");
+        check(dicePosts.length === postsBeforePreparation + 1, "release plays the prepared result without another network roll");
+        await page.waitForFunction((id) => {
+          const target = document.querySelector(".dice-pick-target");
+          return target?.dataset.dieId !== id && target?.dataset.appearance === "numbered" && target?.dataset.topFace === "2" &&
+            document.querySelector(".dice-tray-scene")?.dataset.phase === "idle";
+        }, previousFour);
+        const finalPose = await readyD6.evaluate((target) => [target.dataset.position, target.dataset.visualOrientation]);
+        const stableFaces = await page.evaluate(() => new Promise((resolve) => {
+          const start = performance.now(), faces = [];
+          const collect = (now) => {
+            const target = document.querySelector(".dice-pick-target");
+            faces.push([target?.dataset.topFace, target?.dataset.position, target?.dataset.visualOrientation]);
+            if (now - start < 350) requestAnimationFrame(collect);
+            else resolve(faces);
+          };
+          requestAnimationFrame(collect);
+        }));
+        check(stableFaces.every(([face, position, rotation]) => face === "2" &&
+          position === finalPose[0] && rotation === finalPose[1]),
+        "after first settling on two, both visible pips and pose remain unchanged on every later frame");
+        await page.screenshot({ path: join(screenshots, "desktop-d6-confirmed-two.png") });
+        // A new move immediately before release must finish the newest
+        // preparation, retain this request, and still arrive at its own face.
+        await readyD6.focus(); await page.keyboard.press("Enter");
+        await tray.locator('.dice-fan-menu[data-interactive="true"]').waitFor();
+        const quickLocation = await readyD6.boundingBox();
+        const postsBeforeQuick = dicePosts.length;
+        forcedD6Value = 5;
+        await page.mouse.move(quickLocation.x + quickLocation.width / 2, quickLocation.y + quickLocation.height / 2);
+        await page.mouse.down();
+        await tray.locator('.dice-tray-scene[data-gesture="lift"]').waitFor();
+        await page.mouse.move(quickLocation.x + quickLocation.width / 2 + 60, quickLocation.y + quickLocation.height / 2 - 25, { steps: 2 });
+        await page.mouse.up();
+        await page.waitForFunction(() => document.querySelector(".dice-tray-scene")?.dataset.phase === "idle" &&
+          document.querySelector(".dice-pick-target")?.dataset.topFace === "5");
+        check(dicePosts.length === postsBeforeQuick + 1, "quick release uses the same prepared request and never a stale trajectory");
+        await page.screenshot({ path: join(screenshots, "desktop-d6-quick-release.png") });
+        forcedD6Value = null;
+        await openTool("公式与预设");
+        const beforeInvalid = dicePosts.length;
+        await tray.getByLabel("骰子公式", { exact: true }).fill("1d1");
+        await tray.locator(".dice-roll-button").click();
+        await tray.getByRole("alert").waitFor();
+        check(await tray.getByLabel("骰子公式", { exact: true }).isEditable() && dicePosts.length === beforeInvalid,
+          "a definitively invalid formula unlocks editing without a server roll");
+        await tray.getByLabel("骰子公式", { exact: true }).fill("1d6");
+        await tray.getByRole("button", { name: "收起面板", exact: true }).click();
       }
       await tray.getByRole("button", { name: "关闭", exact: true }).click();
       check(await page.locator(".world").getAttribute("style") === boardBeforeDice,
@@ -1006,13 +1348,84 @@ try {
       await dock.getByRole("button", { name: "队员排班", exact: true }).click();
     }
 
-    await page.getByRole("button", { name: "调整汉堡屋指数", exact: true }).click();
-    const index = page.getByRole("dialog", { name: "调整汉堡屋指数", exact: true });
-    await index.getByRole("radio", { name: "绿1", exact: true }).check();
-    await index.getByRole("button", { name: "保存", exact: true }).click();
-    await index.waitFor({ state: "hidden" });
-    await page.waitForFunction(() => document.querySelector(".index-current strong .motion-text-value")?.textContent === "绿1");
-    check(await page.locator(".index-current strong .motion-text-accessible").textContent() === "绿1", "accessible index is current");
+    const clockSection = page.locator(".event-clock-section");
+    const clockDialog = page.getByRole("dialog", { name: "设置「事件钟」", exact: true });
+    const openClockManager = async () => {
+      await clockSection.getByRole("button", { name: "编辑事件钟模块", exact: true }).click();
+      await clockDialog.waitFor();
+    };
+    check(await clockSection.getByRole("button", { name: "发起事件钟", exact: true }).count() === 0 &&
+      await clockSection.getByRole("button", { name: "查看所有事件钟", exact: true }).count() === 0,
+      "clock settings and creation are absent from the module header");
+    await openClockManager();
+    await clockDialog.getByLabel("事件钟当前进度", { exact: true }).selectOption("7");
+    await clockDialog.getByRole("button", { name: "保存事件钟", exact: true }).click();
+    await clockDialog.locator(".event-clock-list").getByRole("button", { name: /汉堡屋指数/ })
+      .filter({ hasText: "绿1" }).waitFor();
+    await clockDialog.getByRole("button", { name: "关闭", exact: true }).click();
+    await clockDialog.waitFor({ state: "hidden" });
+    await page.waitForFunction(() => document.querySelector(".event-clock-name strong .motion-text-value")?.textContent === "绿1");
+    check(await clockSection.getByRole("progressbar").getAttribute("aria-valuenow") === "7",
+      "legacy index keeps its named status stages inside the generic module");
+    check(await clockSection.getAttribute("data-complete") === "false", "status scales do not trigger at the end");
+    await openClockManager();
+    await clockDialog.getByRole("button", { name: "新建事件钟", exact: true }).click();
+    await clockDialog.getByLabel("事件名称", { exact: true }).fill("被追捕");
+    await clockDialog.getByLabel("事件钟总格数", { exact: true }).fill("6");
+    await clockDialog.getByLabel("事件钟起始进度", { exact: true }).fill("1");
+    await clockDialog.getByLabel("事件后果", { exact: true }).fill("追兵发现藏身处，立即进入冲突。");
+    const moduleBeforeClock = await page.locator('[data-module="index"]').getAttribute("style");
+    await clockDialog.getByRole("button", { name: "发起事件钟", exact: true }).click();
+    await clockDialog.locator(".event-clock-list").getByRole("button", { name: /被追捕/ }).waitFor();
+    await clockDialog.getByRole("button", { name: "关闭", exact: true }).click();
+    await clockDialog.waitFor({ state: "hidden" });
+    await clockSection.getByRole("progressbar", { name: "被追捕进度", exact: true }).waitFor();
+    check(await clockSection.getByRole("progressbar").getAttribute("aria-valuenow") === "1",
+      "GM starts a named six-segment event clock at one");
+    check(await page.locator('[data-module="index"]').getAttribute("style") === moduleBeforeClock,
+      "creating a clock preserves the existing board module position");
+    // Delayed save: optimistic progress should be visible before the RPC ends.
+    let releaseClock;
+    eventClockGate = new Promise((resolve) => { releaseClock = resolve; });
+    await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('.event-clock-section [role="progressbar"]')?.getAttribute("aria-valuenow") === "2");
+    check(eventClocks.find((clock) => clock.name === "被追捕").progress === 1, "progress displays before network confirmation");
+    releaseClock(); eventClockGate = null;
+    await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).waitFor();
+    await page.waitForFunction(() => !document.querySelector('[aria-label="被追捕进度加一"]').disabled);
+    rejectEventClock = true;
+    await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).click();
+    await clockSection.getByRole("alert").waitFor();
+    await page.waitForFunction(() => document.querySelector('.event-clock-section [role="progressbar"]')?.getAttribute("aria-valuenow") === "2");
+    check(eventClocks.find((clock) => clock.name === "被追捕").progress === 2, "failed progress updates restore the saved value");
+    rejectEventClock = false;
+    await openClockManager();
+    await clockDialog.locator(".event-clock-list").getByRole("button", { name: /被追捕/ }).click();
+    await clockDialog.getByLabel("事件钟当前进度", { exact: true }).fill("5");
+    await clockDialog.getByRole("button", { name: "保存事件钟", exact: true }).click();
+    await clockDialog.locator(".event-clock-list").getByRole("button", { name: /被追捕/ })
+      .filter({ hasText: "5/6" }).waitFor();
+    await clockDialog.getByRole("button", { name: "关闭", exact: true }).click();
+    await clockDialog.waitFor({ state: "hidden" });
+    await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector(".event-clock-section")?.dataset.complete === "true");
+    check(await clockSection.getByRole("status").textContent() === "事件已满",
+      "full progress highlights a compact completion signal");
+    await clockSection.getByRole("button", { name: "查看被追捕的后果", exact: true }).click();
+    const clockDetails = page.locator(".event-clock-details-dialog");
+    await clockDetails.waitFor();
+    check(await clockDetails.locator(".event-clock-readonly > p").textContent() === "追兵发现藏身处，立即进入冲突。",
+      "the details view preserves the full actual consequence");
+    await clockDetails.getByRole("button", { name: "关闭", exact: true }).click();
+    check(await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).isDisabled(),
+      "clock progress cannot overflow");
+    await page.waitForFunction(() => document.querySelector(".event-clock-name strong .motion-text-value")?.textContent === "6/6" &&
+      [...document.querySelectorAll(".event-clock-section .motion-text-value")].every((element) => !element.getAnimations().length));
+    await page.screenshot({ path: join(screenshots, `${scenario.label}-event-clock.png`) });
+    await clockSection.getByRole("button", { name: "被追捕进度减一", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector(".event-clock-section")?.dataset.complete === "false");
+    check(await clockSection.getByRole("progressbar").getAttribute("aria-valuenow") === "5",
+      "progress can be rolled back and clears the consequence highlight");
     const swapLog = await page.evaluate(() => window.motionLog.filter((item) => item.classes === "motion-text-value"));
     check(scenario.reduced ? swapLog.length === 0 : swapLog.some((item) => item.duration === 120) && swapLog.some((item) => item.duration === 220), "status uses short swaps or reduced-motion bypass");
 
@@ -1339,6 +1752,7 @@ try {
     await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
     const appearanceDialog = page.getByRole("dialog", { name: "房间配置", exact: true });
     await appearanceDialog.waitFor();
+    await appearanceDialog.getByRole("tab", { name: "外观", exact: true }).click();
     await appearanceDialog.getByRole("group", { name: "房间背景", exact: true }).getByRole("button", { name: "纯色", exact: true }).click();
     await appearanceDialog.getByRole("group", { name: "板面材质", exact: true }).getByRole("button", { name: "软木", exact: true }).click();
     await appearanceDialog.getByRole("group", { name: "边框样式", exact: true }).getByRole("button", { name: "木框", exact: true }).click();
@@ -1350,6 +1764,7 @@ try {
 
     await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
     await appearanceDialog.waitFor();
+    await appearanceDialog.getByRole("tab", { name: "外观", exact: true }).click();
     await appearanceDialog.getByRole("group", { name: "房间背景", exact: true }).getByRole("button", { name: "纯色", exact: true }).click();
     await appearanceDialog.getByRole("group", { name: "板面材质", exact: true }).getByRole("button", { name: "软木", exact: true }).click();
     await appearanceDialog.getByRole("group", { name: "边框样式", exact: true }).getByRole("button", { name: "木框", exact: true }).click();
@@ -1366,6 +1781,7 @@ try {
 
     await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
     await appearanceDialog.waitFor();
+    await appearanceDialog.getByRole("tab", { name: "外观", exact: true }).click();
     check(await appearanceDialog.getByRole("group", { name: "板面材质", exact: true }).getByRole("button", { name: "软木", exact: true }).getAttribute("aria-pressed") === "true", "saved theme is restored when reopening settings");
     await appearanceDialog.getByLabel("选择背景图片", { exact: true }).setInputFiles({
       name: "room.webp", mimeType: "image/webp", buffer: backgroundImage,
@@ -1393,6 +1809,7 @@ try {
       const workingPath = board.settings.appearance.room.imagePath;
       await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
       await appearanceDialog.waitFor();
+      await appearanceDialog.getByRole("tab", { name: "外观", exact: true }).click();
       board.settings.appearance.room.imagePath = `${campaignId}/broken-background.webp`;
       await appearanceDialog.getByRole("button", { name: "保存共享配置", exact: true }).click();
       await appearanceDialog.waitFor({ state: "hidden" });
@@ -1415,6 +1832,7 @@ try {
       await page.setViewportSize({ width: scenario.width, height: scenario.height });
       await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
       await appearanceDialog.waitFor();
+      await appearanceDialog.getByRole("tab", { name: "外观", exact: true }).click();
       await appearanceDialog.getByRole("group", { name: "房间背景", exact: true }).getByRole("button", { name: "门店", exact: true }).click();
       await appearanceDialog.getByRole("group", { name: "板面材质", exact: true }).getByRole("button", { name: "黑板", exact: true }).click();
       await appearanceDialog.getByRole("group", { name: "边框样式", exact: true }).getByRole("button", { name: "汉堡店", exact: true }).click();
@@ -1423,6 +1841,46 @@ try {
       await page.waitForFunction(() => getComputedStyle(document.querySelector(".room-background.is-wallpaper")).backgroundImage.includes("room-kitchen"));
       await page.screenshot({ path: join(screenshots, "desktop-default-theme.png") });
     }
+    const worldBeforePerspective = await page.locator(".world").getAttribute("style");
+    await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
+    await appearanceDialog.waitFor();
+    await appearanceDialog.getByRole("tab", { name: "外观", exact: true }).click();
+    await appearanceDialog.getByRole("group", { name: "房间背景", exact: true }).getByRole("button", { name: "路口", exact: true }).click();
+    await appearanceDialog.locator('canvas[data-perspective-scene="crossing"][data-ready="true"]').waitFor();
+    check(await appearanceDialog.locator("canvas").getAttribute("data-playing") === "false",
+      "perspective settings preview is static even when motion is enabled");
+    check(await appearanceDialog.getByLabel("动态透视", { exact: true }).isChecked(), "perspective animation is selectable");
+    await appearanceDialog.getByRole("button", { name: "保存共享配置", exact: true }).click();
+    await appearanceDialog.waitFor({ state: "hidden" });
+    const perspectiveCanvas = page.locator('.room-background.is-wallpaper canvas');
+    await page.locator('.room-background.is-wallpaper canvas[data-ready="true"]').waitFor();
+    check(await perspectiveCanvas.getAttribute("data-perspective-scene") === "crossing", "saved crossing scene renders as wallpaper");
+    check(await perspectiveCanvas.getAttribute("data-playing") === String(!scenario.reduced),
+      "system reduced motion disables wallpaper animation");
+    check(await page.locator(".world").getAttribute("style") === worldBeforePerspective,
+      "perspective background does not change board geometry or zoom");
+    if (!scenario.reduced) {
+      await page.waitForFunction(() => Number(document.querySelector(".room-background.is-wallpaper canvas")?.dataset.time) > 1.2);
+      await page.getByRole("button", { name: "打开骰盘", exact: true }).click();
+      await page.locator('.dice-dialog[open]').waitFor();
+      await page.waitForFunction(() => document.querySelector(".room-background.is-wallpaper canvas")?.dataset.playing === "false");
+      check(await perspectiveCanvas.getAttribute("data-playing") === "false", "wallpaper pauses while WebGL dice tray is open");
+      await page.locator(".dice-dialog .dice-layer-header").getByRole("button", { name: "关闭", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector(".room-background.is-wallpaper canvas")?.dataset.playing === "true");
+    }
+    await page.getByRole("button", { name: "打开房间配置", exact: true }).click();
+    await appearanceDialog.waitFor();
+    await appearanceDialog.getByRole("tab", { name: "外观", exact: true }).click();
+    check(await appearanceDialog.getByRole("button", { name: "路口", exact: true }).getAttribute("aria-pressed") === "true",
+      "the chosen perspective scene restores when settings reopen");
+    await appearanceDialog.getByRole("button", { name: "车站", exact: true }).click();
+    await appearanceDialog.getByLabel("动态透视", { exact: true }).uncheck();
+    await appearanceDialog.getByRole("button", { name: "保存共享配置", exact: true }).click();
+    await appearanceDialog.waitFor({ state: "hidden" });
+    await page.locator('.room-background.is-wallpaper canvas[data-perspective-scene="station"][data-ready="true"]').waitFor();
+    check(await perspectiveCanvas.getAttribute("data-playing") === "false", "static station has no continuous animation");
+    check(board.settings.appearance.room.scene === "station" && board.settings.appearance.room.animated === false,
+      "scene selection and motion preference are saved together");
     check(!await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), "viewport has no horizontal overflow");
     await page.waitForFunction(() => [...document.querySelectorAll(".motion-text-value")].every((element) => !element.getAnimations().length));
     await page.screenshot({ path: join(screenshots, `${scenario.label}-board.png`) });
@@ -1437,12 +1895,20 @@ try {
     check(await page.locator(".campaign-access-rows").isVisible(), "failed entry preserves campaign list");
     check(await entry.isEnabled(), "failed entry restores retry control");
 
+    // The earlier drag tests deliberately leave notes on top of modules.
+    // Give the public-view fixture a clear clock without changing note contents.
+    board.notes = board.notes.map((note, index) => ({ ...note, x: 1780, y: 70 + index * 250 }));
     await page.locator(`.public-room-list [data-campaign-entry="${campaignId}"]`).click();
     await page.locator(".board").waitFor();
     await page.waitForFunction(() => !document.documentElement.dataset.campaignTransition);
     check(new URL(page.url()).searchParams.get("visit") === campaignId, "public visit updates URL after success");
     check(await page.getByText("访客 / 只读参观", { exact: true }).isVisible(), "public view keeps observer role");
     check(await page.locator(".dice-launcher").count() === 0, "public visitors never receive the dice tool");
+    check(await page.getByRole("button", { name: "编辑事件钟模块", exact: true }).count() === 0 &&
+      await page.locator(".event-clock-progress-actions").count() === 0, "visitors cannot manage or adjust shared clocks");
+    await page.locator(".event-clock-section").getByRole("button", { name: "下一个事件钟", exact: true }).click();
+    check(await page.getByRole("progressbar", { name: "被追捕进度", exact: true }).getAttribute("aria-valuenow") === "5",
+      "visitors see the persisted clock progress and consequence");
     check(await page.locator(`.board > .board-surface[data-surface="${board.settings.appearance.surface.kind}"]`).count() === 1, "visitors read the saved appearance");
     check(await page.getByRole("button", { name: "打开房间配置", exact: true }).count() === 0, "visitors cannot edit the appearance");
     await page.getByRole("button", { name: "返回签到处", exact: true }).click();
@@ -1454,5 +1920,6 @@ try {
   }
   console.log(`${checks} motion/navigation assertions passed (Auth/RPC fixtures, desktop/mobile, reduced motion, unsupported API). Screenshots: ${screenshots}`);
 } finally {
+  releaseHeldResponse();
   await browser.close();
 }

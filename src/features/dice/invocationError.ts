@@ -3,6 +3,9 @@ interface InvocationFailure {
   context?: unknown;
 }
 
+/** The request was definitively rejected, rather than ambiguously timed out. */
+export class DiceRequestRejected extends Error {}
+
 export async function diceInvocationError(
   error: InvocationFailure,
   response?: Response,

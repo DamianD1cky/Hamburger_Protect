@@ -12,7 +12,7 @@ self.onmessage = (event: MessageEvent<PhysicsRequest>) => {
         samples.set(pose.position, index * 7);
         samples.set(pose.quaternion, index * 7 + 3);
       });
-      return { die: track.die, samples, correction: track.correction.toArray() };
+      return { die: track.die, samples, preparationFrames: track.preparationFrames };
     });
     self.postMessage({ id, tracks } satisfies PhysicsResponse, { transfer: tracks.map((track) => track.samples.buffer) });
   } catch (error) {

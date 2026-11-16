@@ -42,9 +42,11 @@ export function getDieShape(sides: number | "F"): DieShape {
     }
     return {
       value: sides === 100 ? face.value === 10 ? 1 : face.value + 1 : face.value,
-      normal, readNormal: new Vector3(...face.readNormal as [number, number, number]),
+      // Imported Float32 normals can be slightly shorter than one. Near
+      // antiparallel vectors that error breaks setFromUnitVectors entirely.
+      normal, readNormal: new Vector3(...face.readNormal as [number, number, number]).normalize(),
       center, up, vertices: face.vertices,
-      frame: new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(right, up, normal)),
+      frame: new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(right, up, normal)).normalize(),
       size: Math.min(...points.map((p) => p.distanceTo(center))) * 1.05,
     };
   });
@@ -71,5 +73,5 @@ export function readDieFace(shape: DieShape, rotation: Quaternion): DieFace {
 export function faceCorrection(shape: DieShape, resting: Quaternion, value: number): Quaternion {
   const best = readDieFace(shape, resting);
   const target = shape.faces.find((face) => face.value === value);
-  return target ? best.frame.clone().multiply(target.frame.clone().invert()) : new Quaternion();
+  return target ? best.frame.clone().multiply(target.frame.clone().invert()).normalize() : new Quaternion();
 }

@@ -4,15 +4,28 @@ import type {
   CampaignBoard,
   ChecklistDraft,
 } from "../../features/campaign/domain/types";
-import {
-  burgerIndexInfo,
-  burgerIndexSteps,
-} from "../../features/campaign/domain/burgerIndex";
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { PaperDialog } from "../composer/PaperDialog";
 
-export type BoardEditorKind = "checklist" | "index";
+export type BoardEditorKind = "checklist";
 export function BoardEditorDialog({
+  onClose,
+  ...props
+}: {
+  kind: BoardEditorKind; board: CampaignBoard; onClose: () => void;
+  onSaveChecklist: (draft: ChecklistDraft, id?: string) => Promise<unknown>;
+  onDeleteChecklist: (id: string) => Promise<unknown>;
+  onSaveCategory: (name: string, id?: string) => Promise<unknown>;
+  onDeleteCategory: (id: string) => Promise<unknown>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return <PaperDialog title="编辑每日检查清单" className="editor-dialog checklist-dialog"
+    onClose={() => { if (!busy) onClose(); }}>
+    <ChecklistEditor {...props} onClose={onClose} onBusyChange={setBusy} />
+  </PaperDialog>;
+}
+
+export function ChecklistEditor({
   kind,
   board,
   onClose,
@@ -20,16 +33,16 @@ export function BoardEditorDialog({
   onDeleteChecklist,
   onSaveCategory,
   onDeleteCategory,
-  onSetIndex,
+  onBusyChange,
 }: {
   kind: BoardEditorKind;
   board: CampaignBoard;
-  onClose: () => void;
+  onClose?: () => void;
+  onBusyChange?: (busy: boolean) => void;
   onSaveChecklist: (draft: ChecklistDraft, id?: string) => Promise<unknown>;
   onDeleteChecklist: (id: string) => Promise<unknown>;
   onSaveCategory: (name: string, id?: string) => Promise<unknown>;
   onDeleteCategory: (id: string) => Promise<unknown>;
-  onSetIndex: (value: number) => Promise<unknown>;
 }) {
   const items = board.checklist;
   // "Edit" and "create" are separate modes with separate drafts: picking an
@@ -51,14 +64,12 @@ export function BoardEditorDialog({
   const [categoryName, setCategoryName] = useState(
     board.checklistCategories[0]?.name ?? "",
   );
-  const [index, setIndex] = useState(board.campaign.burgerIndex);
   const imeGuard = useImeEnterGuard();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const editable =
     board.viewer.role === "gm" && board.campaign.status === "active";
-  const info = burgerIndexInfo(index);
   const select = (value: string) => {
     setId(value);
     const selected = items.find((item) => item.id === value);
@@ -99,83 +110,33 @@ export function BoardEditorDialog({
   const run = async (operation: () => Promise<unknown>) => {
     if (!editable || busy) return;
     setBusy(true);
+    onBusyChange?.(true);
     setError("");
     try {
       await operation();
-      onClose();
+      onClose?.();
     } catch {
       setError("操作未完成，请检查网络或权限后重试。未保存的内容已保留。");
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (kind === "index") void run(() => onSetIndex(index));
-    else if (name.trim())
-      void run(() =>
-        onSaveChecklist(
+    if (name.trim())
+      void run(async () => {
+        await onSaveChecklist(
           { label: name.trim(), categoryId: categoryId || null },
           mode === "edit" ? id || undefined : undefined,
-        ),
-      );
+        );
+        if (!onClose && mode === "create") setName("");
+      });
   };
   return (
-    <PaperDialog
-      title={kind === "index" ? "调整汉堡屋指数" : "编辑每日检查清单"}
-      className={
-        kind === "index" ? "editor-dialog index-dialog" : "editor-dialog checklist-dialog"
-      }
-      onClose={() => {
-        if (!busy) onClose();
-      }}
-    >
       <form onSubmit={submit} {...imeGuard}>
         <fieldset className="editor-fields" disabled={busy || !editable}>
-          {kind === "index" ? (
-            <>
-              <p className="editor-help">
-                由 GM 根据餐厅状况手动调整，游戏初始位置为黄2。
-              </p>
-              <div
-                className="index-picker"
-                role="radiogroup"
-                aria-label="汉堡屋指数"
-              >
-                {burgerIndexSteps.map((step) => (
-                  <label
-                    key={step.value}
-                    data-color={step.color}
-                    className={index === step.value ? "is-selected" : ""}
-                  >
-                    <input
-                      type="radio"
-                      name="burger-index"
-                      value={step.value}
-                      checked={index === step.value}
-                      onChange={() => setIndex(step.value)}
-                    />
-                    {step.label}
-                  </label>
-                ))}
-              </div>
-              <p className="index-summary">
-                <strong>
-                  {info.label}（{info.service}）
-                </strong>
-                <br />
-                {info.description}
-                <br />
-                {info.bonus}
-              </p>
-              {index === 1 && (
-                <p className="access-error">
-                  红1：立即败北。请由 GM 处理战役结局。
-                </p>
-              )}
-            </>
-          ) : (
-            <div className="checklist-columns">
+          <div className="checklist-columns">
               <div className="checklist-main">
               <div
                 className="compose-type checklist-mode"
@@ -322,7 +283,13 @@ export function BoardEditorDialog({
                       className="text-button danger-button"
                       type="button"
                       onClick={() =>
-                        void run(() => onDeleteCategory(managedCategoryId))
+                        void run(async () => {
+                          await onDeleteCategory(managedCategoryId);
+                          if (!onClose) {
+                            if (categoryId === managedCategoryId) setCategoryId("");
+                            setCatMode("create"); setManagedCategoryId(""); setCategoryName("");
+                          }
+                        })
                       }
                     >
                       删除分类
@@ -333,14 +300,15 @@ export function BoardEditorDialog({
                     type="button"
                     disabled={!categoryName.trim()}
                     onClick={() =>
-                      void run(() =>
-                        onSaveCategory(
+                      void run(async () => {
+                        await onSaveCategory(
                           categoryName.trim(),
                           catMode === "edit"
                             ? managedCategoryId || undefined
                             : undefined,
-                        ),
-                      )
+                        );
+                        if (!onClose && catMode === "create") setCategoryName("");
+                      })
                     }
                   >
                     {catMode === "edit" ? "保存分类" : "新增分类"}
@@ -350,8 +318,7 @@ export function BoardEditorDialog({
                   删除分类会把其中的检查项移到「未分类」，不会删除内容或完成状态。
                 </p>
               </div>
-            </div>
-          )}
+          </div>
         </fieldset>
         {error && (
           <p className="access-error" role="alert">
@@ -366,21 +333,24 @@ export function BoardEditorDialog({
               disabled={busy}
               onClick={() => {
                 if (!confirmDelete) setConfirmDelete(true);
-                else void run(() => onDeleteChecklist(id));
+                else void run(async () => {
+                  await onDeleteChecklist(id);
+                  if (!onClose) { setId(""); setName(""); setMode("create"); setConfirmDelete(false); }
+                });
               }}
             >
               {confirmDelete ? "确认移除" : "移除"}
             </button>
           )}
           <span className="action-spacer" />
-          <button
+          {onClose && <button
             className="text-button"
             type="button"
             onClick={onClose}
             disabled={busy}
           >
             取消
-          </button>
+          </button>}
           <button
             className="publish-button"
             type="submit"
@@ -396,6 +366,5 @@ export function BoardEditorDialog({
           </button>
         </footer>
       </form>
-    </PaperDialog>
   );
 }

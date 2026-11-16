@@ -11,7 +11,7 @@ export interface PhysicsRequest {
 export interface ReplayTrack {
   die: TrayDie;
   samples: Float32Array;
-  correction: [number, number, number, number];
+  preparationFrames: number;
 }
 export interface PhysicsResponse {
   id: number;

@@ -15,7 +15,6 @@ import type {
   QuestStatus,
 } from "../../features/campaign/domain/types";
 import {
-  BurgerIndexSection,
   InventorySection,
   MemoSection,
   SafetySection,
@@ -24,6 +23,7 @@ import {
   type SectionActions,
 } from "./BoardSections";
 import { BoardClock } from "./BoardClock";
+import { EventClockSection } from "./EventClockSection";
 import { RoomBackground, BoardSurface, BoardFrame } from "./BoardAppearance";
 import { EmojiSticker } from "./EmojiSticker";
 import { BoardModuleFrame } from "./BoardModuleFrame";
@@ -41,7 +41,9 @@ interface BoardSceneProps {
   worldRef: Ref<HTMLDivElement>;
   viewScaleRef: RefObject<number>;
   onOpenResourceSheet: (group: number) => void;
-  onManageIndex: () => void;
+  onEventClockProgress: (id: string, progress: number, revision: number) => Promise<unknown>;
+  onViewChecklist: () => void;
+  onViewQuests: (completed: boolean) => void;
   onOpenNotes: () => void;
   onOpenActivity: () => void;
   onExpandRoster: () => void;
@@ -87,7 +89,9 @@ export function BoardScene({
   worldRef,
   viewScaleRef,
   onOpenResourceSheet,
-  onManageIndex,
+  onEventClockProgress,
+  onViewChecklist,
+  onViewQuests,
   onOpenNotes,
   onOpenActivity,
   onExpandRoster,
@@ -139,6 +143,7 @@ export function BoardScene({
       ? {
           onEdit: () => onEditSection(key),
           onHide: () => onHideSection(key),
+          editLabel: `编辑${title(key)}模块`,
         }
       : undefined;
   // 连线的锚点固定在便签顶部的图钉上，所以只跟 x 和固定偏移有关。
@@ -670,7 +675,6 @@ export function BoardScene({
                 resourceTitles={resourceTitles}
                 actions={actionsFor("inventory")}
                 resources={board.resources}
-                canManage={canUpdateSharedBoard}
                 onOpenSheet={onOpenResourceSheet}
               />,
             )}
@@ -687,6 +691,7 @@ export function BoardScene({
                 onCompose={onComposeQuest}
                 onEdit={onEditQuest}
                 onTransition={onTransitionQuest}
+                onViewMore={onViewQuests}
               />,
             )}
           {!hidden.has("shifts") &&
@@ -704,13 +709,13 @@ export function BoardScene({
           {!hidden.has("index") &&
             moduleFrame(
               "index",
-              <BurgerIndexSection
+              <EventClockSection
                 title={title("index")}
                 color={color("index")}
                 actions={actionsFor("index")}
-                value={board.campaign.burgerIndex}
+                clocks={board.eventClocks}
                 canManage={canManage}
-                onManage={onManageIndex}
+                onProgress={onEventClockProgress}
               />,
             )}
           {!hidden.has("activity") &&
@@ -733,9 +738,9 @@ export function BoardScene({
                 actions={actionsFor("safety")}
                 checklist={board.checklist}
                 categories={board.checklistCategories}
-                canManage={canManage}
                 canToggle={canUpdateSharedBoard}
                 onToggle={onToggleChecklist}
+                onViewMore={onViewChecklist}
               />,
             )}
 

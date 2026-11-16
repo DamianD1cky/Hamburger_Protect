@@ -1,18 +1,20 @@
 import { Copy, Globe2, Image, Upload, Users } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from "react";
 import type { BoardAppearance, BoardAppearanceFiles } from "../../features/campaign/domain/boardAppearance";
 import { AppearancePreview } from "./BoardAppearance";
 import type {
   CampaignBoard,
   CampaignMediaKind,
-  CampaignSettingsDraft,
+  CampaignSettingsUpdate,
+  CampaignSettingsPatch,
 } from "../../features/campaign/domain/types";
-import { PaperDialog } from "../composer/PaperDialog";
+import { applySettingsPatch, settingsUpdate } from "../../features/campaign/domain/settingsUpdate";
+import { MenuPopover } from "./MenuPopover";
+import { ColorField } from "./ColorField";
 
 /**
  * 房间级配置：名称、公开参观、成员、图片。
- * 区块标题 / 底色 / 显隐 / 物资便签标题都挪到公告板上各自的标题旁了，
- * 这里保存时按当前值原样带回，避免把那边改过的内容清掉。
+ * 名称和外观独立保存，其他模块设置不随房间草稿写回。
  */
 export function RoomSettingsDialog({
   board,
@@ -23,17 +25,20 @@ export function RoomSettingsDialog({
   onClearMedia,
   onSetPublic,
   onOpenRoster,
+  anchor,
 }: {
+  anchor: HTMLElement | null;
   board: CampaignBoard;
   onClose: () => void;
-  onSave: (draft: CampaignSettingsDraft) => Promise<unknown>;
-  onSaveAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles) => Promise<unknown>;
+  onSave: (update: CampaignSettingsUpdate) => Promise<CampaignSettingsPatch>;
+  onSaveAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles, expected: BoardAppearance) => Promise<unknown>;
   onUpload: (kind: CampaignMediaKind, file: File) => Promise<unknown>;
   onClearMedia: (kind: CampaignMediaKind) => Promise<unknown>;
   onSetPublic: (isPublic: boolean) => Promise<unknown>;
   onOpenRoster: () => void;
 }) {
   const [campaignName, setCampaignName] = useState(board.campaign.name);
+  const [tab, setTab] = useState<"room" | "appearance">("room");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
@@ -42,6 +47,9 @@ export function RoomSettingsDialog({
   const [previews, setPreviews] = useState<Partial<Record<keyof BoardAppearanceFiles, string>>>({});
   const previewUrls = useRef<string[]>([]);
   const mounted = useRef(true);
+  const baseDraft = useRef(JSON.stringify({ name: board.campaign.name, appearance: board.settings.appearance }));
+  const original = useRef(board);
+  const resetOnOpen = useRef(false);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -49,6 +57,22 @@ export function RoomSettingsDialog({
       previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
     };
   }, []);
+  useLayoutEffect(() => {
+    if (!anchor) return;
+    const clean = !Object.keys(files).length &&
+      JSON.stringify({ name: campaignName, appearance }) === baseDraft.current;
+    if (clean || resetOnOpen.current) {
+      setCampaignName(board.campaign.name);
+      setAppearance(structuredClone(board.settings.appearance));
+      setFiles({}); setPreviews({}); setError("");
+      previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+      previewUrls.current = [];
+      baseDraft.current = JSON.stringify({ name: board.campaign.name, appearance: board.settings.appearance });
+      original.current = board;
+      resetOnOpen.current = false;
+    }
+    // Refresh clean drafts on reopening; outside dismissal preserves dirty drafts.
+  }, [anchor]);
   const room = appearance.room;
   const updateRoom = (patch: Partial<BoardAppearance["room"]>) =>
     setAppearance((current) => ({ ...current, room: { ...current.room, ...patch } }));
@@ -108,12 +132,31 @@ export function RoomSettingsDialog({
       if (file) void run(`upload-${kind}`, () => onUpload(kind, file));
     };
   return (
-    <PaperDialog
+    <MenuPopover
+      anchor={anchor}
+      id="room-settings-menu"
+      width={440}
       title="房间配置"
       className="room-settings-dialog"
-      onClose={onClose}
+      onClose={() => { if (!busy) onClose(); }}
     >
+      <div className="room-settings-tabs" role="tablist" aria-label="房间设置分类">
+        {([["room", "房间"], ["appearance", "外观"]] as const).map(([key, label]) =>
+          <button type="button" role="tab" key={key} id={`room-tab-${key}`}
+            aria-selected={tab === key} aria-controls={`room-panel-${key}`}
+            tabIndex={tab === key ? 0 : -1}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? "room" : event.key === "End" ? "appearance" :
+                tab === "room" ? "appearance" : "room";
+              setTab(next);
+              document.getElementById(`room-tab-${next}`)?.focus();
+            }}
+            onClick={() => setTab(key)}>{label}</button>)}
+      </div>
       <div className="room-settings-grid">
+        <div role="tabpanel" id="room-panel-room" aria-labelledby="room-tab-room" hidden={tab !== "room"}>
         <section className="campaign-name-setting">
           <label className="field">
             <span>战役名称</span>
@@ -181,12 +224,15 @@ export function RoomSettingsDialog({
         <button
           type="button"
           className="room-roster-shortcut"
+          disabled={!!busy}
           onClick={onOpenRoster}
         >
           <Users />
           管理成员与角色资料
         </button>
-        <section className="room-settings-section media-settings">
+        </div>
+        <section className="room-settings-section media-settings" role="tabpanel" id="room-panel-appearance"
+          aria-labelledby="room-tab-appearance" hidden={tab !== "appearance"}>
           <header>
             <div>
               <h2>公告板外观</h2>
@@ -203,21 +249,28 @@ export function RoomSettingsDialog({
                 <button type="button" key={value} aria-pressed={room.kind === value}
                   disabled={value === "image" && !room.imagePath && !files.background}
                   onClick={() => updateRoom({ kind: value })}>{label}</button>)}
+              {([["crossing", "路口"], ["station", "车站"]] as const).map(([scene, label]) =>
+                <button type="button" key={scene} aria-pressed={room.kind === "perspective" && room.scene === scene}
+                  onClick={() => updateRoom({ kind: "perspective", scene, animated: room.animated ?? true,
+                    fit: room.fit === "tile" ? "cover" : room.fit })}>{label}</button>)}
               <label className="text-button file-button">
                 <Upload aria-hidden="true" />选择背景图片
                 <input type="file" aria-label="选择背景图片" accept="image/jpeg,image/png,image/webp"
                   onChange={(event) => void chooseAppearanceImage("background")(event)} />
               </label>
             </div>
-            <label className="appearance-color"><span>底色</span>
-              <input type="color" aria-label="房间底色" value={room.color}
-                onChange={(event) => updateRoom({ color: event.target.value })} />
-            </label>
+            {room.kind === "perspective" && <label className="appearance-animation">
+              <input type="checkbox" aria-label="动态透视" checked={room.animated ?? true}
+                onChange={(event) => updateRoom({ animated: event.target.checked })} />动态透视
+            </label>}
+            <ColorField label="底色" accessibleLabel="房间底色" value={room.color}
+              onChange={(color) => updateRoom({ color })} disabled={!editable || !!busy} />
             {room.kind !== "color" && (
               <div className="appearance-image-controls">
                 <label>适配方式<select aria-label="背景适配方式" value={room.fit}
                   onChange={(event) => updateRoom({ fit: event.target.value as typeof room.fit })}>
-                  <option value="cover">铺满</option><option value="contain">完整显示</option><option value="tile">平铺</option>
+                  <option value="cover">铺满</option><option value="contain">完整显示</option>
+                  {room.kind !== "perspective" && <option value="tile">平铺</option>}
                 </select></label>
                 <label>水平焦点<input type="range" aria-label="背景水平焦点" min="0" max="100"
                   value={room.positionX} onChange={(event) => updateRoom({ positionX: Number(event.target.value) })} /></label>
@@ -294,7 +347,7 @@ export function RoomSettingsDialog({
         <button
           type="button"
           className="text-button"
-          onClick={onClose}
+          onClick={() => { resetOnOpen.current = true; onClose(); }}
           disabled={Boolean(busy)}
         >
           取消
@@ -305,21 +358,16 @@ export function RoomSettingsDialog({
           disabled={!editable || Boolean(busy) || !campaignName.trim()}
           onClick={() =>
             void run("save", async () => {
-              await onSave({
-                name: campaignName.trim(),
-                sectionTitles: board.settings.sectionTitles,
-                sectionColors: board.settings.sectionColors,
-                resourceTitles: board.settings.resourceTitles,
-                moduleLayout: board.settings.moduleLayout,
-                hiddenSections: board.settings.hiddenSections,
-              });
+              const saved = await onSave(settingsUpdate(original.current, { name: campaignName.trim() }));
+              original.current = applySettingsPatch(original.current, saved);
               const activeFiles: BoardAppearanceFiles = {
                 ...(appearance.room.kind === "image" && files.background ? { background: files.background } : {}),
                 ...(appearance.surface.kind === "image" && files.boardTexture ? { boardTexture: files.boardTexture } : {}),
               };
-              if (JSON.stringify(appearance) !== JSON.stringify(board.settings.appearance) || Object.keys(activeFiles).length) {
-                await onSaveAppearance(appearance, activeFiles);
+              if (JSON.stringify(appearance) !== JSON.stringify(original.current.settings.appearance) || Object.keys(activeFiles).length) {
+                await onSaveAppearance(appearance, activeFiles, original.current.settings.appearance);
               }
+              resetOnOpen.current = true;
               onClose();
             })
           }
@@ -327,6 +375,6 @@ export function RoomSettingsDialog({
           {busy === "save" ? "保存中…" : "保存共享配置"}
         </button>
       </footer>
-    </PaperDialog>
+    </MenuPopover>
   );
 }
