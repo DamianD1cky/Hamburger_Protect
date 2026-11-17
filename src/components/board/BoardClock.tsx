@@ -6,6 +6,7 @@ import {
 } from "react";
 import {
   campaignClockValue,
+  campaignClockYear,
   formatClockDuration,
   type CampaignClockConfig,
 } from "../../features/campaign/domain/campaignClock";
@@ -108,7 +109,7 @@ export function BoardClock({
     config.mode === "countdown" &&
     display.value === 0;
   const running = config.running && !ended;
-  const era = `${config.era}.${String(config.eraYear).padStart(4, "0")}`;
+  const era = `${config.era}.${String(campaignClockYear(config, now)).padStart(4, "0")}`;
   const ariaLabel = [
     era,
     config.mode === "clock"

@@ -3,9 +3,12 @@ import {
   Play,
   RotateCcw,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import {
+  campaignDateInYear,
+  configureCampaignClockValue,
   materializeCampaignClock,
+  normalizeCampaignClock,
   type CampaignClockConfig,
   type CampaignClockMode,
   type CampaignClockStyle,
@@ -43,9 +46,55 @@ function durationParts(valueMs: number) {
 
 function localDateTime(valueMs: number) {
   const date = new Date(valueMs);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-    .toISOString()
-    .slice(0, 19);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${String(date.getFullYear()).padStart(4, "0")}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function CampaignDateTimeEditor({ valueMs, onChange }: {
+  valueMs: number; onChange: (valueMs: number) => void;
+}) {
+  const dateTime = localDateTime(valueMs);
+  const date = new Date(valueMs);
+  // Native date inputs reject year zero, which remains a supported campaign
+  // year. Edit its month/day/time directly without exposing a surrogate year.
+  if (date.getFullYear() === 0) {
+    const end = new Date(date);
+    end.setMonth(date.getMonth() + 1, 0);
+    const changeDate = (month: number, day: number) => {
+      if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1) return;
+      const next = new Date(date);
+      next.setDate(1);
+      next.setMonth(month - 1);
+      const last = new Date(next);
+      last.setMonth(month, 0);
+      next.setDate(Math.min(day, last.getDate()));
+      onChange(next.getTime());
+    };
+    return <div className="clock-duration-fields clock-zero-date-fields">
+      <label><span>月</span><input type="number" aria-label="月份" min={1} max={12} required
+        value={date.getMonth() + 1} onChange={(event) => changeDate(Number(event.target.value), date.getDate())} /></label>
+      <label><span>日</span><input type="number" aria-label="日期" min={1} max={end.getDate()} required
+        value={date.getDate()} onChange={(event) => changeDate(date.getMonth() + 1, Number(event.target.value))} /></label>
+      <label><span>时间</span><input type="time" aria-label="时间" step={1} required value={dateTime.slice(11)}
+        onChange={(event) => {
+          if (!event.target.value) return;
+          const [hours, minutes, seconds = 0] = event.target.value.split(":").map(Number);
+          const next = new Date(date);
+          next.setHours(hours, minutes, seconds, 0);
+          onChange(next.getTime());
+        }} /></label>
+    </div>;
+  }
+  return <label className="field clock-datetime-field">
+    <span>日期与时间</span>
+    <input type="datetime-local" aria-label="日期与时间" step="1" required
+      min="0001-01-01T00:00:00" max="9999-12-31T23:59:59" value={dateTime}
+      onChange={(event) => {
+        const value = new Date(event.target.value).getTime();
+        if (Number.isFinite(value)) onChange(value);
+      }} />
+  </label>;
 }
 
 function DurationEditor({
@@ -121,55 +170,71 @@ export function ClockSettingsDialog({
   onSave: (config: CampaignClockConfig) => Promise<unknown>;
 }) {
   const [draft, setDraft] = useState(() => {
-    const current = materializeCampaignClock(config);
+    const current = materializeCampaignClock(normalizeCampaignClock(config));
     return current.mode === "countdown" && current.valueMs === 0
       ? { ...current, running: false }
       : current;
   });
+  const [eraYearText, setEraYearText] = useState(() => String(draft.eraYear));
+  const yearEditDate = useRef<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const setMode = (mode: CampaignClockMode) => {
+    if (mode === draft.mode) return;
     const now = new Date();
     const valueMs =
       mode === "clock"
-        ? now.getTime()
+        ? campaignDateInYear(now.getTime(), draft.eraYear)
         : mode === "countdown"
           ? 60 * 60 * 1000
           : 0;
-    setDraft((current) => ({
-      ...current,
+    const next = configureCampaignClockValue({
+      ...draft,
       mode,
       running: mode === "clock",
-      valueMs,
-      initialValueMs: valueMs,
-      referenceAt: now.toISOString(),
-    }));
+    }, valueMs, now);
+    setDraft(next);
+    setEraYearText(String(next.eraYear));
+    yearEditDate.current = null;
   };
 
   const setConfiguredValue = (valueMs: number) => {
-    setDraft((current) => ({
-      ...current,
-      valueMs,
-      initialValueMs: valueMs,
-      referenceAt: new Date().toISOString(),
-    }));
+    const next = configureCampaignClockValue(draft, valueMs);
+    setDraft(next);
+    setEraYearText(String(next.eraYear));
+    yearEditDate.current = null;
+  };
+
+  const setEraYear = (text: string) => {
+    setEraYearText(text);
+    const year = Number(text);
+    if (!text || !Number.isInteger(year) || year < 0 || year > 9999) return;
+    if (draft.mode === "clock") {
+      yearEditDate.current ??= materializeCampaignClock(draft).valueMs;
+      setDraft(configureCampaignClockValue(draft, campaignDateInYear(yearEditDate.current, year)));
+    } else {
+      setDraft((current) => ({ ...current, eraYear: year }));
+    }
   };
 
   const setRunning = (running: boolean) => {
-    setDraft((current) => ({
-      ...materializeCampaignClock(current),
-      running,
-    }));
+    const next = { ...materializeCampaignClock(draft), running };
+    setDraft(next);
+    setEraYearText(String(next.eraYear));
   };
 
   const reset = () => {
-    setDraft((current) => ({
-      ...current,
-      valueMs: current.initialValueMs,
+    const next = {
+      ...draft,
+      eraYear: draft.mode === "clock" ? new Date(draft.initialValueMs).getFullYear() : draft.eraYear,
+      valueMs: draft.initialValueMs,
       running: false,
       referenceAt: new Date().toISOString(),
-    }));
+    };
+    setDraft(next);
+    setEraYearText(String(next.eraYear));
+    yearEditDate.current = null;
   };
 
   const submit = async (event: FormEvent) => {
@@ -260,15 +325,15 @@ export function ClockSettingsDialog({
                 <span>纪年</span>
                 <input
                   type="number"
+                  aria-label="纪年"
                   min="0"
                   max="9999"
-                  value={draft.eraYear}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      eraYear: Number(event.target.value),
-                    }))
-                  }
+                  step="1"
+                  required
+                  value={eraYearText}
+                  onFocus={() => { yearEditDate.current = materializeCampaignClock(draft).valueMs; }}
+                  onBlur={() => { yearEditDate.current = null; }}
+                  onChange={(event) => setEraYear(event.target.value)}
                 />
               </label>
               <output className="clock-era-preview">
@@ -278,18 +343,7 @@ export function ClockSettingsDialog({
             </div>
 
             {draft.mode === "clock" ? (
-              <label className="field clock-datetime-field">
-                <span>日期与时间</span>
-                <input
-                  type="datetime-local"
-                  step="1"
-                  value={localDateTime(draft.valueMs)}
-                  onChange={(event) => {
-                    const value = new Date(event.target.value).getTime();
-                    if (Number.isFinite(value)) setConfiguredValue(value);
-                  }}
-                />
-              </label>
+              <CampaignDateTimeEditor valueMs={draft.valueMs} onChange={setConfiguredValue} />
             ) : (
               <DurationEditor
                 valueMs={draft.valueMs}

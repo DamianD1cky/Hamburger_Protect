@@ -5543,6 +5543,10 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   text-align: center;
 }
 
+.clock-zero-date-fields { grid-template-columns: 90px 90px minmax(0, 1fr); }
+.clock-zero-date-fields label:last-child { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.clock-zero-date-fields input[type="time"] { min-width: 0; }
+
 .clock-style-picker {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

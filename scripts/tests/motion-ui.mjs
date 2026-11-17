@@ -1285,6 +1285,17 @@ try {
     if (scenario.label === "desktop") {
       await page.getByRole("button", { name: "设置战役时钟" }).click();
       await page.locator(".clock-settings-dialog").waitFor();
+      const calendarDialog = page.locator(".clock-settings-dialog");
+      const calendarYear = calendarDialog.getByLabel("纪年", { exact: true });
+      const calendarDate = calendarDialog.getByLabel("日期与时间", { exact: true });
+      await calendarYear.fill("79");
+      check((await calendarDate.inputValue()).startsWith("0079-"),
+        "era year input automatically aligns the native date picker");
+      await calendarDate.fill("0080-02-29T12:34:56");
+      check(await calendarYear.inputValue() === "80", "date year changes update the era field");
+      await calendarYear.fill("79");
+      check(await calendarDate.inputValue() === "0079-02-28T12:34:56",
+        "leap-day year changes preserve the time and clamp the day");
       await page.getByRole("tab", { name: "倒计时" }).click();
       const clockDialog = page.locator(".clock-settings-dialog");
       await clockDialog.getByLabel("纪元", { exact: true }).fill("uc");

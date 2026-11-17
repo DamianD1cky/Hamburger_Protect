@@ -10,6 +10,7 @@ export interface CampaignClockConfig {
   valueMs: number;
   initialValueMs: number;
   referenceAt: string;
+  calendarVersion?: 1;
 }
 
 const modes = new Set<CampaignClockMode>([
@@ -23,6 +24,39 @@ const styles = new Set<CampaignClockStyle>([
   "digital",
 ]);
 
+/** Signed timestamps are needed for campaign years before 1970. Reserve one
+ * day at each UTC edge so local dates also fit in UTC±14 time zones. */
+export const CAMPAIGN_CLOCK_MIN_MS = -62167305600000;
+export const CAMPAIGN_CLOCK_MAX_MS = 253402387199999;
+
+/** Date constructors interpret 0–99 as 1900–1999. setFullYear preserves the
+ * literal campaign year; clamping the day keeps Feb 29 in February. */
+export function campaignDateInYear(valueMs: number, year: number) {
+  const date = new Date(valueMs);
+  const month = date.getMonth(), day = date.getDate();
+  date.setDate(1);
+  date.setFullYear(year);
+  const end = new Date(date);
+  end.setMonth(month + 1, 0);
+  date.setDate(Math.min(day, end.getDate()));
+  return date.getTime();
+}
+
+export function configureCampaignClockValue(
+  config: CampaignClockConfig,
+  valueMs: number,
+  now = new Date(),
+): CampaignClockConfig {
+  return {
+    ...config,
+    eraYear: config.mode === "clock" ? new Date(valueMs).getFullYear() : config.eraYear,
+    valueMs,
+    initialValueMs: valueMs,
+    referenceAt: now.toISOString(),
+    calendarVersion: 1,
+  };
+}
+
 export function defaultCampaignClock(now = new Date()): CampaignClockConfig {
   return {
     mode: "clock",
@@ -33,6 +67,7 @@ export function defaultCampaignClock(now = new Date()): CampaignClockConfig {
     valueMs: now.getTime(),
     initialValueMs: now.getTime(),
     referenceAt: now.toISOString(),
+    calendarVersion: 1,
   };
 }
 
@@ -53,7 +88,7 @@ export function normalizeCampaignClock(
   const valueMs = Number(value.valueMs);
   const initialValueMs = Number(value.initialValueMs);
   const referenceAt = new Date(value.referenceAt ?? fallback.referenceAt);
-  return {
+  const normalized: CampaignClockConfig = {
     mode,
     style,
     era: /^[A-Z]{2}$/.test(era) ? era : fallback.era,
@@ -63,15 +98,32 @@ export function normalizeCampaignClock(
         : fallback.eraYear,
     running: Boolean(value.running),
     valueMs:
-      Number.isFinite(valueMs) && valueMs >= 0 ? valueMs : fallback.valueMs,
+      Number.isFinite(valueMs) && valueMs >= (mode === "clock" ? CAMPAIGN_CLOCK_MIN_MS : 0) &&
+      valueMs <= CAMPAIGN_CLOCK_MAX_MS ? valueMs : fallback.valueMs,
     initialValueMs:
-      Number.isFinite(initialValueMs) && initialValueMs >= 0
+      Number.isFinite(initialValueMs) && initialValueMs >= (mode === "clock" ? CAMPAIGN_CLOCK_MIN_MS : 0) &&
+      initialValueMs <= CAMPAIGN_CLOCK_MAX_MS
         ? initialValueMs
         : fallback.initialValueMs,
     referenceAt: Number.isNaN(referenceAt.getTime())
       ? fallback.referenceAt
       : referenceAt.toISOString(),
   };
+  // Legacy clocks stored the year label separately. Align their date once on
+  // read, preserving the reference time and the reset date's relative year.
+  if (mode === "clock" && value.calendarVersion !== 1) {
+    const offset = normalized.eraYear - new Date(normalized.valueMs).getFullYear();
+    if (offset) {
+      normalized.valueMs = campaignDateInYear(normalized.valueMs, normalized.eraYear);
+      normalized.initialValueMs = campaignDateInYear(normalized.initialValueMs,
+        Math.min(9999, Math.max(0, new Date(normalized.initialValueMs).getFullYear() + offset)));
+    }
+  }
+  // After alignment the instant is authoritative. Do not reapply the legacy
+  // label offset when another time zone sees a different year near New Year.
+  normalized.calendarVersion = 1;
+  if (mode === "clock") normalized.eraYear = new Date(normalized.valueMs).getFullYear();
+  return normalized;
 }
 
 export function campaignClockValue(
@@ -90,11 +142,17 @@ export function materializeCampaignClock(
   config: CampaignClockConfig,
   now = new Date(),
 ): CampaignClockConfig {
+  const valueMs = campaignClockValue(config, now.getTime());
   return {
     ...config,
-    valueMs: campaignClockValue(config, now.getTime()),
+    eraYear: campaignClockYear(config, now.getTime()),
+    valueMs,
     referenceAt: now.toISOString(),
   };
+}
+
+export function campaignClockYear(config: CampaignClockConfig, now = Date.now()) {
+  return config.mode === "clock" ? new Date(campaignClockValue(config, now)).getFullYear() : config.eraYear;
 }
 
 export function formatClockDuration(valueMs: number) {

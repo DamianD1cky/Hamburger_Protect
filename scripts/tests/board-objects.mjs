@@ -510,6 +510,34 @@ try {
     "select public.update_campaign_clock($1,'{}'::jsonb)",
     [campaign],
   )), /INVALID_CAMPAIGN_CLOCK/);
+  const earlyClock = {
+    ...clockConfig, mode: "clock", eraYear: 79, running: false,
+    valueMs: -59674377600000, initialValueMs: -59674377600000,
+    calendarVersion: 1,
+  };
+  const savedEarlyClock = (await asUser(() => db.query(
+    "select public.update_campaign_clock($1,$2::jsonb) value",
+    [campaign, JSON.stringify(earlyClock)],
+  ))).rows[0].value;
+  assert.equal(savedEarlyClock.valueMs, earlyClock.valueMs,
+    "calendar timestamps before 1970 persist without becoming a duration");
+  assert.equal(savedEarlyClock.eraYear, 79);
+  assert.equal(savedEarlyClock.calendarVersion, 1,
+    "the canonical calendar marker survives a server round trip");
+  assert.equal(savedClock.calendarVersion, undefined,
+    "legacy clients remain distinguishable for read-time year alignment");
+  for (const invalidClock of [
+    { ...earlyClock, mode: "countdown" },
+    { ...earlyClock, mode: "stopwatch" },
+    { ...earlyClock, valueMs: -62167305600001 },
+    { ...earlyClock, initialValueMs: -62167305600001 },
+    { ...earlyClock, valueMs: 253402387200000 },
+  ]) {
+    await assert.rejects(asUser(() => db.query(
+      "select public.update_campaign_clock($1,$2::jsonb)",
+      [campaign, JSON.stringify(invalidClock)],
+    )), /INVALID_CAMPAIGN_CLOCK/);
+  }
   await assert.rejects(db.exec(`
     begin;
     select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000099',true);
