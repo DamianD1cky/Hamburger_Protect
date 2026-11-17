@@ -6325,6 +6325,7 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 .dice-layer-header button svg { width: 20px; height: 20px; }
 .dice-layer-header button:hover, .dice-layer-header button[aria-pressed="true"] { color: #c9e6ff; background: #c4e3ff20; }
 .dice-layer-header button span { position: absolute; top: 0; right: 1px; font-size: 11px; color: #edcf98; }
+.dice-layer-header .dice-mobile-select { display: none; }
 .dice-layer button:disabled { opacity: .45; cursor: default; }
 .dice-stage { position: absolute; inset: 82px 12px 140px 86px; }
 .dice-stage .dice-tray-scene { position: absolute; inset: 0; height: 100%; width: 100%; margin: 0; overflow: hidden; }
@@ -6434,6 +6435,11 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 }
 .dice-layer-footer { position: absolute; z-index: 4; bottom: max(24px, env(safe-area-inset-bottom)); left: 28px; right: 28px; display: flex; justify-content: center; align-items: center; gap: 24px; pointer-events: none; }
 .dice-layer-footer[hidden] { display: none; }
+.dice-selection-controls { display: flex; gap: 4px; pointer-events: auto; }
+.dice-selection-controls button {
+  min-height: 44px; padding: 8px 10px; border: 0; border-radius: 18px;
+  background: #b9dfff17; color: #e7f4ff; cursor: pointer; font: inherit; font-size: 12px;
+}
 .dice-result-equation { display: flex; align-items: center; gap: 14px; max-width: min(760px, 62vw); }
 .dice-result-terms { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-height: 96px; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; }
 .dice-result-die, .dice-result-modifier { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; font: 16px ui-monospace, monospace; }
@@ -6533,17 +6539,27 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 .dice-layer .dice-tabs { display: none; }
 .dice-layer .dice-quick { grid-template-columns: repeat(4, 1fr); }
 .dice-layer .dice-record-actions { flex-wrap: wrap; }
-@media (max-width: 680px) {
+@media (max-width: 680px), (pointer: coarse) {
   .dice-layer-header { left: 16px; right: 12px; top: max(12px, env(safe-area-inset-top)); }
   .dice-layer-header > strong { font-size: 14px; gap: 5px; }
   .dice-layer-header nav { gap: 1px; padding: 3px; }
-  .dice-layer-header button { width: 36px; height: 40px; }
-  .dice-stage { inset: 80px 0 174px 52px; }
-  .dice-members { left: 3px; top: 84px; width: 48px; bottom: 185px; gap: 16px; }
-  .dice-member { width: 45px; }
-  .dice-member-avatar { width: 36px; height: 36px; font-size: 16px; }
-  .dice-member-name { max-width: 44px; font-size: 9px; }
+  .dice-layer-header button { width: 44px; height: 44px; }
+  .dice-layer-header .dice-mobile-select {
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    width: auto; padding: 0 12px; border-radius: 22px;
+  }
+  .dice-mobile-select b { font-size: 12px; font-weight: 500; }
+  .dice-stage { inset: calc(max(12px, env(safe-area-inset-top)) + 142px) max(0px, env(safe-area-inset-right)) 138px max(0px, env(safe-area-inset-left)); }
+  .dice-members {
+    left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right));
+    top: calc(max(12px, env(safe-area-inset-top)) + 62px); bottom: auto; width: auto; height: 76px;
+    flex-direction: row; align-items: flex-start; gap: 12px; overflow-x: auto; overflow-y: hidden; padding: 8px 4px;
+  }
+  .dice-member { width: 52px; }
+  .dice-member-avatar { width: 44px; height: 44px; font-size: 17px; }
+  .dice-member-name { max-width: 52px; font-size: 9px; margin-top: 5px; }
   .dice-layer-footer { left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); gap: 12px; flex-wrap: wrap; }
+  .dice-selection-controls { flex: 0 0 100%; justify-content: center; }
   .dice-tray-result { flex: 1; flex-wrap: wrap; gap: 3px; }
   .dice-tray-result > span { max-width: 140px; font-size: 12px; }
   .dice-tray-result strong { width: 100%; font-size: 26px; }
@@ -6558,6 +6574,15 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
   .dice-fan-glass { width: 52px; height: 52px; flex-basis: 52px; }
   .dice-fan-hub { min-height: 44px; }
   .dice-stage-error { left: 12px; right: 12px; bottom: 112px; font-size: 12px; }
+}
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  .dice-stage { inset: 66px max(4px, env(safe-area-inset-right)) 100px max(64px, env(safe-area-inset-left)); }
+  .dice-members {
+    top: 68px; left: max(4px, env(safe-area-inset-left)); right: auto; bottom: 104px;
+    width: 56px; height: auto; flex-direction: column; overflow-y: auto; gap: 12px;
+  }
+  .dice-layer-footer { flex-wrap: nowrap; }
+  .dice-selection-controls { flex: 0 0 auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   .dice-fan-action, .dice-fan-menu.is-closing .dice-fan-action { animation: none; }

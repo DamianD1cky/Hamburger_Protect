@@ -10,6 +10,7 @@ import type { ReplayTrack } from "./physicsProtocol";
 import { expandDiceSelection, matchThrowDice } from "./traySelection";
 import { createSelectionGlow } from "./selectionGlow";
 import { HeldReplay, type HeldCandidate } from "./heldReplay";
+import { fitPortraitTrayCamera } from "./trayViewport";
 import { clampTrayMove, dieBounds, findTraySpace, footprint, trayOuter, type DiePose } from "./trayPlacement";
 
 export interface DiceSelection { ids: string[]; x: number; y: number; dragging?: boolean }
@@ -21,6 +22,7 @@ interface Props {
   throwId: string | null;
   throwLaunch: ThrowLaunch | null;
   selection: DiceSelection | null;
+  selectionMode: boolean;
   disabled: boolean;
   canThrow: boolean;
   waiting: boolean;
@@ -327,13 +329,22 @@ export function DiceScene(props: Props) {
         if (extent <= .92) break;
         distance *= extent / .9;
       }
+      if (width < 680 && height > width) fitPortraitTrayCamera(camera, playfield);
+      const outline = trayOuter.map(([x, z]) =>
+        new T.Vector3(x, .3, z).applyMatrix4(playfield.matrixWorld).project(camera));
+      container.dataset.trayBounds = [
+        Math.min(...outline.map((point) => (point.x + 1) / 2 * width)),
+        Math.min(...outline.map((point) => (1 - point.y) / 2 * height)),
+        Math.max(...outline.map((point) => (point.x + 1) / 2 * width)),
+        Math.max(...outline.map((point) => (1 - point.y) / 2 * height)),
+      ].join(",");
       syncTargets(); schedule();
     };
     const select = (id: string, additive = false) => {
       if (rolling || preparing || awaitingThrow || latest.current.disabled) return;
       const previous = latest.current.selection?.ids ?? [];
       const linked = expandDiceSelection(currentDice, [id]);
-      const ids = additive
+      const ids = additive || latest.current.selectionMode
         ? previous.includes(id) ? previous.filter((item) => !linked.includes(item)) : [...previous, ...linked]
         : linked;
       latest.current.onSelect(projectSelection(ids));
@@ -363,9 +374,21 @@ export function DiceScene(props: Props) {
       return hit ? playfield.worldToLocal(hit) : null;
     };
     const pick = (event: PointerEvent) => {
-      const id = hitDie(localPoint(event));
+      const point = localPoint(event);
+      let id = hitDie(point);
+      if (!id && event.pointerType !== "mouse" && latest.current.selectionMode) {
+        // Small dice still get a usable fingertip target. Prefer the actual
+        // mesh hit; otherwise choose the closest center within 27 CSS pixels.
+        let nearest = 27;
+        for (const die of currentDice) {
+          const center = project(die.id);
+          if (!center) continue;
+          const distance = Math.hypot(point.x - center.x, point.y - center.y);
+          if (distance < nearest) { nearest = distance; id = die.id; }
+        }
+      }
       if (id) select(id, event.shiftKey || event.ctrlKey || event.metaKey);
-      else if (!event.shiftKey && !event.ctrlKey && !event.metaKey) latest.current.onSelect(null);
+      else if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !latest.current.selectionMode) latest.current.onSelect(null);
     };
     const heldLaunch = (): ThrowLaunch => ({
       dice: gesture!.selected.map((id) => ({
@@ -695,7 +718,7 @@ export function DiceScene(props: Props) {
   // reduced motion lets the next interaction happen without an animation.
   useLayoutEffect(() => { controller.current?.update(props); }, [
     props.dice, props.skin, props.throwId, props.selection?.ids, props.reducedMotion,
-    props.throwLaunch, props.waiting, props.waitingIds,
+    props.throwLaunch, props.waiting, props.waitingIds, props.selectionMode,
   ]);
   return <div className="dice-scene dice-tray-scene" ref={host} aria-label="3D 骰盘">
     <div className="dice-pick-targets">

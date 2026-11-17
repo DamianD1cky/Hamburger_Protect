@@ -22,6 +22,15 @@
 
 实现参考：[Roll20 的服务器裁定说明](https://app.roll20.net/forum/permalink/1692467/)、[Dice So Nice 的已求值 Roll 动画流程](https://riccisi.gitlab.io/foundryvtt-dice-so-nice/api/integration/)、[交互投掷](https://riccisi.gitlab.io/foundryvtt-dice-so-nice/guide/interactive-throws/)、[dice-box-threejs 的预设结果接口](https://www.npmjs.com/package/@3d-dice/dice-box-threejs)。本项目借鉴“先确定结果、再播放”的分层方式，保留自制模型、Worker 回放和服务器权限系统。
 
+## 手机布局与选择
+
+手机竖屏相机由 `trayViewport.ts` 按完整骰盘边框与抓起高度拟合，并收紧视角；
+不改变模型尺寸、世界坐标或物理碰撞。竖屏成员头像放到顶部一排，横屏恢复侧栏，
+为骰盘留出宽度。多选使用显式 `selectionMode`，触摸点选切换加入／移出；
+选取期间不展开扇形菜单，点空白保留当前组。全选与清除是独立操作，
+空选择禁用投掷；结束多选后仍可从扇形菜单设置选定骰子。d100 配对沿用
+`expandDiceSelection()`，不会把十位、个位当成两个独立逻辑投掷。
+
 ## 材质槽
 
 每个网格都有稳定的 `name` 和 `userData.surfaceSlot`：

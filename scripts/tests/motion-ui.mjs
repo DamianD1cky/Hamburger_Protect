@@ -569,7 +569,8 @@ try {
         await types.getByRole("button", { name: type, exact: true }).click();
         await types.waitFor({ state: "detached" });
       };
-      check(await tray.locator(".dice-layer-header nav button").count() === 2, "duplicate top-right controls collapse into More and Close");
+      check(await tray.locator(".dice-layer-header nav button:visible").count() === (scenario.label === "mobile" ? 3 : 2),
+        "desktop keeps More/Close, while touch devices add a multi-select toggle");
       const rect = await tray.boundingBox();
       check(rect.x >= -1 && rect.x + rect.width <= scenario.width + 1, "dice tray fits the viewport");
       check(await tray.evaluate((el) => el.scrollWidth <= el.clientWidth), "dice tray has no horizontal overflow");
@@ -666,6 +667,95 @@ try {
       await tray.getByRole("group", { name: "骰子选项", exact: true }).waitFor();
       await tray.getByRole("button", { name: "移出骰盘", exact: true }).click();
       check(await tray.locator(".dice-pick-target").count() === 1, "removing a tray object works without a roll mutation");
+      if (scenario.label === "mobile") {
+        for (const viewport of [{ width: 320, height: 640 }, { width: 844, height: 390 },
+          { width: scenario.width, height: scenario.height }]) {
+          await page.setViewportSize(viewport);
+          await page.waitForFunction(() => {
+            const scene = document.querySelector(".dice-tray-scene");
+            return scene?.clientWidth > 0 && Number.parseFloat(scene.querySelector("canvas")?.style.width) === scene.clientWidth &&
+              Number.parseFloat(scene.querySelector("canvas")?.style.height) === scene.clientHeight;
+          });
+          const layout = await tray.locator(".dice-tray-scene").evaluate((node) => {
+            const rect = node.getBoundingClientRect(), bounds = node.dataset.trayBounds.split(",").map(Number);
+            return { stage: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+              bounds, screenWidth: innerWidth, screenHeight: innerHeight };
+          });
+          const [left, top, right, bottom] = layout.bounds;
+          check(left >= 0 && top >= 0 && right <= layout.stage.width && bottom <= layout.stage.height,
+            "larger mobile tray keeps its full rim visible in narrow portrait and landscape");
+          if (viewport.width < viewport.height) {
+            check((right - left) / viewport.width >= .8,
+              "portrait tray spans at least 80% of phone width");
+            const members = await tray.locator(".dice-members").boundingBox();
+            check(members.y + members.height <= layout.stage.y + 8, "portrait avatars sit above the tray");
+          }
+          check(await tray.getByRole("button", { name: "多选骰子", exact: true }).isVisible(),
+            "touch selection remains available after rotating the phone");
+        }
+        for (const sides of [20, 8]) {
+          await openTool("添加骰子");
+          await tray.getByRole("button", { name: `d${sides}`, exact: true }).click();
+        }
+        await page.waitForFunction(() => document.querySelectorAll(".dice-pick-target").length === 3 &&
+          [...document.querySelectorAll(".dice-pick-target")].every((target) => target.dataset.position && target.dataset.topFace));
+        const phoneDice = await tray.locator(".dice-pick-target").evaluateAll((targets) => targets.map((target) => {
+          const rect = target.getBoundingClientRect();
+          return { id: target.dataset.dieId, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2,
+            pose: target.dataset.position, face: target.dataset.faceValue };
+        }));
+        const touchDie = async (index) => page.touchscreen.tap(phoneDice[index].x, phoneDice[index].y);
+        const beforeSelection = dicePosts.length;
+        await tray.getByRole("button", { name: "多选骰子", exact: true }).click();
+        check(await tray.getByRole("button", { name: "投掷选中（0）", exact: true }).isDisabled(),
+          "empty touch selection cannot accidentally roll the whole tray");
+        await touchDie(0); await touchDie(1);
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 2,
+          "separate fingertip taps select a mixed pool without a modifier key");
+        check(await tray.locator(".dice-fan-menu").count() === 0, "radial actions stay out of the way during touch multi-select");
+        await touchDie(1);
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 1,
+          "tapping a selected die deselects only that die");
+        await touchDie(1);
+        const phoneStage = await tray.locator(".dice-stage").boundingBox();
+        await page.touchscreen.tap(phoneStage.x + 6, phoneStage.y + 6);
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 2,
+          "tapping empty space preserves the mobile selection");
+        await tray.getByRole("button", { name: "全选", exact: true }).click();
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 3, "mobile can select all dice explicitly");
+        await tray.getByRole("button", { name: "清除选择", exact: true }).click();
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 0, "mobile can clear a group explicitly");
+        await touchDie(0); await touchDie(1);
+        check(dicePosts.length === beforeSelection, "touch selection does not submit or precompute a roll");
+        await page.screenshot({ path: join(screenshots, "mobile-dice-multiselect.png") });
+        await tray.getByRole("button", { name: "完成骰子多选", exact: true }).click();
+        await tray.getByRole("button", { name: "统一设置选中骰子", exact: true }).click();
+        const selectedPanel = tray.getByRole("dialog", { name: "选中骰子设置面板", exact: true });
+        await selectedPanel.getByLabel("选中骰子总修正").fill("2");
+        check(await selectedPanel.getByLabel("选中骰子公式").textContent() === "1d6+1d20+2",
+          "phone mixed selection supports the same shared settings as desktop");
+        await selectedPanel.getByRole("button", { name: "返回骰子菜单", exact: true }).click();
+        await selectedPanel.waitFor({ state: "detached" });
+        await tray.getByRole("button", { name: "多选骰子", exact: true }).click();
+        const mobileSaved = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/functions/v1/roll-dice"));
+        await tray.getByRole("button", { name: "投掷选中（2）", exact: true }).click();
+        await mobileSaved;
+        await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
+        check(dicePosts.length === beforeSelection + 1 && dicePosts.at(-1).notation === "1d6+1d20+2",
+          "phone button rolls only the selected mixed dice with one total modifier");
+        const phoneStationary = tray.locator(`[data-die-id="${phoneDice[2].id}"]`);
+        check(await phoneStationary.getAttribute("data-position") === phoneDice[2].pose &&
+          await phoneStationary.getAttribute("data-face-value") === phoneDice[2].face,
+          "unselected mobile dice keep their exact position and value");
+        check(await tray.getByRole("button", { name: "多选骰子", exact: true }).getAttribute("aria-pressed") === "false",
+          "a completed roll exits mobile multi-select mode");
+        await page.screenshot({ path: join(screenshots, "mobile-dice-selected-result.png") });
+        await openTool("公式与预设");
+        await tray.getByLabel("骰子公式", { exact: true }).fill("1d6");
+        await tray.locator(".dice-roll-button").click();
+        await page.waitForFunction(() => document.querySelectorAll(".dice-pick-target").length === 1);
+        await tray.locator('.dice-tray-scene[data-phase="idle"][data-rolling="false"]').waitFor();
+      }
       if (scenario.label === "desktop") {
         for (const sides of [20, 8]) {
           await openTool("添加骰子");
@@ -982,6 +1072,17 @@ try {
       await page.waitForFunction(() => document.querySelectorAll(".dice-pick-target").length === 2 &&
         [...document.querySelectorAll(".dice-pick-target")].every((target) => target.dataset.position));
       check(await tray.locator(".dice-pick-target").count() === 2, "empty tray can add a percentile pair through More");
+      if (scenario.label === "mobile") {
+        await tray.getByRole("button", { name: "多选骰子", exact: true }).click();
+        const units = await tray.locator(".dice-pick-target").last().boundingBox();
+        await page.touchscreen.tap(units.x + units.width / 2, units.y + units.height / 2);
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 2,
+          "touching either percentile die selects both halves of one d100");
+        await page.touchscreen.tap(units.x + units.width / 2, units.y + units.height / 2);
+        check(await tray.locator('.dice-pick-target[aria-pressed="true"]').count() === 0,
+          "touching a selected percentile die deselects the whole pair");
+        await tray.getByRole("button", { name: "完成骰子多选", exact: true }).click();
+      }
       if (!scenario.reduced) {
         await openTool("公式与预设");
         await tray.getByLabel("投掷可见性").selectOption("public");

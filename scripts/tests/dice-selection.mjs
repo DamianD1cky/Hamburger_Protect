@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { expandDiceSelection, replaceTrayDice, rollTrayDice, trayNotation } from "../../src/features/dice/traySelection.ts";
+import { Group, PerspectiveCamera, Vector3 } from "three";
+import { fitPortraitTrayCamera } from "../../src/features/dice/trayViewport.ts";
+import { trayOuter } from "../../src/features/dice/trayPlacement.ts";
 
 const die = (id, sides, extra = {}) => ({ id, sides, value: null, kept: true, ...extra });
 const pool = [die("a", 6), die("b", 20), die("c", 6), die("f", "F")];
@@ -43,3 +46,17 @@ const limited = replaceTrayDice(full, ["full-3", "full-8"], [...results, ...resu
 assert.equal(limited.length, 20);
 assert.equal(limited.filter((item) => full.includes(item)).length, 18, "all unselected dice survive the tray limit");
 console.log("Dice selection: mixed pools, scope replacement, hidden receipts, percentile pairs and tray limits passed.");
+for (const [width, height] of [[320, 364], [390, 566], [430, 654], [540, 740]]) {
+  const camera = new PerspectiveCamera(38, width / height, .1, 100), playfield = new Group();
+  playfield.rotation.y = Math.PI / 2; playfield.updateMatrixWorld(true);
+  fitPortraitTrayCamera(camera, playfield);
+  const points = trayOuter.map(([x, z]) => new Vector3(x, .3, z).applyMatrix4(playfield.matrixWorld).project(camera));
+  const projectedWidth = (Math.max(...points.map((point) => point.x)) - Math.min(...points.map((point) => point.x))) / 2;
+  assert.ok(projectedWidth >= .8, `portrait ${width}x${height}: tray uses at least 80% of available width`);
+  for (const [x, z] of trayOuter) for (const y of [0, 1.8]) {
+    const point = new Vector3(x, y, z).applyMatrix4(playfield.matrixWorld).project(camera);
+    assert.ok(Math.abs(point.x) <= .941 && Math.abs(point.y) <= .941,
+      "enlarging preserves room for lifted dice and the entire tray rim");
+  }
+}
+console.log("Portrait cameras fill available width while keeping the rim and lifted dice inside the viewport.");

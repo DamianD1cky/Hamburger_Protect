@@ -1,4 +1,4 @@
-import { Dice5, RotateCcw, BookmarkPlus, Users, Trash2, Volume2, X, Plus, History, SlidersHorizontal, Eye, Ellipsis } from "lucide-react";
+import { Dice5, RotateCcw, BookmarkPlus, Users, Trash2, Volume2, X, Plus, History, SlidersHorizontal, Eye, Ellipsis, ListChecks, Check } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { CampaignBoard } from "../campaign/domain/types";
 import { backend } from "../../lib/backend";
@@ -69,6 +69,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   const [addFromSelection, setAddFromSelection] = useState(false);
   const [toolsAnchor, setToolsAnchor] = useState<DicePopoverAnchor | null>(null);
   const [selection, setSelection] = useState<DiceSelection | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectionSettings, setSelectionSettings] = useState({
     modifier: 0, label: "", visibility: "public" as DiceVisibility,
   });
@@ -116,7 +117,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
     setTrayDice((current) => replaceTrayDice(current, replacing,
       rollTrayDice(roll, replacing ? current.filter((die) => replacing.includes(die.id)) : undefined)));
     setThrowId(`${roll.id}:${performance.now()}`);
-    setSelection(null); setPanel(null);
+    setSelection(null); setPanel(null); setSelectionMode(false);
   }
   useEffect(() => () => clearTimeout(noticeTimer.current), []);
   useEffect(() => {
@@ -240,6 +241,9 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
       return normalized;
     });
   };
+  const closeTray = () => {
+    setOpen(false); setSelection(null); setRolling(false); setSelectionMode(false);
+  };
   const selectedRoll = selectedDie?.rollId
     ? [...rows, ...older].find((roll) => roll.id === selectedDie.rollId) : null;
   const changePanel = (next: typeof panel, preserveSelection: boolean, trigger: HTMLButtonElement) => {
@@ -337,14 +341,19 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
       <span>{notice.actor_name} {notice.label || notice.notation}</span>
       <strong>{notice.result?.total ?? "已投出"}</strong>
     </button>}
-    {open && <DiceLayer onClose={() => { setOpen(false); setSelection(null); setRolling(false); }}>
+    {open && <DiceLayer onClose={closeTray}>
       <header className="dice-layer-header">
         <strong><Dice5 size={19} />骰盘</strong>
         <nav aria-label="骰盘工具">
+          <button type="button" className="dice-mobile-select"
+            aria-label={selectionMode ? "完成骰子多选" : "多选骰子"} aria-pressed={selectionMode}
+            disabled={busy || rolling || reserved} onClick={() => {
+              setSelectionMode(!selectionMode); setPanel(null); setAddOpen(false); setToolsAnchor(null);
+            }}>{selectionMode ? <Check /> : <ListChecks />}<b>{selectionMode ? "完成" : "多选"}</b></button>
           <button type="button" aria-label="骰盘更多操作" title="更多" aria-expanded={!!toolsAnchor} onClick={(event) => {
             setToolsAnchor(toolsAnchor ? null : dicePopoverAnchor(event.currentTarget)); setPanel(null); setAddOpen(false);
           }}><Ellipsis />{awaiting > 0 && <span>{awaiting}</span>}</button>
-          <button type="button" aria-label="关闭" title="关闭" onClick={() => { setOpen(false); setSelection(null); setRolling(false); }}><X /></button>
+          <button type="button" aria-label="关闭" title="关闭" onClick={closeTray}><X /></button>
         </nav>
       </header>
       <DiceMembers board={board} social={social.data} rolling={casting || rolling} onReact={social.react} />
@@ -364,30 +373,38 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
         </div>
         {error && <p className="dice-add-error dice-error" role="alert">{error}</p>}
       </DicePopover>}
-      <div className="dice-stage" data-panel-open={panel !== null}>
+      <div className="dice-stage" data-panel-open={panel !== null} data-selection-mode={selectionMode}>
         <Suspense fallback={<p className="dice-stage-loading">正在展开骰盘…</p>}>
           <DiceScene ref={scene} dice={trayDice} skin={preferences.skin ?? "jade"}
-            throwId={throwId} throwLaunch={throwLaunch} selection={selection} disabled={busy || panel !== null || addOpen || !!toolsAnchor}
+            throwId={throwId} throwLaunch={throwLaunch} selection={selection} selectionMode={selectionMode}
+            disabled={busy || panel !== null || addOpen || !!toolsAnchor}
             canThrow={active && !selectedLocked && (!pending.current || !!pending.current.ids?.length)} reducedMotion={reducedMotion}
             waiting={casting} waitingIds={waitingIds}
             onPrepare={prepareTray}
             onThrow={(ids, launch) => castTray(trayDice.filter((die) => ids.includes(die.id)), launch)}
             onSelect={selectDice} onRolling={setRolling} />
         </Suspense>
-        {selectedDice.length > 0 && selection && !selection.dragging && !casting && !rolling && !panel && !addOpen && !toolsAnchor && <DiceFanMenu key={selection.ids.join("|")}
+        {selectedDice.length > 0 && selection && !selectionMode && !selection.dragging && !casting && !rolling && !panel && !addOpen && !toolsAnchor && <DiceFanMenu key={selection.ids.join("|")}
           selection={selection} label={selectedDie ? `d${selectedDie.sides}` : `${selectedDice.length} 颗`} actions={fanActions}
           onClose={() => setSelection(null)} />}
       </div>
       <footer className="dice-layer-footer" hidden={panel !== null || addOpen || !!toolsAnchor || selection?.dragging}>
+        {selectionMode && <div className="dice-selection-controls" role="group" aria-label="骰子多选">
+          <button type="button" disabled={busy || rolling || reserved || !trayDice.length}
+            onClick={() => selectDice({ ids: trayDice.map((die) => die.id), x: selection?.x ?? 0, y: selection?.y ?? 0 })}>全选</button>
+          <button type="button" disabled={busy || rolling || reserved || !selectedDice.length}
+            onClick={() => selectDice(null)}>清除选择</button>
+        </div>}
         <div className="dice-tray-result" aria-live="polite">
-          {casting || rolling ? <span>{trayDice.length} 颗骰子</span> : selectedDice.length ? <span>选中 {selectedDice.length} 颗</span>
+          {casting || rolling ? <span>{trayDice.length} 颗骰子</span> : selectedDice.length || selectionMode ? <span>选中 {selectedDice.length} 颗</span>
             : last ? <DiceResult roll={last} />
             : <span>{trayDice.length} 颗骰子</span>}
           {last?.result && (last.result.dice.reduce((count, die) => count + (die.sides === 100 ? 2 : 1), 0) > 20 ||
             last.result.dice.some((die) => die.sides !== "F" && !standardDice.includes(die.sides))) && <small>完整结果见投掷记录</small>}
         </div>
-        <button type="button" className="dice-stage-roll" disabled={busy || rolling || !active || !trayDice.length || (!!selectedDice.length && selectedLocked && !pending.current)}
-          onClick={() => castTray(selectedDice.length ? selectedDice : undefined)}><Dice5 size={20} />{busy ? "正在准备…" : rolling ? "投掷中…" : pending.current ? error ? "重试这次投掷" : "继续这次投掷" : selectedDice.length ? `投掷选中（${selectedDice.length}）` : "投掷全部"}</button>
+        <button type="button" className="dice-stage-roll" disabled={busy || rolling || !active || !trayDice.length ||
+          (selectionMode && !selectedDice.length) || (!!selectedDice.length && selectedLocked && !pending.current)}
+          onClick={() => castTray(selectedDice.length ? selectedDice : undefined)}><Dice5 size={20} />{busy ? "正在准备…" : rolling ? "投掷中…" : pending.current ? error ? "重试这次投掷" : "继续这次投掷" : selectedDice.length || selectionMode ? `投掷选中（${selectedDice.length}）` : "投掷全部"}</button>
       </footer>
       {!panel && !addOpen && error && <p className="dice-stage-error dice-error" role="alert">{error}</p>}
       {panel && panelAnchor && <DicePopover key={`${panel}:${panelFromSelection}`} anchor={panelAnchor}
