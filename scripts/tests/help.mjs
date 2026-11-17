@@ -27,6 +27,7 @@ test("common new-user questions locate the exact instructions", () => {
     ["密码", "account"],
     ["暗骰", "dice"],
     ["纪年", "clocks"],
+    ["房间码", "quick-start"],
     ["班次码", "quick-start"],
     ["物资", "resources"],
     ["隐藏", "gm"],

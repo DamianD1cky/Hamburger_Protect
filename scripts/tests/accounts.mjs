@@ -117,7 +117,7 @@ test("known Auth errors are understandable and unknown details stay private", ()
   );
   assert.equal(
     getAccessErrorMessage({ message: "ONE_ACTIVE_CAMPAIGN_PER_PLAYER" }),
-    "你已经参加了一个仍在营业的战役，不能重复入店。",
+    "你已经以玩家身份参与了一场进行中的战役，暂时不能同时加入第二场。",
   );
   assert.equal(
     getAccessErrorMessage({ code: "user_banned" }),

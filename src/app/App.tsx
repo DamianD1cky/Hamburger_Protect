@@ -47,6 +47,10 @@ import {
 import { clearStuckIdentities, getSupabaseAppSession } from "../features/access/data/supabaseSession";
 import { useAuthSession } from "../features/access/hooks/useAuthSession";
 import { defaultBoard } from "../features/campaign/domain/defaults";
+import {
+  gmRoleLabel,
+  isCrisisDinerBoard,
+} from "../features/campaign/domain/themePacks";
 import type {
   CampaignSectionKey,
   ComposerTarget,
@@ -369,7 +373,7 @@ function CloudCampaignApp() {
       accessQuery.isLoading ||
       joinRequestQuery.isLoading)
   ) {
-    return <CloudStatus message="正在核对账号与排班" />;
+    return <CloudStatus message="正在核对账号与战役" />;
   }
 
   if (selectedCampaignId && session?.user) {
@@ -437,8 +441,8 @@ function CloudCampaignApp() {
         await gmAccessQuery.refetch();
       }}
       onSignOut={handleSignOut}
-      onCreateCampaign={async (name, characterName) => {
-        const campaignId = await createCampaign({ name, characterName });
+      onCreateCampaign={async (input) => {
+        const campaignId = await createCampaign(input);
         await refreshAccess();
         await enterCampaign(campaignId);
       }}
@@ -478,7 +482,7 @@ function CloudStatus({
         <span className="verification-spinner" aria-hidden="true" />
       )}
       <strong>{message}</strong>
-      <small>请勿擅自离岗</small>
+      <small>帷幕正在同步桌面状态</small>
       {retry && (
         <button type="button" onClick={() => window.location.reload()}>
           重试
@@ -584,7 +588,7 @@ function CampaignBoardWorkspace({
     const count = joinInbox.data?.total;
     if (count === undefined) return;
     if (count > (lastPendingCount.current ?? 0)) {
-      showToast(`有 ${count} 条入店申请等待审批`);
+      showToast(`有 ${count} 条加入申请等待审批`);
     }
     lastPendingCount.current = count;
   }, [joinInbox.data?.total, showToast]);
@@ -707,12 +711,12 @@ function CampaignBoardWorkspace({
 
       showToast(
         status === "completed"
-          ? "工作报告已由店长确认"
+          ? "任务报告已由 GM 确认"
           : status === "failed"
-            ? "工作报告已退回重试"
+            ? "任务报告已退回重试"
             : status === "open"
               ? "任务已重新张贴"
-              : "工作记录已更新",
+              : "行动记录已更新",
       );
     },
     [campaign, showToast],
@@ -731,7 +735,7 @@ function CampaignBoardWorkspace({
         </button>
         {onExit && (
           <button type="button" onClick={() => void onExit()}>
-            {publicView ? "返回签到处" : "返回账号与战役"}
+            {publicView ? "返回大厅" : "返回账号与战役"}
           </button>
         )}
       </div>
@@ -739,27 +743,23 @@ function CampaignBoardWorkspace({
   }
 
   if (campaign.isLoading || !campaign.board) {
-    return <CloudStatus message="正在展开危机营业公告板" />;
+    return <CloudStatus message="正在展开帷幕告示板" />;
   }
 
   const board = campaign.board;
   const patchBoardSettings = campaign.updateCampaignSettings;
   const roleLabel = publicView
     ? "访客 / 只读参观"
-    : board.viewer.role === "gm"
-      ? "GM / 值班店长"
-      : board.viewer.role === "player"
-        ? board.viewer.jobTitle
-        : "观察者";
+    : gmRoleLabel(board.viewer.role, board.viewer.jobTitle);
   const toggleChecklist = (id: string) =>
     void campaign.toggleChecklist(id)
-      .then(() => showToast("防御检查已更新"))
+      .then(() => showToast("检查清单已更新"))
       .catch(() => showToast("检查更新失败，请重试"));
 
   return (
     <>
       <div className="backdrop" aria-hidden="true" />
-      <Suspense fallback={<CloudStatus message="正在展开危机营业公告板" />}>
+      <Suspense fallback={<CloudStatus message="正在展开帷幕告示板" />}>
         <BoardScene
           board={board}
           worldRef={worldRef}
@@ -847,8 +847,8 @@ function CampaignBoardWorkspace({
           {publicView
             ? "公开参观（只读）"
             : demo
-              ? "演示班次"
-              : "班次码 " + board.campaign.joinCode}
+              ? "演示房间"
+              : "房间码 " + board.campaign.joinCode}
         </span>
         {!demo && !publicView && (
           <button
@@ -856,10 +856,10 @@ function CampaignBoardWorkspace({
             onClick={() =>
               void navigator.clipboard
                 .writeText(board.campaign.joinCode)
-                .then(() => showToast("班次码已复制"))
+                .then(() => showToast("房间码已复制"))
             }
-            aria-label="复制班次码"
-            title="复制班次码"
+            aria-label="复制房间码"
+            title="复制房间码"
           >
             <Copy aria-hidden="true" />
           </button>
@@ -879,8 +879,8 @@ function CampaignBoardWorkspace({
             aria-controls="roster-menu"
             onClick={(event) => setTopMenu(topMenu?.kind === "roster" ? null :
               { kind: "roster", anchor: event.currentTarget })}
-            aria-label={board.viewer.role === "gm" ? `危机排班，${joinInbox.data?.total ?? 0} 条待审批` : "危机排班"}
-            title="危机排班"
+            aria-label={board.viewer.role === "gm" ? `成员名册，${joinInbox.data?.total ?? 0} 条待审批` : "成员名册"}
+            title="成员名册"
           >
             <UserPlus aria-hidden="true" />
             {board.viewer.role === "gm" && <MotionText value={joinInbox.data?.total ?? 0} />}
@@ -948,8 +948,8 @@ function CampaignBoardWorkspace({
         <button
           type="button"
           onClick={() => { setTopMenu(null); setHandbookOpen(true); }}
-          aria-label="打开员工手册"
-          title="员工手册"
+          aria-label="打开桌面手册"
+          title="桌面手册"
         >
           <BookOpen aria-hidden="true" />
         </button>
@@ -958,8 +958,8 @@ function CampaignBoardWorkspace({
           <button
             type="button"
             onClick={() => void onExit()}
-            aria-label={publicView ? "返回签到处" : "返回账号与战役"}
-            title={publicView ? "返回签到处" : "返回账号与战役"}
+            aria-label={publicView ? "返回大厅" : "返回账号与战役"}
+            title={publicView ? "返回大厅" : "返回账号与战役"}
           >
             <ArrowLeft aria-hidden="true" />
           </button>
@@ -984,7 +984,7 @@ function CampaignBoardWorkspace({
             }}
             onSaveNote={async (draft, id) => {
               await campaign.saveNote(draft, id);
-              showToast(id ? "工作记录已更新" : "工作记录已贴上公告板");
+              showToast(id ? "便签已更新" : "便签已贴上公告板");
             }}
             onUploadPhoto={(file) => campaign.uploadNotePhoto(file)}
             onDelete={async (target) => {
@@ -993,7 +993,7 @@ function CampaignBoardWorkspace({
                 showToast("任务已撤下");
               } else {
                 await campaign.deleteNote(target.id);
-                showToast("工作记录已取下");
+                showToast("便签已取下");
               }
             }}
           />
@@ -1102,7 +1102,7 @@ function CampaignBoardWorkspace({
                   return <div className="module-content-directory">
                     <button type="button" className="publish-button" onClick={(event) => {
                       setSectionSettingsKey(null); openComposer("quest", null, event.currentTarget);
-                    }}>发布工作指示</button>
+                    }}>发布任务委托</button>
                     {board.quests.map((quest) => <button type="button" className="module-content-row" key={quest.id}
                       onClick={(event) => {
                         setSectionSettingsKey(null); openComposer("quest", { kind: "quest", id: quest.id }, event.currentTarget);
@@ -1120,7 +1120,7 @@ function CampaignBoardWorkspace({
                   return <div className="module-content-directory">
                     <strong>{board.activities.length}{board.hasMoreActivity ? "+" : ""} 条操作记录</strong>
                     <button type="button" className="text-button" onClick={() => openContent(() => setActivityOpen(true))}>
-                      查看工作记录
+                      查看行动记录
                     </button>
                   </div>;
                 default:
@@ -1205,6 +1205,7 @@ function CampaignBoardWorkspace({
         {handbookOpen && (
           <HandbookDialog
             open={handbookOpen}
+            defaultCrisisDiner={isCrisisDinerBoard(board)}
             onClose={() => setHandbookOpen(false)}
           />
         )}

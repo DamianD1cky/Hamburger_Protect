@@ -1,6 +1,10 @@
 import { Copy, Globe2, Image, Upload, Users } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from "react";
-import type { BoardAppearance, BoardAppearanceFiles } from "../../features/campaign/domain/boardAppearance";
+import {
+  boardAppearancePresets,
+  type BoardAppearance,
+  type BoardAppearanceFiles,
+} from "../../features/campaign/domain/boardAppearance";
 import { AppearancePreview } from "./BoardAppearance";
 import type {
   CampaignBoard,
@@ -242,6 +246,29 @@ export function RoomSettingsDialog({
           <AppearancePreview appearance={appearance}
             backgroundUrl={previews.background ?? board.settings.backgroundUrl}
             surfaceUrl={previews.boardTexture ?? board.settings.boardTextureUrl} />
+          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
+            <legend>主题预设</legend>
+            <div className="appearance-options">
+              {boardAppearancePresets.map((preset) => {
+                const active =
+                  appearance.frame === preset.appearance.frame &&
+                  appearance.surface.kind === preset.appearance.surface.kind &&
+                  appearance.room.kind === preset.appearance.room.kind &&
+                  (preset.appearance.room.kind !== "perspective" ||
+                    appearance.room.scene === preset.appearance.room.scene);
+                return (
+                  <button
+                    type="button"
+                    key={preset.id}
+                    aria-pressed={active}
+                    onClick={() => setAppearance(structuredClone(preset.appearance))}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
           <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
             <legend>房间背景</legend>
             <div className="appearance-options">

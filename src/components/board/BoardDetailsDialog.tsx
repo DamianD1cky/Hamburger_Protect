@@ -14,8 +14,8 @@ export function BoardDetailsDialog({ kind, board, onClose, onEditQuest, onTransi
   onTransitionQuest: (quest: Quest, status: QuestStatus, source: HTMLElement) => Promise<void>;
   onToggleChecklist: (id: string) => void;
 }) {
-  const title = kind === "checklist" ? "每日检查清单" :
-    kind === "active-tasks" ? "进行中的工作指示" : "已完成的工作指示";
+  const title = kind === "checklist" ? "行动检查清单" :
+    kind === "active-tasks" ? "进行中的任务委托" : "已完成的任务委托";
   const active = board.campaign.status === "active";
   const canToggle = active && board.viewer.role !== "observer";
   const quests = board.quests.filter((quest) =>

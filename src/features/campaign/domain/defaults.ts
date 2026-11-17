@@ -1,27 +1,27 @@
 import type { CampaignBoard } from "./types";
-import { defaultBoardAppearance } from "./boardAppearance";
+import { veilBoardAppearance } from "./boardAppearance";
 import { defaultCampaignClock } from "./campaignClock";
 
 export const defaultBoard: CampaignBoard = {
   campaign: {
     id: "demo-campaign",
-    name: "汉○王夜班危机营业",
-    joinCode: "BURGER",
+    name: "灰雾港调查档案",
+    joinCode: "VEIL01",
     burgerIndex: 5,
     status: "active",
   },
   viewer: {
     id: "demo-gm",
-    displayName: "值班店长",
+    displayName: "帷幕主持人",
     role: "gm",
-    jobTitle: "店长",
+    jobTitle: "主持人",
   },
   members: [
     {
       userId: "demo-gm",
       role: "gm",
-      characterName: "值班店长",
-      jobTitle: "店长",
+      characterName: "帷幕主持人",
+      jobTitle: "主持人",
       profileText: "",
       active: true,
       joinedAt: "2026-10-19T00:00:00.000Z",
@@ -44,7 +44,7 @@ export const defaultBoard: CampaignBoard = {
     noteTexturePath: null,
     backgroundUrl: null,
     noteTextureUrl: null,
-    appearance: defaultBoardAppearance(),
+    appearance: veilBoardAppearance(),
     boardTextureUrl: null,
     clock: defaultCampaignClock(),
   },

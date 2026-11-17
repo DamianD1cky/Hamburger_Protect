@@ -208,8 +208,8 @@ export function TaskItem({
       <button
         className="task-content"
         type="button"
-        title="查看完整工作指示"
-        aria-label={"查看工作指示：" + quest.title}
+        title="查看完整任务委托"
+        aria-label={"查看任务委托：" + quest.title}
         onClick={(event) => onEdit(quest, event)}
       >
         <span className="task-title">{quest.title}</span>
@@ -246,10 +246,10 @@ export function TaskSection({
         <BoardContentCard className="paper task-paper todo-paper">
           <h2><span>进行中 <small className="task-count"><MotionText value={active.length} /></small></span>
             {viewer.role === "gm" && campaignActive && <button type="button" className="card-action"
-              onClick={onCompose} aria-label="发布工作指示" title="发布工作指示"><Plus aria-hidden="true" /></button>}
+              onClick={onCompose} aria-label="发布任务委托" title="发布任务委托"><Plus aria-hidden="true" /></button>}
           </h2>
           <div className="task-list">
-            {!active.length && <p className="board-empty">暂无工作指示</p>}
+            {!active.length && <p className="board-empty">暂无任务委托</p>}
             {active.slice(0, 4).map((quest) => (
               <TaskItem
                 key={quest.id}
@@ -262,7 +262,7 @@ export function TaskSection({
             ))}
           </div>
           {active.length > 4 && <button type="button" className="board-view-more"
-            aria-label={`查看更多进行中的工作指示，共 ${active.length} 项`} aria-haspopup="dialog"
+            aria-label={`查看更多进行中的任务委托，共 ${active.length} 项`} aria-haspopup="dialog"
             onClick={() => onViewMore(false)}>查看更多 <span>+{active.length - 4}</span></button>}
         </BoardContentCard>
         <BoardContentCard className="paper task-paper done-paper">
@@ -281,7 +281,7 @@ export function TaskSection({
             ))}
           </div>
           {completed.length > 4 && <button type="button" className="board-view-more"
-            aria-label={`查看更多已完成的工作指示，共 ${completed.length} 项`} aria-haspopup="dialog"
+            aria-label={`查看更多已完成的任务委托，共 ${completed.length} 项`} aria-haspopup="dialog"
             onClick={() => onViewMore(true)}>查看更多 <span>+{completed.length - 4}</span></button>}
         </BoardContentCard>
       </div>
@@ -314,11 +314,11 @@ export function ShiftSection({
         onClick={onExpand}
         label={
           canExpand
-            ? `查看全部 ${active.length} 位在岗成员`
-            : `${active.length} 位成员在岗`
+            ? `查看全部 ${active.length} 位在场成员`
+            : `${active.length} 位成员在场`
         }
       >
-        <strong><MotionText value={`${active.length} 人在岗`} /></strong>
+        <strong><MotionText value={`${active.length} 人在场`} /></strong>
         <span className="roster-preview-list">
           {active.slice(0, 3).map((member) => (
             <span key={member.userId}>
@@ -352,12 +352,12 @@ export function MemoSection({
       <BoardContentCard
         className="paper memo-paper notes-preview"
         onClick={onOpen}
-        label="查看全部工作记录"
+        label="查看全部行动记录"
       >
         <strong>
           <MotionText value={`${board.activities.length}${board.hasMoreActivity ? "+" : ""} 条操作记录`} />
         </strong>
-        {board.activities.length ? <span className="activity-preview-list" role="list" aria-label="最近工作记录">
+        {board.activities.length ? <span className="activity-preview-list" role="list" aria-label="最近行动记录">
           {board.activities.slice(0, 5).map((event) => (
             <span className="activity-preview-row" role="listitem" key={event.id}>
               <b>{activityActor(event, board.members)}</b>
@@ -413,7 +413,7 @@ export function SafetySection({
               className={`safety-item ${item.completed ? "is-done" : ""}`}
               type="button" key={item.id} disabled={!canToggle}
               aria-label={`${item.label}，${category}`}
-              title={canToggle ? "更新检查状态" : "仅在岗员工可以更新检查状态"}
+              title={canToggle ? "更新检查状态" : "仅房间成员可以更新检查状态"}
               onClick={() => onToggle(item.id)}>
               <span className="safety-box" aria-hidden="true" />
               <span className="safety-label">{item.label}</span>

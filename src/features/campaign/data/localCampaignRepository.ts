@@ -1,7 +1,7 @@
 import { cloneDefaultBoard } from "../domain/defaults";
 import { EVENT_CLOCK_LIMIT, legacyIndexClock, validateEventClock, type EventClock, type EventClockDraft } from "../domain/eventClock";
 import type { CampaignRepository } from "../domain/repository";
-import { defaultBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
+import { defaultBoardAppearance, veilBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
 import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../domain/boardGeometry";
 import type { BoardModuleKey, BoardModuleLayout } from "../domain/boardModules";
 import {
@@ -26,7 +26,8 @@ import type {
 } from "../domain/types";
 import { applySettingsPatch, assertSettingsExpected } from "../domain/settingsUpdate";
 
-const STORAGE_KEY = "hamburger-protect-board-v2";
+const STORAGE_KEY = "veilboard-board-v1";
+const PREVIOUS_STORAGE_KEY = "hamburger-protect-board-v2";
 const LEGACY_STORAGE_KEY = "laojie-burger-board-v1";
 
 function clone<T>(value: T): T {
@@ -40,7 +41,7 @@ function uid(prefix: string) {
 function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.campaign.burgerIndex ??= 5;
   board.eventClocks ??= [legacyIndexClock(board.campaign.id, board.campaign.burgerIndex)];
-  board.viewer.jobTitle ??= board.viewer.role === "gm" ? "店长" : "服务员";
+  board.viewer.jobTitle ??= board.viewer.role === "gm" ? "主持人" : "调查员";
   board.checklistCategories ??= [];
   board.settings ??= {
     sectionTitles: {},
@@ -53,7 +54,7 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
     noteTexturePath: null,
     backgroundUrl: null,
     noteTextureUrl: null,
-    appearance: defaultBoardAppearance(),
+    appearance: veilBoardAppearance(),
     boardTextureUrl: null,
     clock: defaultCampaignClock(),
   };
@@ -94,7 +95,7 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
     note.pinColor ??= "red";
     note.authorName ??=
       board.members.find((member) => member.userId === note.authorId)
-        ?.characterName ?? "未知员工";
+        ?.characterName ?? "未知成员";
   });
   [...board.notes]
     .sort((left, right) =>
@@ -281,7 +282,9 @@ function recordChanges(before: CampaignBoard, board: CampaignBoard) {
 
 class LocalCampaignRepository implements CampaignRepository {
   private read(): CampaignBoard {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved =
+      localStorage.getItem(STORAGE_KEY) ??
+      localStorage.getItem(PREVIOUS_STORAGE_KEY);
     if (saved) {
       try {
         return normalizeBoard(JSON.parse(saved) as CampaignBoard);
@@ -327,7 +330,7 @@ class LocalCampaignRepository implements CampaignRepository {
   private manage(update: (board: CampaignBoard) => void) {
     return this.mutate((board) => {
       if (board.viewer.role !== "gm" || board.campaign.status !== "active") {
-        throw new Error("仅值班 GM 可以修改");
+        throw new Error("仅房间 GM 可以修改");
       }
       update(board);
     });
@@ -339,7 +342,7 @@ class LocalCampaignRepository implements CampaignRepository {
         board.viewer.role === "observer" ||
         board.campaign.status !== "active"
       ) {
-        throw new Error("仅在岗员工可以修改");
+        throw new Error("仅房间成员可以修改");
       }
       update(board);
     });

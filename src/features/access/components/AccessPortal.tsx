@@ -3,18 +3,20 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
-  ChefHat,
+  Clock,
+  Compass,
   Eye,
   KeyRound,
+  LayoutGrid,
   LogOut,
   MessageSquare,
   Plus,
   Settings,
   ShieldAlert,
-  Store,
+  Sparkles,
   UserPlus,
   UserRound,
-  Wrench,
+  Waypoints,
 } from "lucide-react";
 import {
   lazy,
@@ -30,6 +32,12 @@ import { useImeEnterGuard } from "../../../hooks/useImeEnterGuard";
 import { HelpButton } from "../../help/HelpButton";
 import type { PublicCampaign } from "../../campaign/domain/types";
 import {
+  campaignThemePacks,
+  gmRoleLabel,
+  playerPositionPresets,
+  type CampaignThemePackId,
+} from "../../campaign/domain/themePacks";
+import {
   getAccessErrorMessage,
   GM_PASSWORD_MIN_LENGTH,
   type GmAccess,
@@ -44,12 +52,8 @@ const GmApprovalDialog = lazy(() => import("./GmApprovalDialog").then(
   (module) => ({ default: module.GmApprovalDialog }),
 ));
 
-const employeePositions = ["厨师", "维修师", "服务员", "顾客"] as const;
-
 function campaignRoleLabel(campaign: ActiveCampaignAccess) {
-  if (campaign.role === "gm") return "GM / 店长";
-  if (campaign.role === "player") return campaign.jobTitle;
-  return "观察者";
+  return gmRoleLabel(campaign.role, campaign.jobTitle);
 }
 
 interface AccessPortalProps {
@@ -75,7 +79,12 @@ interface AccessPortalProps {
     displayName: string;
   }) => Promise<void>;
   onApplyGm: () => Promise<void>;
-  onCreateCampaign: (name: string, characterName: string) => Promise<void>;
+  onCreateCampaign: (input: {
+    name: string;
+    characterName: string;
+    jobTitle: string;
+    themePack: CampaignThemePackId;
+  }) => Promise<void>;
   onSignOut: () => Promise<void>;
   onAccountUpdated: () => Promise<void>;
   onJoinCampaign: (input: {
@@ -112,7 +121,7 @@ export function AccessPortal({
 }: AccessPortalProps) {
   const imeGuard = useImeEnterGuard();
   const [signedOutMode, setSignedOutMode] = useState<"signin" | "signup">("signin");
-  const [accountTab, setAccountTab] = useState<"employee" | "gm">("employee");
+  const [accountTab, setAccountTab] = useState<"player" | "gm">("player");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -123,12 +132,18 @@ export function AccessPortal({
   const [characterName, setCharacterName] = useState(
     session?.user?.displayName ?? "",
   );
-  const [jobTitle, setJobTitle] = useState("服务员");
+  const [jobTitle, setJobTitle] = useState("调查员");
   const [profileText, setProfileText] = useState("");
   const [joinCode, setJoinCode] = useState("");
-  const [campaignName, setCampaignName] = useState("汉○王夜班危机营业");
+  const [themePack, setThemePack] = useState<CampaignThemePackId>("veil");
+  const [campaignName, setCampaignName] = useState(
+    campaignThemePacks.veil.defaultCampaignName,
+  );
   const [gmCharacterName, setGmCharacterName] = useState(
     session?.user?.displayName ?? "",
+  );
+  const [gmJobTitle, setGmJobTitle] = useState(
+    campaignThemePacks.veil.gmJobTitle,
   );
   // Accounts with campaigns land on the campaign list only; starting a
   // new campaign is an explicit step away from that list.
@@ -144,7 +159,7 @@ export function AccessPortal({
     if (!legacyCutoff) return;
     setNotice({
       title: "旧匿名身份已停用",
-      body: "之前无需注册的匿名身份已全部停用，旧记录不会带入新账号。请注册一个账号名 + 密码的账号重新开始；想回到原来的战役，用班次码重新提交入店申请即可。",
+      body: "之前无需注册的匿名身份已全部停用，旧记录不会带入新账号。请注册一个账号名 + 密码的账号重新开始；想回到原来的战役，使用房间码重新提交加入申请即可。",
     });
   }, [legacyCutoff]);
 
@@ -162,11 +177,11 @@ export function AccessPortal({
       if (shownNoticeKeys.current.has(key)) return;
       shownNoticeKeys.current.add(key);
       setNotice({
-        title: "入店申请需要 GM 审批",
+        title: "加入申请需要 GM 审批",
         body:
           joinRequest.status === "rejected"
-            ? "你的入店申请未通过。请先联系 GM 核对身份与班次码，确认后再重新提交。"
-            : "你的入店申请已提交。批准前无法访问公告板，请先联系 GM 核对身份；批准后会出现在「进行中的战役」列表。",
+            ? "你的加入申请未通过。请先联系该房间 GM 核对身份与房间码，确认后再重新提交。"
+            : "你的加入申请已提交。批准前无法访问公告板，请先联系房间 GM 核对身份；批准后会出现在「进行中的战役」列表。",
       });
       return;
     }
@@ -180,6 +195,22 @@ export function AccessPortal({
       });
     }
   }, [session?.user, joinRequest, gmAccess]);
+
+  const selectThemePack = (next: CampaignThemePackId) => {
+    const prevPack = campaignThemePacks[themePack];
+    const nextPack = campaignThemePacks[next];
+    setThemePack(next);
+    setCampaignName((current) =>
+      !current.trim() || current === prevPack.defaultCampaignName
+        ? nextPack.defaultCampaignName
+        : current,
+    );
+    setGmJobTitle((current) =>
+      !current.trim() || current === prevPack.gmJobTitle
+        ? nextPack.gmJobTitle
+        : current,
+    );
+  };
 
   const run = async (operation: () => Promise<void>) => {
     if (busyRef.current) return;
@@ -222,7 +253,14 @@ export function AccessPortal({
 
   const submitCampaign = (event: FormEvent) => {
     event.preventDefault();
-    void run(() => onCreateCampaign(campaignName, gmCharacterName));
+    void run(() =>
+      onCreateCampaign({
+        name: campaignName,
+        characterName: gmCharacterName,
+        jobTitle: gmJobTitle,
+        themePack,
+      }),
+    );
   };
 
   const visitPublicCampaign = (campaignId: string) => {
@@ -261,15 +299,15 @@ export function AccessPortal({
           ? "创建战役"
           : "申请成为 GM"
         : joinRequest
-          ? "入店申请"
+          ? "加入申请"
           : "加入战役";
 
   const joinRequestPanel = joinRequest ? (
     <div className="access-form gm-approval" aria-live="polite">
       <dl>
-        <dt>申请班次</dt>
+        <dt>申请战役</dt>
         <dd>{joinRequest.campaignName}</dd>
-        <dt>角色与岗位</dt>
+        <dt>角色与身份</dt>
         <dd>
           {joinRequest.characterName}（{joinRequest.jobTitle}）
         </dd>
@@ -278,12 +316,12 @@ export function AccessPortal({
           {joinRequest.status === "pending"
             ? "等待 GM 审批"
             : joinRequest.status === "approved"
-              ? "GM 已批准，正在核对排班"
-              : "入店申请未通过"}
+              ? "GM 已批准，正在同步成员名册"
+              : "加入申请未通过"}
         </dd>
       </dl>
       {joinRequest.status === "rejected" && (
-        <p>请联系 GM 核对申请。同一账号重复提交不会重置审批结果。</p>
+        <p>请联系房间 GM 核对申请。同一账号重复提交不会重置审批结果。</p>
       )}
       {joinRequest.reviewNote && <p>GM 备注：{joinRequest.reviewNote}</p>}
       <button
@@ -292,7 +330,7 @@ export function AccessPortal({
         disabled={busy}
         onClick={() => void run(onRefreshJoinRequest)}
       >
-        {busy ? "正在查询" : "刷新入店审批结果"}
+        {busy ? "正在查询" : "刷新加入审批结果"}
       </button>
       {joinRequest.status === "pending" && (
         <button
@@ -301,11 +339,13 @@ export function AccessPortal({
           disabled={busy}
           onClick={() => void run(() => onCancelJoinRequest(joinRequest.id))}
         >
-          撤回入店申请
+          撤回加入申请
         </button>
       )}
     </div>
   ) : null;
+
+  const activePack = campaignThemePacks[themePack];
 
   return (
     <div className="access-screen">
@@ -314,18 +354,18 @@ export function AccessPortal({
 
       <div className="access-side">
         <header className="access-brand">
-          <p className="access-kicker">汉○王员工专用内部文件</p>
+          <p className="access-kicker">VEILBOARD · 多规则跑团共享桌面</p>
           <h1>
-            危机营业
+            帷幕
             <br />
-            签到处
+            告示板
           </h1>
           <p className="access-decree">
-            顾客至上，品质为王，<strong>永不停止营业。</strong>
+            帷幕之后自由编排，<strong>桌面之上实时共享。</strong>
           </p>
           <div className="access-alert">
-            <ShieldAlert aria-hidden="true" />
-            <span>救援尚未抵达。请保持岗位意识。</span>
+            <Compass aria-hidden="true" />
+            <span>支持模块自由排版 · 线索红绳 · 事件钟 · 3D 骰盘</span>
           </div>
         </header>
 
@@ -333,7 +373,7 @@ export function AccessPortal({
           <section className="public-room-browser">
             <header>
               <div>
-                <small>无需班次码，只读访问</small>
+                <small>无需房间码，只读访问</small>
                 <h3 id="public-rooms-title">公开参观房间</h3>
               </div>
               <Eye aria-hidden="true" />
@@ -369,7 +409,7 @@ export function AccessPortal({
         </aside>
       </div>
 
-      <main className="access-manual" aria-label="危机营业员工报到">
+      <main className="access-manual" aria-label="帷幕告示板通行大厅">
         <div className="manual-spine" aria-hidden="true">
           <span />
           <span />
@@ -428,7 +468,7 @@ export function AccessPortal({
                         event.target.value.toLowerCase().replace(/\s+/g, ""),
                       )
                     }
-                    placeholder="manager_zhou"
+                    placeholder="keeper_zhou"
                     autoComplete="username"
                     autoCapitalize="none"
                     spellCheck={false}
@@ -443,7 +483,7 @@ export function AccessPortal({
                       maxLength={32}
                       value={nickname}
                       onChange={(event) => setNickname(event.target.value)}
-                      placeholder="例：晚班阿强"
+                      placeholder="例：灰雾港阿强"
                       autoComplete="name"
                     />
                   </label>
@@ -519,7 +559,7 @@ export function AccessPortal({
                             className={`campaign-access-role is-${campaign.role}`}
                           >
                             {campaign.role === "gm" ? (
-                              <Store aria-hidden="true" />
+                              <Sparkles aria-hidden="true" />
                             ) : (
                               <UserRound aria-hidden="true" />
                             )}
@@ -543,7 +583,7 @@ export function AccessPortal({
                     type="button"
                     onClick={() => setStartNew(true)}
                   >
-                    重新开始战役
+                    新建或加入其他战役
                     <Plus aria-hidden="true" />
                   </button>
                 </>
@@ -563,12 +603,12 @@ export function AccessPortal({
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={accountTab === "employee"}
-                  className={accountTab === "employee" ? "is-active" : ""}
-                  onClick={() => setAccountTab("employee")}
+                  aria-selected={accountTab === "player"}
+                  className={accountTab === "player" ? "is-active" : ""}
+                  onClick={() => setAccountTab("player")}
                 >
                   <UserRound aria-hidden="true" />
-                  员工参与
+                  玩家参与
                 </button>
                 <button
                   type="button"
@@ -577,23 +617,23 @@ export function AccessPortal({
                   className={accountTab === "gm" ? "is-active" : ""}
                   onClick={() => setAccountTab("gm")}
                 >
-                  <Store aria-hidden="true" />
-                  GM / 店长
+                  <Sparkles aria-hidden="true" />
+                  GM / 主持人
                 </button>
               </div>
 
-              {accountTab === "employee" ? (
+              {accountTab === "player" ? (
                 activePlayerCampaign ? (
                   <div className="access-form participation-notice">
                     <span>
                       <BadgeCheck aria-hidden="true" />
-                      当前员工战役
+                      当前参与战役
                     </span>
                     <strong>{activePlayerCampaign.name}</strong>
                     <p>
                       {activePlayerCampaign.characterName}（
                       {activePlayerCampaign.jobTitle}）。
-                      一个账号同时只能以员工身份参与一场进行中的战役，但不影响你管理其他战役。
+                      一个账号同时只能以玩家身份参与一场进行中的战役，但不影响你作为 GM 主持其他战役。
                     </p>
                     <button
                       className="access-submit"
@@ -602,7 +642,7 @@ export function AccessPortal({
                         onEnterCampaign(activePlayerCampaign.campaignId)
                       }
                     >
-                      继续以员工身份进入
+                      继续以玩家身份进入
                       <ArrowRight aria-hidden="true" />
                     </button>
                   </div>
@@ -617,22 +657,22 @@ export function AccessPortal({
                       maxLength={40}
                       value={characterName}
                       onChange={(event) => setCharacterName(event.target.value)}
-                      placeholder="例：倒霉的晚班阿强"
+                      placeholder="例：私家侦探林默"
                       autoComplete="nickname"
                     />
                   </label>
                   <label>
-                    <span>岗位 / 身份称呼</span>
+                    <span>身份 / 职业称呼</span>
                     <input
                       required
                       maxLength={40}
-                      list="employee-position-presets"
+                      list="player-position-presets"
                       value={jobTitle}
                       onChange={(event) => setJobTitle(event.target.value)}
-                      placeholder="例：厨师、保安、流浪记者"
+                      placeholder="例：调查员、游侠、船医、特工"
                     />
-                    <datalist id="employee-position-presets">
-                      {employeePositions.map((position) => (
+                    <datalist id="player-position-presets">
+                      {playerPositionPresets.map((position) => (
                         <option key={position} value={position} />
                       ))}
                     </datalist>
@@ -648,7 +688,7 @@ export function AccessPortal({
                     />
                   </label>
                   <label>
-                    <span>6 位班次码</span>
+                    <span>6 位房间码</span>
                     <input
                       required
                       className="join-code-input"
@@ -669,13 +709,31 @@ export function AccessPortal({
                     />
                   </label>
                   <button className="access-submit" type="submit" disabled={busy}>
-                    {busy ? "正在提交入店申请" : "申请加入班次"}
+                    {busy ? "正在提交加入申请" : "申请加入房间"}
                     {!busy && <ArrowRight aria-hidden="true" />}
                   </button>
                 </form>
                 )
               ) : gmAccess?.status === "approved" ? (
                 <form className="access-form" onSubmit={submitCampaign} {...imeGuard}>
+                  <label>
+                    <span>开局主题包</span>
+                    <select
+                      aria-label="开局主题包"
+                      value={themePack}
+                      disabled={busy}
+                      onChange={(event) =>
+                        selectThemePack(event.target.value as CampaignThemePackId)
+                      }
+                    >
+                      {Object.values(campaignThemePacks).map((pack) => (
+                        <option key={pack.id} value={pack.id}>
+                          {pack.label}
+                        </option>
+                      ))}
+                    </select>
+                    <small>{activePack.description}</small>
+                  </label>
                   <label>
                     <span>战役名称</span>
                     <input
@@ -686,18 +744,28 @@ export function AccessPortal({
                     />
                   </label>
                   <label>
-                    <span>店长角色名</span>
+                    <span>GM 角色名</span>
                     <input
                       required
                       maxLength={40}
                       value={gmCharacterName}
                       onChange={(event) => setGmCharacterName(event.target.value)}
-                      placeholder="例：临时代理店长老周"
+                      placeholder={activePack.gmPlaceholder}
+                    />
+                  </label>
+                  <label>
+                    <span>GM 身份称呼</span>
+                    <input
+                      required
+                      maxLength={40}
+                      value={gmJobTitle}
+                      onChange={(event) => setGmJobTitle(event.target.value)}
+                      placeholder="例：主持人、守秘人、地下城主"
                     />
                   </label>
                   <button className="access-submit" type="submit" disabled={busy}>
-                    {busy ? "正在张贴营业公告" : "创建战役并开始营业"}
-                    {!busy && <Store aria-hidden="true" />}
+                    {busy ? "正在创建战役" : activePack.submitLabel}
+                    {!busy && <Sparkles aria-hidden="true" />}
                   </button>
                 </form>
               ) : gmAccess ? (
@@ -757,16 +825,16 @@ export function AccessPortal({
 
           <footer className="manual-rules">
             <span>
-              <ChefHat aria-hidden="true" />
-              没有任务时，制作汉堡
+              <LayoutGrid aria-hidden="true" />
+              自由编排模块与便签
             </span>
             <span>
-              <Wrench aria-hidden="true" />
-              设施用途不限于标签
+              <Waypoints aria-hidden="true" />
+              红绳连线梳理现场线索
             </span>
             <span>
-              <ShieldAlert aria-hidden="true" />
-              异常顾客不办会员
+              <Clock aria-hidden="true" />
+              共享时钟与 3D 骰盘
             </span>
           </footer>
         </div>

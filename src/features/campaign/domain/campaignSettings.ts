@@ -5,11 +5,11 @@ export const campaignSections: Array<{
   defaultTitle: string;
 }> = [
   { id: "inventory", defaultTitle: "可用物资与设施" },
-  { id: "tasks", defaultTitle: "工作指示与报告" },
-  { id: "shifts", defaultTitle: "危机排班" },
+  { id: "tasks", defaultTitle: "委托与行动报告" },
+  { id: "shifts", defaultTitle: "成员名册" },
   { id: "index", defaultTitle: "事件钟" },
-  { id: "activity", defaultTitle: "工作记录" },
-  { id: "safety", defaultTitle: "每日检查清单" },
+  { id: "activity", defaultTitle: "行动记录" },
+  { id: "safety", defaultTitle: "行动检查清单" },
   { id: "notes", defaultTitle: "便签" },
 ];
 
@@ -17,15 +17,15 @@ export const defaultSectionTitles = Object.fromEntries(
   campaignSections.map((section) => [section.id, section.defaultTitle]),
 ) as Record<CampaignSectionKey, string>;
 
-/** 区块标题的默认底色，与 styles.css 里的 .sign-* 保持一致。 */
+/** 区块标题的默认底色（帷幕软木配色：沉稳深红、石板蓝、松林绿与暖羊皮色）。 */
 export const defaultSectionColors: Record<CampaignSectionKey, string> = {
-  inventory: "#df101d",
-  tasks: "#df101d",
-  shifts: "#0860b2",
-  index: "#fff4d9",
-  activity: "#f6d817",
-  safety: "#12963e",
-  notes: "#f6d817",
+  inventory: "#8f2929",
+  tasks: "#9e3329",
+  shifts: "#254e70",
+  index: "#f5ebd4",
+  activity: "#d8a838",
+  safety: "#2e6b47",
+  notes: "#d8a838",
 };
 
 export function sectionTitle(

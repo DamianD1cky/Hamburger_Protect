@@ -34,7 +34,7 @@ function JoinRequestRow({
     }
   };
   return (
-    <article className="join-request-row" aria-label={`入店申请：${identity}`}>
+    <article className="join-request-row" aria-label={`加入申请：${identity}`}>
       <header>
         <strong>{request.characterName}</strong>
         <span>{request.jobTitle}</span>
@@ -147,7 +147,7 @@ function MemberDetail({
     try {
       await onRemoveMember(member.userId, removalNote.trim());
     } catch {
-      setError("移出失败，成员状态可能已变化，请刷新排班。");
+      setError("移出失败，成员状态可能已变化，请刷新名册。");
       setBusy(false);
     }
   };
@@ -160,7 +160,7 @@ function MemberDetail({
         <div>
           <small>
             成员编号 {member.userId.slice(0, 8)}　
-            {member.active ? "在岗" : "已离岗"}
+            {member.active ? "在场" : "已离场"}
           </small>
           <h2>{member.characterName}</h2>
           <p>{member.jobTitle}</p>
@@ -189,7 +189,7 @@ function MemberDetail({
             />
           </label>
           <label className="field">
-            <span>岗位 / 身份称呼</span>
+            <span>身份 / 职业称呼</span>
             <input
               value={jobTitle}
               onChange={(event) => setJobTitle(event.target.value)}
@@ -302,12 +302,12 @@ export function RosterDialog({
       id="roster-menu"
       keepMounted
       width={560}
-      title="危机排班"
+      title="成员名册"
       className="roster-dialog"
       onClose={onClose}
     >
-      {joinInbox && <div className="room-settings-tabs" role="tablist" aria-label="排班分类">
-        {([["members", `成员 · ${active.length}`], ["requests", `入店申请 · ${joinInbox.total}`]] as const).map(([key, label]) =>
+      {joinInbox && <div className="room-settings-tabs" role="tablist" aria-label="名册分类">
+        {([["members", `成员 · ${active.length}`], ["requests", `加入申请 · ${joinInbox.total}`]] as const).map(([key, label]) =>
           <button type="button" role="tab" key={key} aria-selected={tab === key}
             aria-controls={`roster-panel-${key}`} id={`roster-tab-${key}`} tabIndex={tab === key ? 0 : -1}
             onKeyDown={(event) => {
@@ -320,10 +320,10 @@ export function RosterDialog({
       </div>}
       <div className="roster-shell">
       {joinInbox && (
-        <section className="join-request-inbox" aria-label="待审批入店申请"
+        <section className="join-request-inbox" aria-label="待审批加入申请"
           id="roster-panel-requests" role="tabpanel" aria-labelledby="roster-tab-requests" hidden={tab !== "requests"}>
           <div className="join-inbox-heading">
-            <h2>入店申请（{joinInbox.total} 条待审批）</h2>
+            <h2>加入申请（{joinInbox.total} 条待审批）</h2>
             <button
               type="button"
               className="text-button"
@@ -379,7 +379,7 @@ export function RosterDialog({
           ))}
           {inactive.length > 0 && (
             <details className="inactive-members">
-              <summary>已离岗（{inactive.length}）</summary>
+              <summary>已离场（{inactive.length}）</summary>
               {inactive.map((member) => (
                 <button
                   type="button"

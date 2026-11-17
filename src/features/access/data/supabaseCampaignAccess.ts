@@ -11,6 +11,10 @@ import type {
   ActiveCampaignAccess,
 } from "../domain/types";
 import type { EmployeePosition } from "../../campaign/domain/types";
+import {
+  campaignThemePacks,
+  type CampaignThemePackId,
+} from "../../campaign/domain/themePacks";
 import type {
   PublicCampaign,
   VisitorMessage,
@@ -145,12 +149,41 @@ export async function signInAccount(input: {
 export async function createCampaign(input: {
   name: string;
   characterName: string;
+  jobTitle?: string;
+  themePack?: CampaignThemePackId;
 }): Promise<string> {
+  const pack = campaignThemePacks[input.themePack ?? "veil"];
+  const jobTitle = input.jobTitle?.trim() || pack.gmJobTitle;
   const row = await rpc<{ id: string }>("create_campaign", {
     p_name: input.name.trim(),
     p_character_name: input.characterName.trim(),
-    p_job_title: "店长",
+    p_job_title: jobTitle,
   });
+  if ((input.themePack ?? "veil") === "crisis_diner") {
+    await rpc("update_board_appearance", {
+      p_campaign_id: row.id,
+      p_appearance: pack.appearance(),
+    });
+    await rpc("patch_campaign_settings", {
+      p_campaign_id: row.id,
+      p_patch: {
+        sectionTitles: pack.sectionTitles,
+        sectionColors: pack.sectionColors,
+        resourceTitles: pack.resourceTitles,
+      },
+      p_expected: {
+        sectionTitles: Object.fromEntries(
+          Object.keys(pack.sectionTitles).map((key) => [key, null]),
+        ),
+        sectionColors: Object.fromEntries(
+          Object.keys(pack.sectionColors).map((key) => [key, null]),
+        ),
+        resourceTitles: Object.fromEntries(
+          Object.keys(pack.resourceTitles).map((key) => [key, null]),
+        ),
+      },
+    });
+  }
   return row.id;
 }
 export async function joinCampaign(input: {

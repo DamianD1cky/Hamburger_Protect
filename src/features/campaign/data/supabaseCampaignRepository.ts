@@ -324,7 +324,7 @@ async function toBoard(
         authorId: note.author_id,
         authorName:
           remote.members.find((member) => member.user_id === note.author_id)
-            ?.character_name ?? "未知员工",
+            ?.character_name ?? "未知成员",
         pinned: note.pinned,
         pinnedAt: note.pinned_at,
         layer: note.layer ?? 0,

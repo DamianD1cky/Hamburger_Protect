@@ -38,10 +38,10 @@ export const boardModules: Record<
   { label: string; rect: BoardModuleRect }
 > = {
   inventory: { label: "物资", rect: { x: 42, y: 48, w: 410, h: 751 } },
-  tasks: { label: "工作指示", rect: { x: 491, y: 48, w: 564, h: 525 } },
-  shifts: { label: "排班", rect: { x: 1081, y: 50, w: 340, h: 291 } },
+  tasks: { label: "任务委托", rect: { x: 491, y: 48, w: 564, h: 525 } },
+  shifts: { label: "成员名册", rect: { x: 1081, y: 50, w: 340, h: 291 } },
   index: { label: "事件钟", rect: { x: 1081, y: 357, w: 340, h: 221 } },
-  activity: { label: "工作记录", rect: { x: 58, y: 802, w: 395, h: 350 } },
+  activity: { label: "行动记录", rect: { x: 58, y: 802, w: 395, h: 350 } },
   safety: { label: "检查清单", rect: { x: 545, y: 578, w: 540, h: 575 } },
 };
 

@@ -12,7 +12,7 @@ const questLabels: Record<QuestStatus, string> = {
 };
 const entityLabels: Record<string, string> = {
   note: "便签",
-  quest: "工作指示",
+  quest: "任务委托",
   resource: "物资与设施",
   checklist: "检查项",
   campaign: "战役",
@@ -82,17 +82,17 @@ export function activitySummary(event: BoardActivity) {
     case "event_clock_progress_changed":
       return `将事件钟${subject}调整为 ${target.progress}/${target.segments}`;
     case "join_requested":
-      return `申请加入班次（${event.payload.job_title ?? ""}）`;
+      return `申请加入房间（${event.payload.job_title ?? ""}）`;
     case "join_approved":
-      return `批准了「${event.payload.character_name ?? "玩家"}」的入店申请`;
+      return `批准了「${event.payload.character_name ?? "玩家"}」的加入申请`;
     case "join_rejected":
-      return `拒绝了「${event.payload.character_name ?? "玩家"}」的入店申请`;
+      return `拒绝了「${event.payload.character_name ?? "玩家"}」的加入申请`;
     case "join_cancelled":
-      return "撤回了入店申请";
+      return "撤回了加入申请";
     case "campaign_created":
       return "创建了战役";
     case "member_joined":
-      return `加入了班次${event.payload.job_title ? `（${event.payload.job_title}）` : ""}`;
+      return `加入了房间${event.payload.job_title ? `（${event.payload.job_title}）` : ""}`;
     case "member_removed":
       return `将「${event.payload.character_name ?? "玩家"}」移出房间`;
     case "member_profile_updated":
@@ -114,7 +114,7 @@ export function activitySummary(event: BoardActivity) {
     case "checklist_status_changed":
       return `${target.completed ? "完成" : "取消完成"}了检查项${subject}`;
     case "quest_status_changed":
-      return `将工作指示${subject}更新为${questLabels[target.status as QuestStatus] ?? String(target.status)}`;
+      return `将任务委托${subject}更新为${questLabels[target.status as QuestStatus] ?? String(target.status)}`;
     default: {
       const action = event.eventType.endsWith("_created")
         ? "新增"

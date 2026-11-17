@@ -229,7 +229,7 @@ export function NoteCard({
       data-linking={linkingFrom ? "true" : undefined}
       role={canEdit ? "button" : undefined}
       tabIndex={canEdit ? 0 : -1}
-      aria-label={canEdit ? "编辑工作记录：" + note.title : undefined}
+      aria-label={canEdit ? "编辑便签：" + note.title : undefined}
       style={{
         left: note.x,
         top: note.y,

@@ -1940,9 +1940,10 @@ button {
 
 .access-kicker {
   margin: 0 0 18px;
-  color: #f4d92c;
+  color: #e8c987;
   font-size: 14px;
   font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 .access-brand h1 {
@@ -1983,7 +1984,7 @@ button {
 .access-alert svg {
   width: 20px;
   height: 20px;
-  color: #f4d92c;
+  color: #e8c987;
 }
 
 .access-manual {
@@ -2008,8 +2009,8 @@ button {
   align-items: center;
   justify-content: space-around;
   padding: 30px 0;
-  border-right: 2px solid #721019;
-  background: #c80f1d;
+  border-right: 2px solid #2e1f15;
+  background: #5b3a29;
 }
 
 .manual-spine span {

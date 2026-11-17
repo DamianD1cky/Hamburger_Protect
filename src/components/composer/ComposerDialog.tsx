@@ -89,14 +89,14 @@ export function ComposerDialog({
         (!note || note.authorId === board.viewer.id || canManage));
   const heading = !canEdit
     ? kind === "quest"
-      ? "工作指示详情"
+      ? "任务委托详情"
       : "便签详情"
     : state.target
       ? kind === "quest"
-        ? "编辑工作指示"
+        ? "编辑任务委托"
         : "编辑便签"
       : kind === "quest"
-        ? "发布工作指示"
+        ? "发布任务委托"
         : "填写便签";
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   useEffect(
@@ -259,7 +259,7 @@ export function ComposerDialog({
                 onClick={() => setKind("quest")}
               >
                 <ClipboardList />
-                工作指示
+                任务委托
               </button>
             </div>
           )}

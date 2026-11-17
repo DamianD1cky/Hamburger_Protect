@@ -98,9 +98,18 @@ try {
   );
   const campaign = (
     await asUser(() =>
-      db.query("select id from public.create_campaign('图层测试','GM','店长')"),
+      db.query("select id from public.create_campaign('图层测试','GM','主持人')"),
     )
   ).rows[0].id;
+  assert.deepEqual(
+    (await db.query("select appearance from public.campaign_settings where campaign_id=$1", [campaign])).rows[0].appearance,
+    {
+      room: { kind: "color", color: "#1f2524", imagePath: null, fit: "cover", positionX: 50, positionY: 50, dim: 0.18 },
+      surface: { kind: "cork", imagePath: null },
+      frame: "wood",
+    },
+    "new VeilBoard campaigns default to neutral cork and wood appearance",
+  );
   const createNote = (title) =>
     asUser(() =>
       db.query(

@@ -56,7 +56,7 @@ export function ActivityDialog({
 
   return (
     <PaperDialog
-      title="工作记录"
+      title="行动记录"
       className="directory-dialog activity-dialog"
       onClose={onClose}
     >

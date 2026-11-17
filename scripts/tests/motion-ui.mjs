@@ -495,7 +495,7 @@ try {
       await page.locator('[data-module="inventory"] .board-section-actions button').first().click();
       const moduleDialog = page.locator(".section-settings-dialog");
       const common = moduleDialog.getByRole("form", { name: "模块外观设置" });
-      const categoryDraft = moduleDialog.getByLabel("食材与补给的分类标题", { exact: true });
+      const categoryDraft = moduleDialog.getByLabel("装备与补给的分类标题", { exact: true });
       const beforeClocks = JSON.stringify(eventClocks);
       const beforeLayout = JSON.stringify(board.settings.module_layout ?? {});
       const beforeResources = JSON.stringify(board.resources);
@@ -1444,7 +1444,7 @@ try {
       await moveTasksTo(1550);
       check(board.settings.module_layout.tasks.x === 1550, "module saves in the expanded board area");
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.locator(".focus-dock").getByRole("button", { name: "工作指示", exact: true }).click();
+      await page.locator(".focus-dock").getByRole("button", { name: "任务委托", exact: true }).click();
       await settleView();
       const focused = await page.locator('[data-module="tasks"]').evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -1463,14 +1463,14 @@ try {
 
     if (scenario.width < 761) {
       const dock = page.locator(".focus-dock");
-      await dock.getByRole("button", { name: "工作指示", exact: true }).click();
+      await dock.getByRole("button", { name: "任务委托", exact: true }).click();
       await page.waitForFunction(() => {
         const mark = document.querySelector(".focus-dock-indicator").getBoundingClientRect();
         const active = document.querySelector(".focus-dock .is-active").getBoundingClientRect();
         return Math.abs(mark.left - active.left) < 2;
       });
-      check(await dock.getByRole("button", { name: "工作指示" }).getAttribute("aria-current") === "location", "mobile dock follows current region");
-      await dock.getByRole("button", { name: "队员排班", exact: true }).click();
+      check(await dock.getByRole("button", { name: "任务委托" }).getAttribute("aria-current") === "location", "mobile dock follows current region");
+      await dock.getByRole("button", { name: "成员名册", exact: true }).click();
     }
 
     const clockSection = page.locator(".event-clock-section");
@@ -1555,7 +1555,7 @@ try {
     check(scenario.reduced ? swapLog.length === 0 : swapLog.some((item) => item.duration === 120) && swapLog.some((item) => item.duration === 220), "status uses short swaps or reduced-motion bypass");
 
     if (scenario.width < 761) {
-      await page.locator(".focus-dock").getByRole("button", { name: "工作指示", exact: true }).click();
+      await page.locator(".focus-dock").getByRole("button", { name: "任务委托", exact: true }).click();
     }
     await page.getByRole("button", { name: "审核通过", exact: true }).click();
     await page.waitForFunction(() => document.querySelector(".done-paper [data-task-id='test-quest']") && document.querySelector(".done-paper .task-count .motion-text-value")?.textContent === "1");
@@ -2036,7 +2036,7 @@ try {
       "visitors see the persisted clock progress and consequence");
     check(await page.locator(`.board > .board-surface[data-surface="${board.settings.appearance.surface.kind}"]`).count() === 1, "visitors read the saved appearance");
     check(await page.getByRole("button", { name: "打开房间配置", exact: true }).count() === 0, "visitors cannot edit the appearance");
-    await page.getByRole("button", { name: "返回签到处", exact: true }).click();
+    await page.getByRole("button", { name: "返回大厅", exact: true }).click();
     await page.locator(".access-screen").waitFor();
     await page.waitForFunction(() => !document.documentElement.dataset.campaignTransition);
     check(!new URL(page.url()).searchParams.has("visit"), "public return clears visit target");

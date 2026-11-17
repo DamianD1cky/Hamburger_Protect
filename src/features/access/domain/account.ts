@@ -80,7 +80,7 @@ const accessErrorMessages: Array<[string[], string]> = [
   [["campaign_not_active"], "本次战役已结束，不能继续修改。"],
   [
     ["one_active_campaign_per_player"],
-    "你已经参加了一个仍在营业的战役，不能重复入店。",
+    "你已经以玩家身份参与了一场进行中的战役，暂时不能同时加入第二场。",
   ],
   [
     ["already_campaign_member", "campaign_role_conflict"],
@@ -88,10 +88,10 @@ const accessErrorMessages: Array<[string[], string]> = [
   ],
   [
     ["join_request_pending"],
-    "你已有待审批的入店申请，请先等待结果或撤回申请。",
+    "你已有待审批的加入申请，请先等待结果或撤回申请。",
   ],
   [["join_request_already_reviewed"], "申请状态已变更，请刷新后查看结果。"],
-  [["campaign_not_found"], "班次码无效，或该战役已经打烊。"],
+  [["campaign_not_found"], "房间码无效，或该战役已结束归档。"],
   [
     [
       "user-already-exists",
@@ -116,13 +116,13 @@ const accessErrorMessages: Array<[string[], string]> = [
     ["password-too-short", "weak_password"],
     "密码未满足服务端安全要求，请使用更长且未重复使用的密码。",
   ],
-  [["disabled-endpoint", "signup-disabled"], "该入口已被总部关闭。"],
-  [["unverified-user", "unverified"], "账号尚未激活，请联系总部处理。"],
-  [["role-not-allowed", "disabled-user"], "该账号没有值班权限。"],
+  [["disabled-endpoint", "signup-disabled"], "暂时未开放此入口，请联系站长。"],
+  [["unverified-user", "unverified"], "账号尚未激活，请联系站长处理。"],
+  [["role-not-allowed", "disabled-user"], "该账号没有当前操作权限。"],
   [["gm_approval_required"], "GM 权限尚未获批，请联系站长申请。"],
-  [["gm_account_required"], "只有店长账号可以创建战役。"],
-  [["gm_job_title_required", "invalid_job_title"], "岗位不符合员工手册规定。"],
-  [["auth_required"], "会话已失效，请重新签到。"],
+  [["gm_account_required"], "需要获批 GM 权限后才能创建战役。"],
+  [["gm_job_title_required", "invalid_job_title"], "身份或职业称呼需为 1–40 个字符。"],
+  [["auth_required"], "登录状态已失效，请重新登录。"],
   [["rate_limit", "too many requests", "429"], "请求过于频繁，请稍后再试。"],
 ];
 
