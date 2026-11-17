@@ -61,6 +61,7 @@ import { backend, backendError } from "../lib/backend";
 import { rpc } from "../lib/supabase/client";
 import { settingsUpdate } from "../features/campaign/domain/settingsUpdate";
 import { getSiteAdminAccess } from "../features/access/data/siteAdministration";
+import { HelpButton } from "../features/help/HelpButton";
 
 const loadBoardScene = () => import("../components/board/BoardScene").then(
   (module) => ({ default: module.BoardScene }),
@@ -952,6 +953,7 @@ function CampaignBoardWorkspace({
         >
           <BookOpen aria-hidden="true" />
         </button>
+        <HelpButton iconOnly onOpen={() => setTopMenu(null)} />
         {onExit && (
           <button
             type="button"

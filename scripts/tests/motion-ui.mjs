@@ -466,6 +466,18 @@ try {
     check(await page.locator('.board > .board-surface[data-surface="felt"]').count() === 1,
       "legacy rooms keep their board material");
     check(boardRequests === 1, "mounted board reuses prepared query data");
+    const worldBeforeHelp = await page.locator(".world").getAttribute("style");
+    await page.getByRole("button", { name: "搜索帮助与使用指南", exact: true }).click();
+    const guide = page.getByRole("dialog", { name: "使用指南", exact: true });
+    await guide.waitFor();
+    await guide.getByRole("searchbox", { name: "搜索使用方法", exact: true }).fill("纪年");
+    await guide.getByRole("button", { name: /战役时钟与事件钟.*战役时钟：日期和计时/ }).click();
+    check(await guide.getByRole("heading", { name: "战役时钟：日期和计时", exact: true }).isVisible(),
+      "campaign help searches and opens the exact clock instructions");
+    await page.keyboard.press("Escape");
+    await guide.waitFor({ state: "hidden" });
+    check(await page.locator(".world").getAttribute("style") === worldBeforeHelp,
+      "closing help preserves the board viewport");
     if (scenario.label === "desktop") {
       const lobbyReads = Object.fromEntries(Object.entries(reads).filter(([path]) =>
         /get_gm_access|list_public_campaigns|campaign_members|campaign_join_requests/.test(path)));

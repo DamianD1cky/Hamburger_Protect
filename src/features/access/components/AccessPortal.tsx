@@ -27,6 +27,7 @@ import {
 import { PasswordField } from "./PasswordField";
 import { validateNewPassword } from "../domain/account";
 import { useImeEnterGuard } from "../../../hooks/useImeEnterGuard";
+import { HelpButton } from "../../help/HelpButton";
 import type { PublicCampaign } from "../../campaign/domain/types";
 import {
   getAccessErrorMessage,
@@ -380,7 +381,7 @@ export function AccessPortal({
             <div>
               <h2>{heading}</h2>
             </div>
-            <span className="manual-file-number">BK-ZM-09</span>
+            <HelpButton label="使用指南" className="access-help-entry" />
           </div>
 
           {!session ? (
