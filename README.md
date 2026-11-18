@@ -8,8 +8,9 @@
 
 ## 在线体验
 
-- 正式站：<https://hamburger.damiandicky.site>
-- 备用入口：<https://hamburger-protect.vercel.app>
+- VeilBoard 独立站：<https://veilboard.damiandicky.site>
+- 现有站点：<https://hamburger.damiandicky.site>
+- 现有备用入口：<https://hamburger-protect.vercel.app>
 
 在线环境包含真实账号和共享数据。只想查看界面或参与开发时，建议先使用本地演示模式。
 
@@ -105,6 +106,16 @@ npx supabase functions deploy roll-dice --use-api
 不要将 service role key、数据库密码、JWT 私钥或个人访问令牌写入 `VITE_*` 变量。`VITE_*` 会被打包进公开网页。
 
 生产迁移、云端 smoke test 和回退限制见 [Supabase 运维步骤](supabase/OPERATIONS.md)。
+
+### VeilBoard 独立部署
+
+独立 Vercel 项目 `veilboard` 已连接 `DamianD1cky/OpenVeilBoard`，Production Branch 为 `feat/board-ai-harness`，该分支已推送到远端，后续提交触发生产构建，其他分支跳过自动构建。Framework Preset 为 Vite，Root Directory 为仓库根目录，构建命令 `npm run build`，输出目录 `dist`；环境变量在构建前设置。
+
+`veilboard.damiandicky.site` 已完成 DNS 验证和 HTTPS 证书签发，CNAME 指向 `4a61a43be87e33d6.vercel-dns-017.com`。仓库已由 `Hamburger_Protect` 改名为 `OpenVeilBoard`，本地 `origin` 已更新；未提交的本地修改不会进入 Git 自动部署。
+
+当前本地 `.vercel/project.json` 仍关联 `hamburger-protect`。独立站使用 `vercel deploy --project veilboard --prod` 明确指定新项目。VeilBoard 使用独立 Supabase `https://eacuvvrejnlaavaaulaf.supabase.co`，账号和房间与原站隔离；本地使用 `.env.veilboard.local` 配合 `npm run dev -- --mode veilboard`。
+
+默认骰子及 Harness 跨域列表已加入新域名。若服务端显式配置了 `DICE_ALLOWED_ORIGINS` 或 `HARNESS_ALLOWED_ORIGINS`，需要保留已有来源并追加新域名；这些变量会覆盖代码默认值。Auth Redirect URLs 也需要在托管 Supabase 中追加新域名，本地配置不会自动更新云端。
 
 ## 常用命令
 

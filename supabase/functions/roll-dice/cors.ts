@@ -1,6 +1,7 @@
 const productionOrigins = [
   "https://hamburger.damiandicky.site",
   "https://hamburger-protect.vercel.app",
+  "https://veilboard.damiandicky.site",
 ];
 const previewOrigins = ["localhost", "127.0.0.1"].flatMap((hostname) =>
   [5173, 5174, 4173].map((port) => `http://${hostname}:${port}`)

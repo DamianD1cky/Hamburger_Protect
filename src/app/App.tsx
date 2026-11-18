@@ -9,6 +9,7 @@ import {
   Settings,
   ShieldAlert,
   UserPlus,
+  WandSparkles,
 } from "lucide-react";
 import {
   lazy,
@@ -51,6 +52,15 @@ import {
   gmRoleLabel,
   isCrisisDinerBoard,
 } from "../features/campaign/domain/themePacks";
+import {
+  applyPanelBlockInteraction,
+  type BoardCustomPanel,
+  type CustomPanelInteraction,
+} from "../features/campaign/domain/customPanels";
+import type {
+  BoardUndoSnapshot,
+  CompiledBoardBlueprint,
+} from "../features/harness/schema";
 import type {
   CampaignSectionKey,
   ComposerTarget,
@@ -139,6 +149,21 @@ const ClockSettingsDialog = lazy(() =>
 const DiceWorkspace = lazy(() =>
   import("../features/dice/DiceWorkspace").then((module) => ({
     default: module.DiceWorkspace,
+  })),
+);
+const HarnessDrawer = lazy(() =>
+  import("../features/harness/HarnessDrawer").then((module) => ({
+    default: module.HarnessDrawer,
+  })),
+);
+const HarnessPreviewBanner = lazy(() =>
+  import("../features/harness/HarnessDrawer").then((module) => ({
+    default: module.HarnessPreviewBanner,
+  })),
+);
+const CustomPanelEditorDialog = lazy(() =>
+  import("../components/board/CustomPanelCard").then((module) => ({
+    default: module.CustomPanelEditorDialog,
   })),
 );
 
@@ -517,8 +542,23 @@ function CampaignBoardWorkspace({
 }: CampaignBoardWorkspaceProps) {
   const queryClient = useQueryClient();
   const campaign = useCampaignBoard(campaignId, publicView);
-  const { worldRef, viewScaleRef, focusZone, setFocusZone } =
-    useBoardViewport(campaign.board?.settings.moduleLayout, campaign.board?.eventClocks, campaign.board?.settings.hiddenSections);
+  const [stagedBlueprint, setStagedBlueprint] =
+    useState<CompiledBoardBlueprint | null>(null);
+  const [applyingBlueprint, setApplyingBlueprint] = useState(false);
+  const [lastUndo, setLastUndo] = useState<BoardUndoSnapshot | null>(null);
+  const [harnessOpen, setHarnessOpen] = useState(false);
+  const [editingCustomPanel, setEditingCustomPanel] = useState<
+    { mode: "create" } | { mode: "edit"; panel: BoardCustomPanel } | null
+  >(null);
+  const activeBoard = stagedBlueprint
+    ? stagedBlueprint.previewBoard
+    : campaign.board;
+  const { worldRef, viewScaleRef, focusZone, setFocusZone } = useBoardViewport(
+    activeBoard?.settings.moduleLayout,
+    activeBoard?.eventClocks,
+    activeBoard?.settings.hiddenSections,
+    activeBoard?.settings.customPanels,
+  );
   const [composer, setComposer] = useState<ComposerState>(closedComposer);
   const [resourceSheet, setResourceSheet] = useState<number | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -594,7 +634,12 @@ function CampaignBoardWorkspace({
     lastPendingCount.current = count;
   }, [joinInbox.data?.total, showToast]);
   useEffect(() => {
-    const hidden = campaign.board?.settings.hiddenSections ?? [];
+    const hidden = activeBoard?.settings.hiddenSections ?? [];
+    const panelsCount = activeBoard?.settings.customPanels.length ?? 0;
+    if (focusZone === "panels") {
+      if (!panelsCount) setFocusZone("overview");
+      return;
+    }
     const sectionByZone = {
       inventory: "inventory",
       tasks: "tasks",
@@ -607,7 +652,12 @@ function CampaignBoardWorkspace({
     if (focusZone !== "overview" && section && hidden.includes(section)) {
       setFocusZone("overview");
     }
-  }, [campaign.board?.settings.hiddenSections, focusZone, setFocusZone]);
+  }, [
+    activeBoard?.settings.hiddenSections,
+    activeBoard?.settings.customPanels.length,
+    focusZone,
+    setFocusZone,
+  ]);
 
   const openComposer = useCallback(
     (
@@ -749,7 +799,8 @@ function CampaignBoardWorkspace({
     return <CloudStatus message="正在展开帷幕告示板" />;
   }
 
-  const board = campaign.board;
+  const rawBoard = campaign.board;
+  const board = stagedBlueprint ? stagedBlueprint.previewBoard : rawBoard;
   const patchBoardSettings = campaign.updateCampaignSettings;
   const roleLabel = publicView
     ? "访客 / 只读参观"
@@ -759,9 +810,97 @@ function CampaignBoardWorkspace({
       .then(() => showToast("检查清单已更新"))
       .catch(() => showToast("检查更新失败，请重试"));
 
+  const applyStagedBlueprint = async () => {
+    if (!stagedBlueprint || applyingBlueprint) return;
+    setApplyingBlueprint(true);
+    try {
+      const { receipt } = await campaign.applyBoardBlueprint(
+        stagedBlueprint.commitPayload,
+      );
+      setLastUndo({
+        summary: stagedBlueprint.summary,
+        settings: stagedBlueprint.preApplySettings,
+        ...receipt,
+      });
+      setStagedBlueprint(null);
+      showToast(`已应用「${stagedBlueprint.summary}」`);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "蓝图应用失败，请重试。",
+      );
+    } finally {
+      setApplyingBlueprint(false);
+    }
+  };
+
+  const undoLastBlueprint = async () => {
+    if (!lastUndo || applyingBlueprint) return;
+    setApplyingBlueprint(true);
+    try {
+      await campaign.rollbackBoardBlueprint(lastUndo);
+      setLastUndo(null);
+      showToast("已撤销上一次 AI 编排");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "撤销失败，请刷新后重试。",
+      );
+    } finally {
+      setApplyingBlueprint(false);
+    }
+  };
+
+  const harnessSplitActive =
+    harnessOpen && !publicView && rawBoard.viewer.role === "gm";
+
+  const handleInteractCustomPanel = (
+    panelId: string,
+    blockId: string,
+    action: CustomPanelInteraction,
+  ) => {
+    if (stagedBlueprint) {
+      setStagedBlueprint((prev) => {
+        if (!prev) return prev;
+        const nextPanels = prev.previewBoard.settings.customPanels.map((p) =>
+          p.id === panelId ? applyPanelBlockInteraction(p, blockId, action) : p,
+        );
+        return {
+          ...prev,
+          previewBoard: {
+            ...prev.previewBoard,
+            settings: {
+              ...prev.previewBoard.settings,
+              customPanels: nextPanels,
+            },
+          },
+          commitPayload: {
+            ...prev.commitPayload,
+            customPanels: nextPanels,
+          },
+        };
+      });
+      return;
+    }
+    void campaign
+      .interactCustomPanel(panelId, blockId, action)
+      .catch((error) =>
+        showToast(
+          error instanceof Error ? error.message : "控件操作未保存，请重试",
+        ),
+      );
+  };
+
   return (
-    <>
+    <div
+      className="workspace-shell"
+      data-harness-open={harnessSplitActive ? "true" : undefined}
+      data-has-preview={
+        stagedBlueprint && !harnessSplitActive && !publicView && rawBoard.viewer.role === "gm"
+          ? "true"
+          : undefined
+      }
+    >
       <div className="backdrop" aria-hidden="true" />
+      <div className="workspace-board-pane">
       <Suspense fallback={<CloudStatus message="正在展开帷幕告示板" />}>
         <BoardScene
           board={board}
@@ -795,6 +934,7 @@ function CampaignBoardWorkspace({
           }
           onTransitionQuest={transitionQuest}
           onMoveNote={campaign.moveNote}
+          onResizeNote={campaign.resizeNote}
           onNoteLayer={campaign.moveNoteLayer}
           onCreateSticker={async (emoji, x, y, rotation) => {
             const created = await campaign.createBoardSticker(emoji, x, y, rotation);
@@ -842,6 +982,26 @@ function CampaignBoardWorkspace({
           }}
           moduleLayout={board.settings.moduleLayout}
           onMoveModule={campaign.moveBoardModule}
+          onResizeModule={campaign.resizeBoardModule}
+          onEditCustomPanel={(panel) =>
+            setEditingCustomPanel({ mode: "edit", panel })
+          }
+          onDeleteCustomPanel={(panelId) => {
+            const next = rawBoard.settings.customPanels.filter(
+              (p) => p.id !== panelId,
+            );
+            void campaign
+              .saveCustomPanels(next)
+              .then(() => showToast("自由展板已移除"))
+              .catch(() => showToast("移除自由展板失败，请重试"));
+          }}
+          onInteractCustomPanel={handleInteractCustomPanel}
+          onUpdateCustomPanelGeometry={async (panelId, nextRect) => {
+            const next = rawBoard.settings.customPanels.map((p) =>
+              p.id === panelId ? { ...p, ...nextRect } : p,
+            );
+            await campaign.saveCustomPanels(next);
+          }}
           onOpenClockSettings={() => setClockSettingsOpen(true)}
           diceTool={!publicView && board.viewer.role !== "observer"
             ? <DiceWorkspace key={`${board.campaign.id}:${board.viewer.id}`} board={board} /> : undefined}
@@ -898,28 +1058,50 @@ function CampaignBoardWorkspace({
             {board.viewer.role === "gm" && <MotionText value={joinInbox.data?.total ?? 0} />}
           </button>
         )}
-        {board.viewer.role === "gm" && (
+        {board.viewer.role === "gm" && (() => {
+          const hiddenCoreCount = board.settings.hiddenSections.filter((s) =>
+            s === "shifts" || s === "index" || s === "activity" || s === "notes",
+          ).length;
+          return (
+            <button
+              type="button"
+              className="section-visibility-button"
+              data-top-menu-trigger="visibility"
+              aria-haspopup="dialog"
+              aria-expanded={topMenu?.kind === "visibility"}
+              aria-controls="board-visibility-menu"
+              onClick={(event) => setTopMenu(topMenu?.kind === "visibility" ? null :
+                { kind: "visibility", anchor: event.currentTarget })}
+              aria-label={
+                "管理公告板区块" +
+                (hiddenCoreCount ? `，${hiddenCoreCount} 个已隐藏` : "")
+              }
+              title="管理核心板块与原子展板"
+            >
+              <LayoutGrid aria-hidden="true" />
+              {hiddenCoreCount > 0 && (
+                <MotionText value={hiddenCoreCount} />
+              )}
+            </button>
+          );
+        })()}
+        {!publicView && rawBoard.viewer.role === "gm" && rawBoard.campaign.status === "active" && (
           <button
             type="button"
-            className="section-visibility-button"
-            data-top-menu-trigger="visibility"
-            aria-haspopup="dialog"
-            aria-expanded={topMenu?.kind === "visibility"}
-            aria-controls="board-visibility-menu"
-            onClick={(event) => setTopMenu(topMenu?.kind === "visibility" ? null :
-              { kind: "visibility", anchor: event.currentTarget })}
-            aria-label={
-              "管理公告板区块" +
-              (board.settings.hiddenSections.length
-                ? `，${board.settings.hiddenSections.length} 个已隐藏`
-                : "")
+            className={
+              harnessOpen
+                ? "harness-top-button is-active"
+                : "harness-top-button"
             }
-            title="管理区块显示"
+            aria-expanded={harnessOpen}
+            onClick={() => {
+              setTopMenu(null);
+              setHarnessOpen((open) => !open);
+            }}
+            aria-label="打开 AI 帷幕编排"
+            title="AI 帷幕编排"
           >
-            <LayoutGrid aria-hidden="true" />
-            {board.settings.hiddenSections.length > 0 && (
-              <MotionText value={board.settings.hiddenSections.length} />
-            )}
+            <WandSparkles aria-hidden="true" />
           </button>
         )}
         {board.viewer.role === "gm" && (
@@ -982,8 +1164,48 @@ function CampaignBoardWorkspace({
         eventClocks={board.eventClocks}
         active={focusZone}
         hiddenSections={board.settings.hiddenSections}
+        sectionTitles={board.settings.sectionTitles}
+        hasCustomPanels={board.settings.customPanels.length > 0}
         onChange={setFocusZone}
       />
+
+      {stagedBlueprint && !harnessSplitActive && !publicView && rawBoard.viewer.role === "gm" && (
+        <Suspense fallback={null}>
+          <HarnessPreviewBanner
+            staged={stagedBlueprint}
+            applying={applyingBlueprint}
+            onApply={() => void applyStagedBlueprint()}
+            onDiscard={() => {
+              setStagedBlueprint(null);
+              showToast("已放弃预览草稿");
+            }}
+          />
+        </Suspense>
+      )}
+      </div>
+
+      {harnessOpen && !publicView && rawBoard.viewer.role === "gm" && (
+        <Suspense fallback={null}>
+          <HarnessDrawer
+            open={harnessOpen}
+            board={rawBoard}
+            stagedBlueprint={stagedBlueprint}
+            lastUndo={lastUndo}
+            applying={applyingBlueprint}
+            onClose={() => setHarnessOpen(false)}
+            onStageBlueprint={setStagedBlueprint}
+            onApplyStaged={applyStagedBlueprint}
+            onDiscardStaged={() => {
+              setStagedBlueprint(null);
+              showToast("已放弃预览草稿");
+            }}
+            onUndoLast={undoLastBlueprint}
+            onCreateCustomPanel={() =>
+              setEditingCustomPanel({ mode: "create" })
+            }
+          />
+        </Suspense>
+      )}
 
       <Suspense fallback={<CloudStatus message="正在打开详情" />}>
         {composer.open && (
@@ -1000,6 +1222,8 @@ function CampaignBoardWorkspace({
               showToast(id ? "便签已更新" : "便签已贴上公告板");
             }}
             onUploadPhoto={(file) => campaign.uploadNotePhoto(file)}
+            onNoteLayer={campaign.moveNoteLayer}
+            onToggleNotePin={campaign.setNotePinned}
             onDelete={async (target) => {
               if (target.kind === "quest") {
                 await campaign.deleteQuest(target.id);
@@ -1047,7 +1271,6 @@ function CampaignBoardWorkspace({
               setNotesOpen(false);
               openComposer("note", null, event.currentTarget);
             }}
-            onTogglePin={campaign.setNotePinned}
           />
         )}
         {!publicView && board.viewer.role === "gm" && (
@@ -1063,6 +1286,10 @@ function CampaignBoardWorkspace({
             onSaveAppearance={async (appearance, files, expected) => {
               await campaign.saveBoardAppearance(appearance, files, expected);
               showToast("公告板外观已保存");
+            }}
+            onSaveStyleTokens={async (tokens) => {
+              await campaign.saveBoardStyleTokens(tokens);
+              showToast("卡片与连线风格已保存");
             }}
             onUpload={async (kind, file) => {
               await campaign.uploadCampaignMedia(kind, file);
@@ -1145,16 +1372,70 @@ function CampaignBoardWorkspace({
               showToast("区块设置已保存");
               return saved;
             }}
+            onSaveModuleEffect={async (modKey, effect) => {
+              await campaign.setBoardModuleEffect(modKey, effect);
+              showToast("卡片装饰特效已更新");
+            }}
           />
         )}
         {topMenu?.kind === "visibility" && (
           <SectionVisibilityDialog
             anchor={topMenu.anchor}
-            board={board}
+            board={rawBoard}
             onClose={() => setTopMenu(null)}
             onSave={async (patch) => {
               await patchBoardSettings(patch);
             }}
+            onCreateCustomPanel={() =>
+              setEditingCustomPanel({ mode: "create" })
+            }
+            onInstantiateAtomicPanel={async (panel) => {
+              const next = [...rawBoard.settings.customPanels, panel];
+              await campaign.saveCustomPanels(next);
+              showToast(`已由原子能力拼装「${panel.title}」`);
+            }}
+            onEditCustomPanel={(panel) =>
+              setEditingCustomPanel({ mode: "edit", panel })
+            }
+            onDeleteCustomPanel={(panelId) => {
+              const next = rawBoard.settings.customPanels.filter(
+                (p) => p.id !== panelId,
+              );
+              void campaign
+                .saveCustomPanels(next)
+                .then(() => showToast("自由展板已移除"))
+                .catch(() => showToast("移除自由展板失败，请重试"));
+            }}
+          />
+        )}
+        {editingCustomPanel && !publicView && rawBoard.viewer.role === "gm" && (
+          <CustomPanelEditorDialog
+            initial={
+              editingCustomPanel.mode === "edit"
+                ? editingCustomPanel.panel
+                : null
+            }
+            onClose={() => setEditingCustomPanel(null)}
+            onSave={async (savedPanel) => {
+              const existing = rawBoard.settings.customPanels;
+              const exists = existing.some((p) => p.id === savedPanel.id);
+              const next = exists
+                ? existing.map((p) => (p.id === savedPanel.id ? savedPanel : p))
+                : [...existing, savedPanel];
+              await campaign.saveCustomPanels(next);
+              showToast(exists ? "自由展板已更新" : "自由展板已添加");
+            }}
+            onDelete={
+              editingCustomPanel.mode === "edit"
+                ? async (panelId) => {
+                    const next = rawBoard.settings.customPanels.filter(
+                      (p) => p.id !== panelId,
+                    );
+                    await campaign.saveCustomPanels(next);
+                    showToast("自由展板已移除");
+                  }
+                : undefined
+            }
           />
         )}
         {!demo && (publicView || board.viewer.role === "gm" || board.settings.isPublic) && (
@@ -1231,6 +1512,6 @@ function CampaignBoardWorkspace({
       >
         {toast}
       </div>
-    </>
+    </div>
   );
 }

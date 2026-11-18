@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   PackageOpen,
+  PanelTop,
   ShieldCheck,
   Users,
   Clock,
@@ -12,7 +13,7 @@ import type { CampaignSectionKey } from "../../features/campaign/domain/types";
 import type { FocusZone } from "../../hooks/useBoardViewport";
 import type { EventClock } from "../../features/campaign/domain/eventClock";
 
-const items: Array<{
+const baseItems: Array<{
   id: FocusZone;
   section?: CampaignSectionKey;
   label: string;
@@ -62,6 +63,8 @@ interface FocusDockProps {
   onChange: (zone: FocusZone) => void;
   hiddenSections: CampaignSectionKey[];
   eventClocks?: EventClock[];
+  sectionTitles?: Partial<Record<CampaignSectionKey, string>>;
+  hasCustomPanels?: boolean;
 }
 
 export function FocusDock({
@@ -69,14 +72,31 @@ export function FocusDock({
   onChange,
   hiddenSections,
   eventClocks = [],
+  sectionTitles,
+  hasCustomPanels = false,
 }: FocusDockProps) {
-  const visibleItems = items.filter(
+  const allItems = hasCustomPanels
+    ? [
+        ...baseItems,
+        {
+          id: "panels" as const,
+          label: "自由展板",
+          title: "展板",
+          icon: PanelTop,
+        },
+      ]
+    : baseItems;
+  const visibleItems = allItems.filter(
     (item) => !item.section || !hiddenSections.includes(item.section),
   );
   const focusedClock = eventClocks.find((clock) => `event:${clock.id}` === active) ?? eventClocks[0];
-  if (!hiddenSections.includes("index") && focusedClock) visibleItems.splice(4, 0, {
-    id: `event:${focusedClock.id}`, section: "index", label: "事件钟", title: "事件", icon: Clock,
-  });
+  if (!hiddenSections.includes("index") && focusedClock) {
+    const shiftsIdx = visibleItems.findIndex((item) => item.id === "shifts");
+    const insertAt = shiftsIdx >= 0 ? shiftsIdx + 1 : visibleItems.length;
+    visibleItems.splice(insertAt, 0, {
+      id: `event:${focusedClock.id}`, section: "index", label: "事件钟", title: "事件", icon: Clock,
+    });
+  }
   const activeIndex = Math.max(
     0,
     visibleItems.findIndex((item) => item.id === active),
@@ -96,6 +116,12 @@ export function FocusDock({
       </select>}
       {visibleItems.map((item) => {
         const Icon = item.icon;
+        const customName = item.section
+          ? sectionTitles?.[item.section]?.trim()
+          : undefined;
+        const displayTitle = customName
+          ? customName.slice(0, 4)
+          : item.title;
         return (
           <button
             className={active === item.id ? "is-active" : ""}
@@ -103,11 +129,11 @@ export function FocusDock({
             key={item.id}
             aria-label={item.label}
             aria-current={active === item.id ? "location" : undefined}
-            title={item.title}
+            title={customName || item.title}
             onClick={() => onChange(item.id)}
           >
             <Icon aria-hidden="true" />
-            <span>{item.title}</span>
+            <span>{displayTitle}</span>
           </button>
         );
       })}

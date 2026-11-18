@@ -11,6 +11,7 @@ import {
 } from "../features/campaign/domain/boardModules";
 import type { EventClock } from "../features/campaign/domain/eventClock";
 import { eventClockRects } from "../features/campaign/domain/eventClockLayout";
+import type { BoardCustomPanel } from "../features/campaign/domain/customPanels";
 
 export type FocusZone =
   | "overview"
@@ -19,12 +20,19 @@ export type FocusZone =
   | "shifts"
   | "safety"
   | "notes"
+  | "panels"
   | `event:${string}`;
 
 const MIN_SCALE = 0.05;
 
-/** 全览只包含板框；移动端区域聚焦使用模块当前坐标。 */
-function focusBounds(zone: FocusZone, layout: BoardModuleLayout | undefined, clocks: EventClock[], hidden: string[]) {
+/** 全览只包含板框；移动端区域聚焦使用模块、独立事件钟卡片或自由展板当前坐标。 */
+function focusBounds(
+  zone: FocusZone,
+  layout: BoardModuleLayout | undefined,
+  clocks: EventClock[],
+  hidden: string[],
+  customPanels: readonly BoardCustomPanel[] | undefined,
+) {
   if (zone === "overview") {
     return {
       x: 0,
@@ -40,12 +48,28 @@ function focusBounds(zone: FocusZone, layout: BoardModuleLayout | undefined, clo
       width: rect.w + 48, height: rect.h + 48 };
   }
 
+  if (zone === "panels" && customPanels && customPanels.length > 0) {
+    const left = Math.min(...customPanels.map((p) => p.x));
+    const top = Math.min(...customPanels.map((p) => p.y));
+    const right = Math.max(...customPanels.map((p) => p.x + p.w));
+    const bottom = Math.max(...customPanels.map((p) => p.y + p.h));
+    return {
+      x: left + BOARD_FRAME_INSET - 24,
+      y: top + BOARD_FRAME_INSET - 24,
+      width: right - left + 48,
+      height: bottom - top + 48,
+    };
+  }
+
   const keys: BoardModuleKey[] =
     zone === "shifts"
       ? ["shifts", "index"]
-      : [zone === "notes" ? "activity" : zone as BoardModuleKey];
-  const rects = keys.map((key) => key === "index" && clocks.length ?
-    clockRects.get(clocks[0].id)! : moduleRect(key, layout));
+      : [zone === "notes" || zone === "panels" ? "activity" : (zone as BoardModuleKey)];
+  const rects = keys.map((key) =>
+    key === "index" && clocks.length
+      ? clockRects.get(clocks[0].id)!
+      : moduleRect(key, layout),
+  );
   const left = Math.min(...rects.map((rect) => rect.x));
   const top = Math.min(...rects.map((rect) => rect.y));
   const right = Math.max(...rects.map((rect) => rect.x + rect.w));
@@ -81,7 +105,12 @@ function viewportBox(container: HTMLElement) {
   };
 }
 
-export function useBoardViewport(moduleLayout?: BoardModuleLayout, clocks: EventClock[] = [], hidden: string[] = []) {
+export function useBoardViewport(
+  moduleLayout?: BoardModuleLayout,
+  clocks: EventClock[] = [],
+  hidden: string[] = [],
+  customPanels?: readonly BoardCustomPanel[],
+) {
   const elementRef = useRef<HTMLDivElement>(null);
   const [world, setWorld] = useState<HTMLDivElement | null>(null);
   const worldRef = useCallback((element: HTMLDivElement | null) => {
@@ -95,6 +124,8 @@ export function useBoardViewport(moduleLayout?: BoardModuleLayout, clocks: Event
   clocksRef.current = clocks;
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
+  const panelsRef = useRef(customPanels);
+  panelsRef.current = customPanels;
   const zoneRef = useRef<FocusZone>("overview");
   const [focusZone, updateFocusZone] = useState<FocusZone>("overview");
 
@@ -104,7 +135,13 @@ export function useBoardViewport(moduleLayout?: BoardModuleLayout, clocks: Event
     if (!element || !container) return;
 
     const viewport = viewportBox(container);
-    const bounds = focusBounds(zoneRef.current, layoutRef.current, clocksRef.current, hiddenRef.current);
+    const bounds = focusBounds(
+      zoneRef.current,
+      layoutRef.current,
+      clocksRef.current,
+      hiddenRef.current,
+      panelsRef.current,
+    );
     const scale = Math.max(
       MIN_SCALE,
       Math.min(
@@ -138,7 +175,7 @@ export function useBoardViewport(moduleLayout?: BoardModuleLayout, clocks: Event
 
   useLayoutEffect(() => {
     fit();
-  }, [moduleLayout, clocks, fit]);
+  }, [moduleLayout, clocks, customPanels, fit]);
 
   useLayoutEffect(() => {
     const container = world?.parentElement;

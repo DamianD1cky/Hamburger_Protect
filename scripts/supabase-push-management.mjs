@@ -13,6 +13,12 @@ const migrationsDirectory = new URL(
   import.meta.url,
 );
 const dryRun = process.argv.includes("--dry-run");
+const projectFlag = process.argv.indexOf("--project-ref");
+const projectRef = projectFlag >= 0 ? process.argv[projectFlag + 1] : undefined;
+if (projectFlag >= 0 && !/^[a-z]{20}$/.test(projectRef ?? "")) {
+  throw new Error("--project-ref requires a valid Supabase project ID.");
+}
+const targetFlags = projectRef ? ["--project-ref", projectRef] : [];
 
 function quoteLiteral(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
@@ -42,6 +48,7 @@ function queryJson(sql) {
     "db",
     "query",
     "--linked",
+    ...targetFlags,
     "--output",
     "json",
     sql,
@@ -117,6 +124,7 @@ async function applyMigration(migration) {
     "db",
     "query",
     "--linked",
+    ...targetFlags,
     "--file",
     file,
     "--output",
@@ -125,9 +133,12 @@ async function applyMigration(migration) {
 }
 
 const local = await localMigrations();
-const remote = queryJson(
+const migrationTableExists = queryJson(
+  "select to_regclass('supabase_migrations.schema_migrations') is not null as present",
+)[0]?.present;
+const remote = migrationTableExists ? queryJson(
   "select version from supabase_migrations.schema_migrations order by version",
-);
+) : [];
 const localVersions = new Set(local.map(({ version }) => version));
 const remoteVersions = new Set(remote.map(({ version }) => version));
 const unknownRemote = [...remoteVersions].filter(
@@ -155,6 +166,14 @@ for (const migration of pending) {
 }
 
 if (!dryRun) {
+  if (!migrationTableExists) {
+    queryJson(`create schema if not exists supabase_migrations;
+create table if not exists supabase_migrations.schema_migrations(
+  version text primary key,
+  statements text[],
+  name text
+);`);
+  }
   for (const migration of pending) {
     await applyMigration(migration);
     console.log(`Applied ${migration.filename}`);

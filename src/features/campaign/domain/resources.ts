@@ -1,4 +1,4 @@
-import type { ResourceStatus } from "./types";
+import type { ResourceStatus } from "./types.ts";
 
 export const resourceGroups = [
   { id: 0, title: "装备与补给", color: "yellow" },

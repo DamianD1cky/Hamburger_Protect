@@ -11,7 +11,7 @@ major_version = 17
 [auth]
 enabled = true
 site_url = "http://localhost:5173"
-additional_redirect_urls = ["http://localhost:5173", "http://localhost:4173", "https://hamburger.damiandicky.site", "https://hamburger-protect.vercel.app"]
+additional_redirect_urls = ["http://localhost:5173", "http://localhost:4173", "https://hamburger.damiandicky.site", "https://hamburger-protect.vercel.app", "https://veilboard.damiandicky.site"]
 enable_signup = true
 enable_anonymous_sign_ins = false
 minimum_password_length = 15
@@ -23,4 +23,7 @@ verify_jwt = true
 [functions.roll-dice]
 # The handler verifies the bearer with Auth.getUser before any write. This
 # supports modern signing keys that the gateway's legacy JWT verifier rejects.
+verify_jwt = false
+[functions.board-harness]
+# The function validates Auth.getUser and the campaign GM role itself.
 verify_jwt = false

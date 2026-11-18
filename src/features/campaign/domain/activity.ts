@@ -103,6 +103,10 @@ export function activitySummary(event: BoardActivity) {
       return `取消置顶便签${subject}`;
     case "settings_updated":
       return "更新了房间配置";
+    case "harness_blueprint_applied":
+      return title ? `AI 帷幕编排：${title}` : "使用 AI 帷幕编排更新了公告板";
+    case "harness_blueprint_reverted":
+      return "撤销了上一次 AI 帷幕编排";
     case "campaign_archived":
       return "归档了战役";
     case "campaign_updated":

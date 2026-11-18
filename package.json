@@ -24,6 +24,7 @@
     "check:database": "node scripts/tests/database.mjs",
     "check:board-objects": "node scripts/tests/board-objects.mjs",
     "check:board-layout": "node --experimental-strip-types scripts/tests/board-layout.mjs",
+    "check:harness": "node --experimental-strip-types --test scripts/tests/board-harness.mjs",
     "check:clock": "node --experimental-strip-types --test scripts/tests/campaign-clock.mjs",
     "check:help": "node --experimental-strip-types --test scripts/tests/help.mjs",
     "check:dice": "node --experimental-strip-types scripts/tests/dice-engine.mjs && node --experimental-strip-types scripts/tests/dice-transport.mjs && node --experimental-strip-types scripts/tests/dice-geometry.mjs && node --experimental-strip-types scripts/tests/dice-assets.mjs && node --experimental-strip-types scripts/tests/dice-fan.mjs && node --experimental-strip-types scripts/tests/dice-selection.mjs",

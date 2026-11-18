@@ -5,6 +5,10 @@ import {
   type BoardAppearance,
   type BoardAppearanceFiles,
 } from "../../features/campaign/domain/boardAppearance";
+import {
+  boardStylePresetLabels,
+  type BoardStyleTokens,
+} from "../../features/campaign/domain/boardStyleTokens";
 import { AppearancePreview } from "./BoardAppearance";
 import type {
   CampaignBoard,
@@ -25,8 +29,9 @@ export function RoomSettingsDialog({
   onClose,
   onSave,
   onSaveAppearance,
-  onUpload,
-  onClearMedia,
+  onSaveStyleTokens,
+  onUpload: _onUpload,
+  onClearMedia: _onClearMedia,
   onSetPublic,
   onOpenRoster,
   anchor,
@@ -36,6 +41,7 @@ export function RoomSettingsDialog({
   onClose: () => void;
   onSave: (update: CampaignSettingsUpdate) => Promise<CampaignSettingsPatch>;
   onSaveAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles, expected: BoardAppearance) => Promise<unknown>;
+  onSaveStyleTokens?: (tokens: BoardStyleTokens) => Promise<unknown>;
   onUpload: (kind: CampaignMediaKind, file: File) => Promise<unknown>;
   onClearMedia: (kind: CampaignMediaKind) => Promise<unknown>;
   onSetPublic: (isPublic: boolean) => Promise<unknown>;
@@ -47,11 +53,12 @@ export function RoomSettingsDialog({
   const [error, setError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const [appearance, setAppearance] = useState(() => structuredClone(board.settings.appearance));
+  const [styleTokens, setStyleTokens] = useState<BoardStyleTokens>(() => structuredClone(board.settings.styleTokens));
   const [files, setFiles] = useState<BoardAppearanceFiles>({});
   const [previews, setPreviews] = useState<Partial<Record<keyof BoardAppearanceFiles, string>>>({});
   const previewUrls = useRef<string[]>([]);
   const mounted = useRef(true);
-  const baseDraft = useRef(JSON.stringify({ name: board.campaign.name, appearance: board.settings.appearance }));
+  const baseDraft = useRef(JSON.stringify({ name: board.campaign.name, appearance: board.settings.appearance, styleTokens: board.settings.styleTokens }));
   const original = useRef(board);
   const resetOnOpen = useRef(false);
   useEffect(() => {
@@ -64,14 +71,15 @@ export function RoomSettingsDialog({
   useLayoutEffect(() => {
     if (!anchor) return;
     const clean = !Object.keys(files).length &&
-      JSON.stringify({ name: campaignName, appearance }) === baseDraft.current;
+      JSON.stringify({ name: campaignName, appearance, styleTokens }) === baseDraft.current;
     if (clean || resetOnOpen.current) {
       setCampaignName(board.campaign.name);
       setAppearance(structuredClone(board.settings.appearance));
+      setStyleTokens(structuredClone(board.settings.styleTokens));
       setFiles({}); setPreviews({}); setError("");
       previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
       previewUrls.current = [];
-      baseDraft.current = JSON.stringify({ name: board.campaign.name, appearance: board.settings.appearance });
+      baseDraft.current = JSON.stringify({ name: board.campaign.name, appearance: board.settings.appearance, styleTokens: board.settings.styleTokens });
       original.current = board;
       resetOnOpen.current = false;
     }
@@ -129,12 +137,6 @@ export function RoomSettingsDialog({
       setBusy("");
     }
   };
-  const upload =
-    (kind: CampaignMediaKind) => (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      event.target.value = "";
-      if (file) void run(`upload-${kind}`, () => onUpload(kind, file));
-    };
   return (
     <MenuPopover
       anchor={anchor}
@@ -331,38 +333,27 @@ export function RoomSettingsDialog({
                   onClick={() => setAppearance((current) => ({ ...current, frame: value }))}>{label}</button>)}
             </div>
           </fieldset>
-          <div className="media-setting-row">
-            <div>
-              <strong>便签纸张</strong>
-              <span>
-                {board.settings.noteTexturePath
-                  ? "已使用自定义纸张"
-                  : "使用默认彩色便签"}
-              </span>
+          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
+            <legend>卡片与连线风格</legend>
+            <div className="appearance-options">
+              {Object.entries(boardStylePresetLabels).map(([id, preset]) => {
+                const active =
+                  styleTokens.fontPreset === preset.tokens.fontPreset &&
+                  styleTokens.cardStyle === preset.tokens.cardStyle &&
+                  styleTokens.linkStyle === preset.tokens.linkStyle;
+                return (
+                  <button
+                    type="button"
+                    key={id}
+                    aria-pressed={active}
+                    onClick={() => setStyleTokens(structuredClone(preset.tokens))}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
             </div>
-            <label className="text-button file-button">
-              <Upload />
-              {busy === "upload-noteTexture" ? "上传中…" : "选择图片"}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                disabled={!editable || Boolean(busy)}
-                onChange={upload("noteTexture")}
-              />
-            </label>
-            {board.settings.noteTexturePath && (
-              <button
-                type="button"
-                className="text-button danger-button"
-                disabled={Boolean(busy)}
-                onClick={() =>
-                  void run("clear-note", () => onClearMedia("noteTexture"))
-                }
-              >
-                恢复默认
-              </button>
-            )}
-          </div>
+          </fieldset>
         </section>
       </div>
       {error && (
@@ -393,6 +384,9 @@ export function RoomSettingsDialog({
               };
               if (JSON.stringify(appearance) !== JSON.stringify(original.current.settings.appearance) || Object.keys(activeFiles).length) {
                 await onSaveAppearance(appearance, activeFiles, original.current.settings.appearance);
+              }
+              if (onSaveStyleTokens && JSON.stringify(styleTokens) !== JSON.stringify(original.current.settings.styleTokens)) {
+                await onSaveStyleTokens(styleTokens);
               }
               resetOnOpen.current = true;
               onClose();

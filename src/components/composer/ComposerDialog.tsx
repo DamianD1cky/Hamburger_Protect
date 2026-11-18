@@ -1,15 +1,42 @@
-import { ClipboardList, Image as ImageIcon, MessageSquare, Send, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ClipboardList,
+  Image as ImageIcon,
+  MessageSquare,
+  Pin,
+  RotateCcw,
+  RotateCw,
+  Send,
+  Trash2,
+} from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
+import {
+  resolveNoteColorHex,
+  resolvePinColorVisual,
+} from "../../features/campaign/domain/campaignSettings";
+import {
+  defaultCardVisualEffect,
+  normalizeCardVisualEffect,
+  type CardVisualEffect,
+} from "../../features/campaign/domain/cardEffects";
 import type {
   CampaignBoard,
   ComposerTarget,
-  NoteColor,
   NoteDraft,
-  PinColor,
   QuestDraft,
 } from "../../features/campaign/domain/types";
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { blobToFile, compressImage } from "../../lib/imageCompress";
+import { CardEffectPicker } from "../board/CardEffectLayer";
+import { ColorField, type ColorPresetOption } from "../board/ColorField";
+import { clampNoteScale } from "../board/NoteCard";
 import { PaperDialog } from "./PaperDialog";
 
 export type ComposeKind = "note" | "quest";
@@ -19,6 +46,7 @@ export interface ComposerState {
   target: ComposerTarget | null;
   sourceRect: DOMRect | null;
 }
+
 interface ComposerDialogProps {
   state: ComposerState;
   board: CampaignBoard;
@@ -26,24 +54,39 @@ interface ComposerDialogProps {
   onSaveQuest: (draft: QuestDraft, id?: string) => Promise<void>;
   onSaveNote: (draft: NoteDraft, id?: string) => Promise<void>;
   onDelete: (target: ComposerTarget) => Promise<void>;
-  /** 返回存储路径；失败抛错。 */
   onUploadPhoto: (file: File) => Promise<string>;
+  onNoteLayer?: (noteId: string, direction: -1 | 1) => Promise<unknown>;
+  onToggleNotePin?: (noteId: string, pinned: boolean) => Promise<unknown>;
 }
-const colors: Array<{ value: NoteColor; label: string }> = [
-  { value: "yellow", label: "黄色" },
-  { value: "pink", label: "粉色" },
-  { value: "blue", label: "蓝色" },
-  { value: "green", label: "绿色" },
-];
-const pinColors: Array<{ value: PinColor; label: string }> = [
-  { value: "red", label: "红色" },
-  { value: "blue", label: "蓝色" },
-  { value: "green", label: "绿色" },
-  { value: "yellow", label: "黄色" },
-  { value: "black", label: "黑色" },
+
+const NOTE_COLOR_PRESETS: readonly ColorPresetOption[] = [
+  { value: "#f8e98e", label: "经典柠檬黄" },
+  { value: "#f4c7d0", label: "樱花粉" },
+  { value: "#c2dff8", label: "晴空蓝" },
+  { value: "#c9e8c2", label: "薄荷绿" },
+  { value: "#ead6b1", label: "陈年羊皮纸" },
+  { value: "#0b2530", label: "全息投影深青" },
 ];
 
-// Mounted per opening: background synchronization must never reset an unsaved draft.
+const PIN_COLOR_PRESETS: readonly ColorPresetOption[] = [
+  { value: "#e72b3c", label: "图钉朱砂红" },
+  { value: "#2785d8", label: "图钉钴蓝" },
+  { value: "#36a467", label: "图钉松石绿" },
+  { value: "#f1c933", label: "图钉琥珀黄" },
+  { value: "#343536", label: "图钉曜石黑" },
+  { value: "#2be4dc", label: "图钉全息青" },
+];
+
+function normalizeAngle(deg: number): number {
+  if (!Number.isFinite(deg)) return 0;
+  return Math.max(-180, Math.min(180, Math.round(deg)));
+}
+
+/**
+ * 便签全功能统一编辑页（点击任意便签打开）：
+ * 集中承载便签内容、羊皮纸/全息投影/烈焰烧焦/AI 着色器预设、全站统一 RGB+#hex 便签与图钉取色、
+ * 旋转角度、缩放倍率、叠放图层调整、GM 置顶以及删除操作。
+ */
 export function ComposerDialog({
   state,
   board,
@@ -52,6 +95,8 @@ export function ComposerDialog({
   onSaveNote,
   onDelete,
   onUploadPhoto,
+  onNoteLayer,
+  onToggleNotePin,
 }: ComposerDialogProps) {
   const quest =
     state.target?.kind === "quest"
@@ -61,24 +106,44 @@ export function ComposerDialog({
     state.target?.kind === "note"
       ? board.notes.find((item) => item.id === state.target?.id)
       : undefined;
+
   const [kind, setKind] = useState(state.kind);
   const [title, setTitle] = useState(quest?.title ?? note?.title ?? "");
   const [body, setBody] = useState(quest?.body ?? note?.body ?? "");
   const [assigneeName, setAssigneeName] = useState(quest?.assigneeName ?? "");
   const [due, setDue] = useState(quest?.due ?? "");
-  const [color, setColor] = useState<NoteColor>(note?.color ?? "yellow");
-  const [pinColor, setPinColor] = useState<PinColor>(note?.pinColor ?? "red");
-  const [photoPath, setPhotoPath] = useState<string | null>(note?.imagePath ?? null);
+
+  const [colorHex, setColorHex] = useState<string>(() =>
+    resolveNoteColorHex(note?.color ?? "yellow"),
+  );
+  const [pinColorHex, setPinColorHex] = useState<string>(
+    () => resolvePinColorVisual(note?.pinColor ?? "red").fill,
+  );
+  const [rotation, setRotation] = useState<number>(() =>
+    normalizeAngle(note?.rotation ?? 0),
+  );
+  const [scale, setScale] = useState<number>(() => clampNoteScale(note?.scale));
+  const [effect, setEffect] = useState<CardVisualEffect>(() =>
+    normalizeCardVisualEffect(note?.effect ?? defaultCardVisualEffect()),
+  );
+  const [pinned, setPinned] = useState<boolean>(Boolean(note?.pinned));
+
+  const [photoPath, setPhotoPath] = useState<string | null>(
+    note?.imagePath ?? null,
+  );
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const hasPhoto = Boolean(photoPath || photoFile);
   const previewSrc = photoPreview ?? note?.imageUrl ?? null;
+
   const imeGuard = useImeEnterGuard();
   const [submitting, setSubmitting] = useState(false);
+  const [layerBusy, setLayerBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [closing, setClosing] = useState(false);
   const closeTimer = useRef<number | undefined>(undefined);
+
   const canManage =
     board.viewer.role === "gm" && board.campaign.status === "active";
   const canEdit =
@@ -87,6 +152,7 @@ export function ComposerDialog({
       ? canManage
       : board.viewer.role !== "observer" &&
         (!note || note.authorId === board.viewer.id || canManage));
+
   const heading = !canEdit
     ? kind === "quest"
       ? "任务委托详情"
@@ -94,10 +160,11 @@ export function ComposerDialog({
     : state.target
       ? kind === "quest"
         ? "编辑任务委托"
-        : "编辑便签"
+        : "编辑便签与外观着色"
       : kind === "quest"
         ? "发布任务委托"
-        : "填写便签";
+        : "填写新便签";
+
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   useEffect(
     () => () => {
@@ -105,6 +172,7 @@ export function ComposerDialog({
     },
     [photoPreview],
   );
+
   const choosePhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -129,6 +197,7 @@ export function ComposerDialog({
       setError("照片处理失败，请换一张试试");
     }
   };
+
   const clearPhoto = () => {
     setPhotoFile(null);
     setPhotoPath(null);
@@ -137,6 +206,7 @@ export function ComposerDialog({
       return null;
     });
   };
+
   const requestClose = () => {
     if (closing) return;
     const animate =
@@ -150,6 +220,19 @@ export function ComposerDialog({
     setClosing(true);
     closeTimer.current = window.setTimeout(onClose, 220);
   };
+
+  const adjustLayer = async (dir: -1 | 1) => {
+    if (!note || !onNoteLayer || layerBusy || submitting) return;
+    setLayerBusy(true);
+    try {
+      await onNoteLayer(note.id, dir);
+    } catch {
+      setError("调整图层顺序失败，请重试。");
+    } finally {
+      setLayerBusy(false);
+    }
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting || !canEdit || !title.trim()) return;
@@ -157,7 +240,7 @@ export function ComposerDialog({
     setSubmitting(true);
     setError("");
     try {
-      if (kind === "quest")
+      if (kind === "quest") {
         await onSaveQuest(
           {
             title: title.trim(),
@@ -167,31 +250,43 @@ export function ComposerDialog({
           },
           state.target?.id,
         );
-      else {
+      } else {
         let imagePath = photoPath;
         if (photoFile) imagePath = await onUploadPhoto(photoFile);
         await onSaveNote(
           {
             title: title.trim(),
             body: body.trim(),
-            color,
-            pinColor,
+            color: colorHex,
+            pinColor: pinColorHex,
             imagePath,
+            rotation: normalizeAngle(rotation),
+            scale: clampNoteScale(scale),
+            effect,
           },
           state.target?.id,
         );
+        if (
+          note &&
+          canManage &&
+          onToggleNotePin &&
+          pinned !== Boolean(note.pinned)
+        ) {
+          await onToggleNotePin(note.id, pinned);
+        }
       }
       requestClose();
-    } catch (error) {
+    } catch (err) {
       setError(
-        error instanceof Error
-          ? `${error.message} 草稿已保留。`
+        err instanceof Error
+          ? `${err.message} 草稿已保留。`
           : "保存失败，请检查网络或修改权限后重试。草稿已保留。",
       );
     } finally {
       setSubmitting(false);
     }
   };
+
   const remove = async () => {
     if (!confirmDelete) {
       setConfirmDelete(true);
@@ -209,10 +304,11 @@ export function ComposerDialog({
       setSubmitting(false);
     }
   };
+
   return (
     <PaperDialog
       title={heading}
-      className="composer-dialog"
+      className="composer-dialog note-studio-dialog"
       sourceRect={state.sourceRect}
       closing={closing}
       onClose={() => {
@@ -239,7 +335,7 @@ export function ComposerDialog({
         </div>
       ) : (
         <>
-          {!state.target && canManage && (
+          {!state.target && canManage && !board.settings.hiddenSections.includes("tasks") && (
             <div className="compose-type" role="tablist" aria-label="发布类型">
               <button
                 type="button"
@@ -263,6 +359,7 @@ export function ComposerDialog({
               </button>
             </div>
           )}
+
           <form onSubmit={submit} {...imeGuard}>
             <fieldset className="editor-fields" disabled={submitting}>
               <label className="field">
@@ -274,6 +371,7 @@ export function ComposerDialog({
                   required
                 />
               </label>
+
               <label className="field">
                 <span>内容</span>
                 <textarea
@@ -281,10 +379,11 @@ export function ComposerDialog({
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   maxLength={1000}
-                  rows={4}
+                  rows={3}
                   required={kind === "quest" || !hasPhoto}
                 />
               </label>
+
               {kind === "quest" && (
                 <div className="task-fields">
                   <label className="field">
@@ -306,76 +405,205 @@ export function ComposerDialog({
                   </label>
                 </div>
               )}
+
               {kind === "note" && (
-                <fieldset className="color-field">
-                  <legend>便签颜色</legend>
-                  {colors.map((option) => (
-                    <label key={option.value} title={option.label}>
+                <div className="note-studio-sections">
+                  <section className="hig-editor-group">
+                    <CardEffectPicker
+                      mode="note"
+                      value={effect}
+                      basePreviewHex={colorHex}
+                      disabled={submitting}
+                      onChange={setEffect}
+                      onRecommendColors={(recNote, recPin) => {
+                        setColorHex(recNote);
+                        setPinColorHex(recPin);
+                      }}
+                    />
+                  </section>
+
+                  <section className="hig-editor-group note-colors-grid">
+                    <ColorField
+                      label="便签底色"
+                      accessibleLabel="便签颜色"
+                      value={colorHex}
+                      onChange={setColorHex}
+                      disabled={submitting}
+                      presets={NOTE_COLOR_PRESETS}
+                    />
+                    <ColorField
+                      label="图钉颜色"
+                      accessibleLabel="图钉颜色"
+                      value={pinColorHex}
+                      onChange={setPinColorHex}
+                      disabled={submitting}
+                      presets={PIN_COLOR_PRESETS}
+                    />
+                  </section>
+
+                  <section className="hig-editor-group note-transform-grid">
+                    <div className="note-transform-control">
+                      <div className="note-transform-head">
+                        <span>
+                          旋转角度 <strong>{rotation}°</strong>
+                        </span>
+                        <span className="note-transform-btns">
+                          <button
+                            type="button"
+                            aria-label="逆时针旋转便签 15°"
+                            onClick={() =>
+                              setRotation((r) => normalizeAngle(r - 15))
+                            }
+                          >
+                            <RotateCcw aria-hidden="true" />
+                            15°
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="便签角度归零"
+                            onClick={() => setRotation(0)}
+                          >
+                            0°
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="顺时针旋转便签 15°"
+                            onClick={() =>
+                              setRotation((r) => normalizeAngle(r + 15))
+                            }
+                          >
+                            <RotateCw aria-hidden="true" />
+                            15°
+                          </button>
+                        </span>
+                      </div>
                       <input
-                        type="radio"
-                        name="color"
-                        aria-label={option.label}
-                        checked={color === option.value}
-                        onChange={() => setColor(option.value)}
+                        type="range"
+                        aria-label="便签旋转角度滑杆"
+                        min={-180}
+                        max={180}
+                        step={1}
+                        value={rotation}
+                        onChange={(e) => setRotation(Number(e.target.value))}
                       />
-                      <span className={`swatch swatch-${option.value}`} />
-                    </label>
-                  ))}
-                </fieldset>
-              )}
-              {kind === "note" && (
-                <fieldset className="color-field pin-color-field">
-                  <legend>图钉颜色</legend>
-                  {pinColors.map((option) => (
-                    <label key={option.value} title={option.label}>
-                      <input
-                        type="radio"
-                        name="pinColor"
-                        aria-label={`图钉${option.label}`}
-                        checked={pinColor === option.value}
-                        onChange={() => setPinColor(option.value)}
-                      />
-                      <span className={`swatch pin-swatch-${option.value}`} />
-                    </label>
-                  ))}
-                </fieldset>
-              )}
-              {kind === "note" && (
-                <div className="note-photo-field">
-                  <span className="note-photo-label">线索照片（可选）</span>
-                  {previewSrc ? (
-                    <div className="note-photo-preview">
-                      <img src={previewSrc} alt="待上传的照片预览" />
-                      <button
-                        type="button"
-                        className="text-button danger-button"
-                        onClick={clearPhoto}
-                      >
-                        移除照片
-                      </button>
                     </div>
-                  ) : (
-                    <label className="text-button file-button">
-                      <ImageIcon aria-hidden="true" />
-                      插入照片
+
+                    <div className="note-transform-control">
+                      <div className="note-transform-head">
+                        <span>
+                          缩放大小{" "}
+                          <strong>{Math.round(scale * 100)}%</strong>
+                        </span>
+                        <span className="note-transform-btns">
+                          <button
+                            type="button"
+                            aria-label="恢复便签 100% 大小"
+                            onClick={() => setScale(1)}
+                          >
+                            100%
+                          </button>
+                        </span>
+                      </div>
                       <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        onChange={(event) => void choosePhoto(event)}
+                        type="range"
+                        aria-label="便签缩放大小滑杆"
+                        min={0.6}
+                        max={2.2}
+                        step={0.05}
+                        value={scale}
+                        onChange={(e) =>
+                          setScale(clampNoteScale(Number(e.target.value)))
+                        }
                       />
-                    </label>
+                      <small className="note-transform-tip">
+                        也可在公告板上直接拖拽便签右下角箭头缩放
+                      </small>
+                    </div>
+                  </section>
+
+                  {note && (
+                    <section className="hig-editor-group note-order-pin-row">
+                      {onNoteLayer && (
+                        <div className="note-layer-studio">
+                          <span>叠放图层顺序（当前层 {note.layer}）</span>
+                          <div className="note-transform-btns">
+                            <button
+                              type="button"
+                              disabled={layerBusy}
+                              onClick={() => void adjustLayer(1)}
+                            >
+                              <ChevronUp aria-hidden="true" />
+                              上移一层
+                            </button>
+                            <button
+                              type="button"
+                              disabled={layerBusy}
+                              onClick={() => void adjustLayer(-1)}
+                            >
+                              <ChevronDown aria-hidden="true" />
+                              下移一层
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {canManage && (
+                        <div className="note-pin-toggle-studio">
+                          <span>
+                            <Pin aria-hidden="true" /> 置顶重要便签
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-label="置顶便签"
+                            aria-checked={pinned}
+                            className={
+                              pinned ? "hig-switch is-on" : "hig-switch"
+                            }
+                            onClick={() => setPinned((v) => !v)}
+                          >
+                            <span className="hig-switch-thumb" />
+                          </button>
+                        </div>
+                      )}
+                    </section>
                   )}
-                  <small className="note-photo-hint">
-                    上传前会压到长边 1600px；带照片的便签按拍立得样式显示，标题作为照片下方的说明。
-                  </small>
+
+                  <div className="note-photo-field">
+                    <span className="note-photo-label">线索照片（可选）</span>
+                    {previewSrc ? (
+                      <div className="note-photo-preview">
+                        <img src={previewSrc} alt="待上传的照片预览" />
+                        <button
+                          type="button"
+                          className="text-button danger-button"
+                          onClick={clearPhoto}
+                        >
+                          移除照片
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="text-button file-button">
+                        <ImageIcon aria-hidden="true" />
+                        插入照片
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={(event) => void choosePhoto(event)}
+                        />
+                      </label>
+                    )}
+                  </div>
                 </div>
               )}
             </fieldset>
+
             {error && (
               <p className="access-error" role="alert">
                 {error}
               </p>
             )}
+
             <footer className="composer-actions">
               {state.target && (
                 <button

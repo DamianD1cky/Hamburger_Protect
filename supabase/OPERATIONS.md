@@ -158,6 +158,14 @@ user metadata 自动授权，不在前端放管理密钥。撤销时由数据库
 
 默认跨域策略同时允许 `localhost` 与 `127.0.0.1` 的 5173、5174 和 4173 端口；显式配置 `DICE_ALLOWED_ORIGINS` 会覆盖默认列表。请求头使用同版本 SDK 的 `@supabase/supabase-js/cors` 清单，避免 SDK 升级后预检遗漏。浏览器请求被跨域策略阻止时服务器可能没有收到投掷，Node 联机测试不会执行浏览器预检；验证应包含从实际页面地址触发的请求。
 
+VeilBoard 独立项目使用 `https://veilboard.damiandicky.site`。默认允许来源已加入该域名，Harness 复用这套来源策略；如果托管 Secret 已显式设置 `DICE_ALLOWED_ORIGINS` 或 `HARNESS_ALLOWED_ORIGINS`，应在现有列表追加该域名后部署对应 Edge Function。仅部署 Vercel 前端不会更新 Supabase 函数或 Auth Redirect URLs。
+
+VeilBoard 使用独立 Supabase `eacuvvrejnlaavaaulaf`；原站的数据库、账号和房间保留在原项目。VeilBoard 迁移使用 `npm run supabase:push:dry -- --project-ref eacuvvrejnlaavaaulaf` 和 `npm run supabase:push -- --project-ref eacuvvrejnlaavaaulaf` 显式选择目标，不依赖工作区原有链接。新空库会建立迁移记录并逐条执行基线与增量迁移。
+
+已执行过早期 Harness 迁移的数据库，还需部署 `20261118020000_note_materials_scale.sql`，补齐 RGB 便签颜色、缩放、材质及编排更新／回退接口。先执行这条增量迁移再发布对应前端；仅修改已经登记的历史迁移不会更新线上数据库。
+
+发布当前 Harness 工作区前，核对新增 `board_ai_harness`、`atomic_panels_and_burnt_shader` 迁移和 `board-harness` 函数是否已部署；当前分支尚未推送的本地修改不属于 Git 自动部署版本。Vercel 的公开环境变量分别设置，模型密钥及 service role key 继续只保存在 Supabase 服务端。
+
 每次请求以客户端 UUID 幂等；一项 GM 检定中每位玩家仅允许一次有效响应。每人每分钟最多 30 次新投掷，每次初始骰子最多 100 颗、随机抽取最多 1000 次。爆炸、重投的安全上限不会被 3D 动画改变。公开结果不能再改成秘密；暗骰者的回执、历史和实时 payload 不包含结果。
 
 ### 7. R10 公开参观与访客留言

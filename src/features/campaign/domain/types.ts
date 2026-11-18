@@ -2,10 +2,13 @@ export type CampaignRole = "gm" | "player" | "observer";
 export type CampaignStatus = "active" | "archived";
 export type EmployeePosition = string;
 
-import type { BoardModuleLayout } from "./boardModules";
-import type { BoardAppearance } from "./boardAppearance";
-import type { CampaignClockConfig } from "./campaignClock";
-import type { EventClock } from "./eventClock";
+import type { BoardModuleLayout } from "./boardModules.ts";
+import type { BoardAppearance } from "./boardAppearance.ts";
+import type { BoardStyleTokens } from "./boardStyleTokens.ts";
+import type { CardVisualEffect } from "./cardEffects.ts";
+import type { CampaignClockConfig } from "./campaignClock.ts";
+import type { BoardCustomPanel } from "./customPanels.ts";
+import type { EventClock } from "./eventClock.ts";
 
 export type CampaignSectionKey =
   "inventory" | "tasks" | "shifts" | "index" | "activity" | "safety" | "notes";
@@ -18,8 +21,10 @@ export type QuestStatus =
   | "completed"
   | "failed";
 export type ResourceStatus = "ok" | "low" | "out";
-export type PinColor = "red" | "blue" | "green" | "yellow" | "black";
-export type NoteColor = "yellow" | "pink" | "blue" | "green";
+/** 支持历史语义色名与任意 #rrggbb 色号。 */
+export type PinColor = "red" | "blue" | "green" | "yellow" | "black" | (string & {});
+/** 支持历史语义色名与任意 #rrggbb 色号。 */
+export type NoteColor = "yellow" | "pink" | "blue" | "green" | (string & {});
 
 export interface CampaignSummary {
   id: string;
@@ -87,6 +92,10 @@ export interface BoardNote {
   x: number;
   y: number;
   rotation: number;
+  /** 便签缩放倍率（0.6..2.2，默认 1）。 */
+  scale?: number;
+  /** 便签专属材质与 Shader（经典 / 羊皮纸预设 / 全息投影预设 / 烈焰烧焦 / AI 着色器）。 */
+  effect?: CardVisualEffect | null;
   createdAt: string;
   authorId: string;
   authorName: string;
@@ -154,6 +163,8 @@ export interface CampaignSettings {
   backgroundUrl: string | null;
   noteTextureUrl: string | null;
   appearance: BoardAppearance;
+  styleTokens: BoardStyleTokens;
+  customPanels: BoardCustomPanel[];
   boardTextureUrl: string | null;
   clock: CampaignClockConfig;
 }
@@ -235,6 +246,9 @@ export interface NoteDraft {
   pinColor: PinColor;
   /** null 表示这张便签不带照片。 */
   imagePath: string | null;
+  rotation?: number;
+  scale?: number;
+  effect?: CardVisualEffect | null;
 }
 
 export type ComposerTarget =

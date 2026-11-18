@@ -1,4 +1,4 @@
-import { burgerIndexInfo, burgerIndexSteps } from "./burgerIndex";
+import { burgerIndexInfo, burgerIndexSteps } from "./burgerIndex.ts";
 
 export interface EventClockStage {
   label: string;

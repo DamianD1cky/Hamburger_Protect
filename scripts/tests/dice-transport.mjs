@@ -7,13 +7,23 @@ import {
 import { diceInvocationError } from "../../src/features/dice/invocationError.ts";
 
 const origins = diceAllowedOrigins();
+for (const origin of [
+  "https://hamburger.damiandicky.site",
+  "https://hamburger-protect.vercel.app",
+  "https://veilboard.damiandicky.site",
+]) {
+  assert.equal(diceCorsHeaders(origin, origins, corsHeaders)["Access-Control-Allow-Origin"], origin);
+}
 for (const hostname of ["localhost", "127.0.0.1"]) {
   for (const port of [5173, 5174, 4173]) {
     const origin = `http://${hostname}:${port}`;
     assert.equal(diceCorsHeaders(origin, origins, corsHeaders)["Access-Control-Allow-Origin"], origin);
   }
 }
-for (const origin of ["http://localhost:5174.attacker.test", "https://evil.example", "http://localhost:5175"]) {
+for (const origin of [
+  "http://localhost:5174.attacker.test", "https://evil.example", "http://localhost:5175",
+  "https://veilboard.damiandicky.site.attacker.test", "https://arbitrary-preview.vercel.app",
+]) {
   assert.equal(diceCorsHeaders(origin, origins, corsHeaders)["Access-Control-Allow-Origin"], "");
 }
 const configured = diceAllowedOrigins("https://custom.example");

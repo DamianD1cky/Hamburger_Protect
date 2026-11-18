@@ -26,14 +26,32 @@ import type {
 import type {
   BoardModuleKey,
   BoardModuleLayout,
+  BoardModuleLayoutEntry,
 } from "../domain/boardModules";
+import type { CardVisualEffect } from "../domain/cardEffects";
+import type { BoardStyleTokens } from "../domain/boardStyleTokens";
 import type { CampaignClockConfig } from "../domain/campaignClock";
+import {
+  applyPanelBlockInteraction,
+  type BoardCustomPanel,
+  type CustomPanelInteraction,
+} from "../domain/customPanels";
 import { validateEventClock, type EventClock, type EventClockDraft } from "../domain/eventClock";
 import { applySettingsPatch } from "../domain/settingsUpdate";
 import { normalizeStickerRotation, stickerPosition } from "../domain/stickerGeometry";
+import type {
+  BoardUndoSnapshot,
+  CompiledCommitPayload,
+} from "../../harness/schema";
 
 type PendingNoteMove = { revision: number; x: number; y: number };
-type PendingModuleMove = { revision: number; x: number; y: number };
+type PendingModuleMove = {
+  revision: number;
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+};
 type PendingSticker = { revision: number; sticker: BoardSticker };
 type PendingClockSave = {
   revision: number;
@@ -53,8 +71,15 @@ function withPendingPositions(
     return board;
   }
   const moduleLayout = { ...board.settings.moduleLayout };
-  pendingModules.forEach(({ x, y }, key) => {
-    moduleLayout[key] = { x, y };
+  pendingModules.forEach(({ x, y, w, h }, key) => {
+    const prev = moduleLayout[key] ?? {};
+    moduleLayout[key] = {
+      ...prev,
+      x,
+      y,
+      ...(w !== undefined ? { w } : {}),
+      ...(h !== undefined ? { h } : {}),
+    };
   });
   return {
     ...board,
@@ -242,7 +267,7 @@ export function useCampaignBoard(
 
   const setCachedModulePosition = (
     key: BoardModuleKey,
-    position: { x: number; y: number } | null,
+    position: BoardModuleLayoutEntry | null,
   ) => {
     queryClient.setQueryData<CampaignBoard>(boardKey, (current) => {
       if (!current) return current;
@@ -268,10 +293,11 @@ export function useCampaignBoard(
     const previous =
       queryClient.getQueryData<CampaignBoard>(boardKey)?.settings
         .moduleLayout[key] ?? null;
-    moduleMoveRevisions.current.set(key, { revision, x, y });
+    const nextEntry: BoardModuleLayoutEntry = { ...(previous ?? {}), x, y };
+    moduleMoveRevisions.current.set(key, { revision, ...nextEntry });
     await queryClient.cancelQueries({ queryKey: boardKey });
     if (moduleMoveRevisions.current.get(key)?.revision === revision) {
-      setCachedModulePosition(key, { x, y });
+      setCachedModulePosition(key, nextEntry);
     }
     try {
       const saved = await repository.moveBoardModule(
@@ -288,7 +314,63 @@ export function useCampaignBoard(
         throw new Error("登录账号已变更，请重新进入战役。");
       }
       if (moduleMoveRevisions.current.get(key)?.revision === revision) {
-        setCachedModulePosition(key, { x, y });
+        setCachedModulePosition(key, saved[key] ?? nextEntry);
+      }
+      return saved;
+    } catch (error) {
+      if (moduleMoveRevisions.current.get(key)?.revision === revision) {
+        setCachedModulePosition(key, previous);
+      }
+      throw error;
+    } finally {
+      if (moduleMoveRevisions.current.get(key)?.revision === revision) {
+        moduleMoveRevisions.current.delete(key);
+      }
+    }
+  };
+
+  const resizeBoardModule = async (
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) => {
+    const revision =
+      (moduleMoveRevisions.current.get(key)?.revision ?? 0) + 1;
+    const previous =
+      queryClient.getQueryData<CampaignBoard>(boardKey)?.settings
+        .moduleLayout[key] ?? null;
+    const nextEntry: BoardModuleLayoutEntry = {
+      ...(previous ?? {}),
+      x,
+      y,
+      w,
+      h,
+    };
+    moduleMoveRevisions.current.set(key, { revision, ...nextEntry });
+    await queryClient.cancelQueries({ queryKey: boardKey });
+    if (moduleMoveRevisions.current.get(key)?.revision === revision) {
+      setCachedModulePosition(key, nextEntry);
+    }
+    try {
+      const saved = await repository.resizeBoardModule(
+        campaignId,
+        key,
+        x,
+        y,
+        w,
+        h,
+      );
+      if (
+        cloudEnabled &&
+        getSupabaseAppSession()?.user.authUserId !==
+          session?.user.authUserId
+      ) {
+        throw new Error("登录账号已变更，请重新进入战役。");
+      }
+      if (moduleMoveRevisions.current.get(key)?.revision === revision) {
+        setCachedModulePosition(key, saved[key] ?? nextEntry);
       }
       return saved;
     } catch (error) {
@@ -572,6 +654,8 @@ export function useCampaignBoard(
     saveNote: (draft: NoteDraft, noteId?: string) =>
       commit(() => repository.saveNote(campaignId, draft, noteId)),
     moveNote,
+    resizeNote: (noteId: string, scale: number) =>
+      commit(() => repository.resizeNote(campaignId, noteId, scale)),
     deleteNote: (noteId: string) =>
       commit(() => repository.deleteNote(campaignId, noteId)),
     setNotePinned: (noteId: string, pinned: boolean) =>
@@ -606,6 +690,123 @@ export function useCampaignBoard(
       return saved;
     },
     moveBoardModule,
+    resizeBoardModule,
+    setBoardModuleEffect: async (
+      key: BoardModuleKey,
+      effect: CardVisualEffect | null,
+    ) => {
+      const saved = await repository.setBoardModuleEffect(
+        campaignId,
+        key,
+        effect,
+      );
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
+        current
+          ? mergePendingPositions({
+              ...current,
+              settings: { ...current.settings, moduleLayout: saved },
+            })
+          : current,
+      );
+      return saved;
+    },
+    saveBoardStyleTokens: async (tokens: BoardStyleTokens) => {
+      const saved = await repository.saveBoardStyleTokens(campaignId, tokens);
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
+        current
+          ? mergePendingPositions({
+              ...current,
+              settings: { ...current.settings, styleTokens: saved },
+            })
+          : current,
+      );
+      return saved;
+    },
+    saveCustomPanels: async (panels: BoardCustomPanel[]) => {
+      const saved = await repository.saveCustomPanels(campaignId, panels);
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
+        current
+          ? mergePendingPositions({
+              ...current,
+              settings: { ...current.settings, customPanels: saved },
+            })
+          : current,
+      );
+      return saved;
+    },
+    interactCustomPanel: async (
+      panelId: string,
+      blockId: string,
+      interaction: CustomPanelInteraction,
+    ) => {
+      const previous = queryClient.getQueryData<CampaignBoard>(boardKey)
+        ?.settings.customPanels;
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
+        current
+          ? mergePendingPositions({
+              ...current,
+              settings: {
+                ...current.settings,
+                customPanels: current.settings.customPanels.map((p) =>
+                  p.id === panelId
+                    ? applyPanelBlockInteraction(p, blockId, interaction)
+                    : p,
+                ),
+              },
+            })
+          : current,
+      );
+      try {
+        const saved = await repository.interactCustomPanel(
+          campaignId,
+          panelId,
+          blockId,
+          interaction,
+        );
+        queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
+          current
+            ? mergePendingPositions({
+                ...current,
+                settings: { ...current.settings, customPanels: saved },
+              })
+            : current,
+        );
+        return saved;
+      } catch (error) {
+        if (previous) {
+          queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
+            current
+              ? mergePendingPositions({
+                  ...current,
+                  settings: { ...current.settings, customPanels: previous },
+                })
+              : current,
+          );
+        }
+        throw error;
+      }
+    },
+    applyBoardBlueprint: async (payload: CompiledCommitPayload) => {
+      const { board: next, receipt } = await repository.applyBoardBlueprint(
+        campaignId,
+        payload,
+      );
+      if (
+        cloudEnabled &&
+        getSupabaseAppSession()?.user.authUserId !== session?.user.authUserId
+      ) {
+        throw new Error("登录账号已变更，请重新进入战役。");
+      }
+      await queryClient.cancelQueries({ queryKey: boardKey });
+      queryClient.setQueryData(boardKey, mergePendingPositions(next));
+      return { board: next, receipt };
+    },
+    rollbackBoardBlueprint: (snapshot: BoardUndoSnapshot) =>
+      commit(() => repository.rollbackBoardBlueprint(campaignId, snapshot)),
     saveCampaignClock,
     saveBoardAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles, expected: BoardAppearance) =>
       commit(() => repository.saveBoardAppearance(campaignId, appearance, files, expected)),

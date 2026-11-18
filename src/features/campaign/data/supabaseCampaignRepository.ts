@@ -1,6 +1,21 @@
 import type { CampaignRepository } from "../domain/repository";
 import { legacyIndexClock, type EventClock, type EventClockDraft } from "../domain/eventClock";
 import { defaultBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
+import {
+  normalizeCardVisualEffect,
+  type CardVisualEffect,
+} from "../domain/cardEffects";
+import { normalizeBoardStyleTokens, type BoardStyleTokens } from "../domain/boardStyleTokens";
+import {
+  normalizeCustomPanels,
+  type BoardCustomPanel,
+  type CustomPanelInteraction,
+} from "../domain/customPanels";
+import type {
+  BlueprintReceipt,
+  BoardUndoSnapshot,
+  CompiledCommitPayload,
+} from "../../harness/schema";
 import { compressImage, blobToFile } from "../../../lib/imageCompress";
 import type {
   CampaignBoard,
@@ -99,6 +114,8 @@ interface RemoteBoard {
     x: number;
     y: number;
     rotation: number;
+    scale?: number | null;
+    effect?: unknown;
     created_at: string;
     author_id: string;
     pinned: boolean;
@@ -109,6 +126,8 @@ interface RemoteBoard {
   }>;
   settings: {
     appearance?: BoardAppearance | null;
+    style_tokens?: Partial<BoardStyleTokens> | null;
+    custom_panels?: unknown[] | null;
     section_titles: Partial<Record<CampaignSectionKey, string>>;
     section_colors?: Partial<Record<CampaignSectionKey, string>> | null;
     resource_titles?: Partial<Record<string, string>> | null;
@@ -320,6 +339,11 @@ async function toBoard(
         x: note.x,
         y: note.y,
         rotation: note.rotation,
+        scale:
+          typeof note.scale === "number" && Number.isFinite(note.scale)
+            ? note.scale
+            : 1,
+        effect: note.effect ? normalizeCardVisualEffect(note.effect) : null,
         createdAt: note.created_at,
         authorId: note.author_id,
         authorName:
@@ -349,6 +373,8 @@ async function toBoard(
       backgroundUrl,
       noteTextureUrl,
       appearance,
+      styleTokens: normalizeBoardStyleTokens(remote.settings.style_tokens),
+      customPanels: normalizeCustomPanels(remote.settings.custom_panels),
       boardTextureUrl,
       clock: normalizeCampaignClock(remote.settings.clock_config),
     },
@@ -513,9 +539,27 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_color: draft.color,
       p_x: 1098 + (count % 2) * 36,
       p_y: 605 + (count % 3) * 168,
-      p_rotation: [-2.4, 1.8, -0.8][count % 3],
+      p_rotation:
+        draft.rotation !== undefined && Number.isFinite(draft.rotation)
+          ? draft.rotation
+          : id
+            ? null
+            : [-2.4, 1.8, -0.8][count % 3],
       p_image_path: draft.imagePath ?? null,
       p_pin_color: draft.pinColor,
+      p_scale:
+        draft.scale !== undefined && Number.isFinite(draft.scale)
+          ? draft.scale
+          : null,
+      p_effect: draft.effect ?? null,
+    });
+    return this.getBoard(campaignId);
+  }
+  async resizeNote(campaignId: string, id: string, scale: number) {
+    await rpc("resize_note", {
+      p_campaign_id: campaignId,
+      p_id: id,
+      p_scale: scale,
     });
     return this.getBoard(campaignId);
   }
@@ -708,6 +752,77 @@ class SupabaseCampaignRepository implements CampaignRepository {
       p_x: x,
       p_y: y,
     });
+  }
+  async resizeBoardModule(
+    campaignId: string,
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) {
+    return rpc<BoardModuleLayout>("resize_board_module", {
+      p_campaign_id: campaignId,
+      p_key: key,
+      p_x: x,
+      p_y: y,
+      p_w: w,
+      p_h: h,
+    });
+  }
+  async setBoardModuleEffect(
+    campaignId: string,
+    key: BoardModuleKey,
+    effect: CardVisualEffect | null,
+  ) {
+    return rpc<BoardModuleLayout>("set_board_module_effect", {
+      p_campaign_id: campaignId,
+      p_key: key,
+      p_effect: effect,
+    });
+  }
+  async saveBoardStyleTokens(campaignId: string, tokens: BoardStyleTokens) {
+    const saved = await rpc<BoardStyleTokens>("update_board_style_tokens", {
+      p_campaign_id: campaignId,
+      p_tokens: tokens,
+    });
+    return normalizeBoardStyleTokens(saved);
+  }
+  async saveCustomPanels(campaignId: string, panels: BoardCustomPanel[]) {
+    const saved = await rpc<BoardCustomPanel[]>("update_custom_panels", {
+      p_campaign_id: campaignId,
+      p_panels: panels,
+    });
+    return normalizeCustomPanels(saved);
+  }
+  async interactCustomPanel(
+    campaignId: string,
+    panelId: string,
+    blockId: string,
+    interaction: CustomPanelInteraction,
+  ) {
+    const saved = await rpc<BoardCustomPanel[]>("interact_custom_panel", {
+      p_campaign_id: campaignId,
+      p_panel_id: panelId,
+      p_block_id: blockId,
+      p_interaction: interaction,
+    });
+    return normalizeCustomPanels(saved);
+  }
+  async applyBoardBlueprint(campaignId: string, payload: CompiledCommitPayload) {
+    const receipt = await rpc<BlueprintReceipt>("apply_board_blueprint", {
+      p_campaign_id: campaignId,
+      p_blueprint: payload,
+    });
+    const board = await this.getBoard(campaignId);
+    return { board, receipt };
+  }
+  async rollbackBoardBlueprint(campaignId: string, snapshot: BoardUndoSnapshot) {
+    await rpc("rollback_board_blueprint", {
+      p_campaign_id: campaignId,
+      p_snapshot: snapshot,
+    });
+    return this.getBoard(campaignId);
   }
   async saveCampaignClock(
     campaignId: string,

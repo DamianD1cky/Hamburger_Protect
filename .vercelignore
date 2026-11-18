@@ -24,5 +24,7 @@ auth.json
 /node_modules
 /dist
 /coverage
+/ios
+/android
 *.tsbuildinfo
 *.log

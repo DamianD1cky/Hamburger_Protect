@@ -14,9 +14,20 @@ import type {
   QuestStatus,
 } from "./types";
 import type { BoardAppearance, BoardAppearanceFiles } from "./boardAppearance";
+import type { CardVisualEffect } from "./cardEffects";
+import type { BoardStyleTokens } from "./boardStyleTokens";
 import type { BoardModuleKey, BoardModuleLayout } from "./boardModules";
 import type { CampaignClockConfig } from "./campaignClock";
+import type {
+  BoardCustomPanel,
+  CustomPanelInteraction,
+} from "./customPanels";
 import type { EventClock, EventClockDraft } from "./eventClock";
+import type {
+  BlueprintReceipt,
+  BoardUndoSnapshot,
+  CompiledCommitPayload,
+} from "../../harness/schema";
 
 export interface CampaignRepository {
   getBoard(campaignId: string): Promise<CampaignBoard>;
@@ -68,6 +79,11 @@ export interface CampaignRepository {
     noteId: string,
     x: number,
     y: number,
+  ): Promise<CampaignBoard>;
+  resizeNote(
+    campaignId: string,
+    noteId: string,
+    scale: number,
   ): Promise<CampaignBoard>;
   deleteNote(campaignId: string, noteId: string): Promise<CampaignBoard>;
   setNotePinned(
@@ -127,6 +143,41 @@ export interface CampaignRepository {
     x: number,
     y: number,
   ): Promise<BoardModuleLayout>;
+  resizeBoardModule(
+    campaignId: string,
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): Promise<BoardModuleLayout>;
+  setBoardModuleEffect(
+    campaignId: string,
+    key: BoardModuleKey,
+    effect: CardVisualEffect | null,
+  ): Promise<BoardModuleLayout>;
+  saveBoardStyleTokens(
+    campaignId: string,
+    tokens: BoardStyleTokens,
+  ): Promise<BoardStyleTokens>;
+  saveCustomPanels(
+    campaignId: string,
+    panels: BoardCustomPanel[],
+  ): Promise<BoardCustomPanel[]>;
+  interactCustomPanel(
+    campaignId: string,
+    panelId: string,
+    blockId: string,
+    interaction: CustomPanelInteraction,
+  ): Promise<BoardCustomPanel[]>;
+  applyBoardBlueprint(
+    campaignId: string,
+    payload: CompiledCommitPayload,
+  ): Promise<{ board: CampaignBoard; receipt: BlueprintReceipt }>;
+  rollbackBoardBlueprint(
+    campaignId: string,
+    snapshot: BoardUndoSnapshot,
+  ): Promise<CampaignBoard>;
   saveCampaignClock(
     campaignId: string,
     config: CampaignClockConfig,

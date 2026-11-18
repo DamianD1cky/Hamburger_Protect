@@ -2,8 +2,21 @@ import { cloneDefaultBoard } from "../domain/defaults";
 import { EVENT_CLOCK_LIMIT, legacyIndexClock, validateEventClock, type EventClock, type EventClockDraft } from "../domain/eventClock";
 import type { CampaignRepository } from "../domain/repository";
 import { defaultBoardAppearance, veilBoardAppearance, type BoardAppearance, type BoardAppearanceFiles } from "../domain/boardAppearance";
+import { hasActiveCardEffect, normalizeCardVisualEffect, type CardVisualEffect } from "../domain/cardEffects";
+import { defaultBoardStyleTokens, normalizeBoardStyleTokens, type BoardStyleTokens } from "../domain/boardStyleTokens";
 import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../domain/boardGeometry";
-import type { BoardModuleKey, BoardModuleLayout } from "../domain/boardModules";
+import { boardModules, type BoardModuleKey, type BoardModuleLayout } from "../domain/boardModules";
+import {
+  applyPanelBlockInteraction,
+  normalizeCustomPanels,
+  type BoardCustomPanel,
+  type CustomPanelInteraction,
+} from "../domain/customPanels";
+import type {
+  BlueprintReceipt,
+  BoardUndoSnapshot,
+  CompiledCommitPayload,
+} from "../../harness/schema";
 import {
   defaultCampaignClock,
   normalizeCampaignClock,
@@ -28,7 +41,7 @@ import { applySettingsPatch, assertSettingsExpected } from "../domain/settingsUp
 import { normalizeStickerRotation, stickerPosition } from "../domain/stickerGeometry";
 import { eventClockRects } from "../domain/eventClockLayout";
 
-const STORAGE_KEY = "veilboard-board-v1";
+const STORAGE_KEY = "veilboard-board-v2";
 const PREVIOUS_STORAGE_KEY = "hamburger-protect-board-v2";
 const LEGACY_STORAGE_KEY = "laojie-burger-board-v1";
 
@@ -57,6 +70,8 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
     backgroundUrl: null,
     noteTextureUrl: null,
     appearance: veilBoardAppearance(),
+    styleTokens: defaultBoardStyleTokens(),
+    customPanels: [],
     boardTextureUrl: null,
     clock: defaultCampaignClock(),
   };
@@ -64,6 +79,8 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.settings.resourceTitles ??= {};
   board.settings.moduleLayout ??= {};
   board.settings.appearance ??= defaultBoardAppearance(board.settings.backgroundPath);
+  board.settings.styleTokens = normalizeBoardStyleTokens(board.settings.styleTokens);
+  board.settings.customPanels = normalizeCustomPanels(board.settings.customPanels);
   board.settings.boardTextureUrl ??= null;
   board.settings.clock = normalizeCampaignClock(board.settings.clock);
   const clockRects = eventClockRects(board.eventClocks, board.settings.moduleLayout, board.settings.hiddenSections);
@@ -102,6 +119,11 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
     note.pinned ??= false;
     note.pinnedAt ??= null;
     note.pinColor ??= "red";
+    note.scale =
+      typeof note.scale === "number" && Number.isFinite(note.scale)
+        ? Math.max(0.6, Math.min(2.2, Number(note.scale.toFixed(2))))
+        : 1;
+    note.effect = note.effect ? normalizeCardVisualEffect(note.effect) : null;
     note.authorName ??=
       board.members.find((member) => member.userId === note.authorId)
         ?.characterName ?? "未知成员";
@@ -529,24 +551,51 @@ class LocalCampaignRepository implements CampaignRepository {
   async saveNote(_campaignId: string, draft: NoteDraft, noteId?: string) {
     return this.mutate((board) => {
       const note = board.notes.find((item) => item.id === noteId);
+      const normalizedScale =
+        draft.scale !== undefined && Number.isFinite(draft.scale)
+          ? Math.max(0.6, Math.min(2.2, Number(draft.scale.toFixed(2))))
+          : undefined;
+      const normalizedEffect =
+        draft.effect !== undefined
+          ? draft.effect
+            ? normalizeCardVisualEffect(draft.effect)
+            : null
+          : undefined;
       if (note) {
-        Object.assign(note, draft);
+        note.title = draft.title;
+        note.body = draft.body;
+        note.color = draft.color;
+        note.pinColor = draft.pinColor;
+        note.imagePath = draft.imagePath;
+        if (draft.rotation !== undefined && Number.isFinite(draft.rotation)) {
+          note.rotation = Math.max(-180, Math.min(180, draft.rotation));
+        }
+        if (normalizedScale !== undefined) note.scale = normalizedScale;
+        if (normalizedEffect !== undefined) note.effect = normalizedEffect;
         return;
       }
       const count = board.notes.length;
       board.notes.push({
         id: uid("note"),
-        ...draft,
+        title: draft.title,
+        body: draft.body,
+        color: draft.color,
+        pinColor: draft.pinColor,
+        imagePath: draft.imagePath,
         x: 1098 + (count % 2) * 36,
         y: 605 + (count % 3) * 168,
-        rotation: [-2.4, 1.8, -0.8][count % 3],
+        rotation:
+          draft.rotation !== undefined && Number.isFinite(draft.rotation)
+            ? Math.max(-180, Math.min(180, draft.rotation))
+            : [-2.4, 1.8, -0.8][count % 3],
+        scale: normalizedScale ?? 1,
+        effect: normalizedEffect ?? null,
         createdAt: new Date().toISOString(),
         authorId: board.viewer.id,
         authorName: board.viewer.displayName,
         pinned: false,
         pinnedAt: null,
         layer: Math.max(0, ...board.notes.map((item) => item.layer)) + 1,
-        pinColor: draft.pinColor,
       });
     });
   }
@@ -555,6 +604,14 @@ class LocalCampaignRepository implements CampaignRepository {
     return this.mutate((board) => {
       const note = board.notes.find((item) => item.id === noteId);
       if (note) Object.assign(note, { x, y });
+    });
+  }
+
+  async resizeNote(_campaignId: string, noteId: string, scale: number) {
+    return this.mutate((board) => {
+      const note = board.notes.find((item) => item.id === noteId);
+      if (!note) throw new Error("便签不存在");
+      note.scale = Math.max(0.6, Math.min(2.2, Number(scale.toFixed(2))));
     });
   }
 
@@ -782,12 +839,308 @@ class LocalCampaignRepository implements CampaignRepository {
     y: number,
   ): Promise<BoardModuleLayout> {
     const board = this.manage((current) => {
+      const existing = current.settings.moduleLayout[key] ?? {};
       current.settings.moduleLayout = {
         ...current.settings.moduleLayout,
-        [key]: { x, y },
+        [key]: { ...existing, x, y },
       };
     });
     return clone(board.settings.moduleLayout);
+  }
+
+  async resizeBoardModule(
+    _campaignId: string,
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): Promise<BoardModuleLayout> {
+    const board = this.manage((current) => {
+      const existing = current.settings.moduleLayout[key] ?? {};
+      current.settings.moduleLayout = {
+        ...current.settings.moduleLayout,
+        [key]: { ...existing, x, y, w, h },
+      };
+    });
+    return clone(board.settings.moduleLayout);
+  }
+
+  async setBoardModuleEffect(
+    _campaignId: string,
+    key: BoardModuleKey,
+    effect: CardVisualEffect | null,
+  ): Promise<BoardModuleLayout> {
+    const board = this.manage((current) => {
+      const base = boardModules[key].rect;
+      const existing = current.settings.moduleLayout[key] ?? {
+        x: base.x,
+        y: base.y,
+      };
+      const normalized = effect ? normalizeCardVisualEffect(effect) : null;
+      const nextEntry = { ...existing };
+      if (normalized && hasActiveCardEffect(normalized)) {
+        nextEntry.effect = normalized;
+      } else {
+        delete nextEntry.effect;
+      }
+      current.settings.moduleLayout = {
+        ...current.settings.moduleLayout,
+        [key]: nextEntry,
+      };
+    });
+    return clone(board.settings.moduleLayout);
+  }
+
+  async saveBoardStyleTokens(
+    _campaignId: string,
+    tokens: BoardStyleTokens,
+  ): Promise<BoardStyleTokens> {
+    const normalized = normalizeBoardStyleTokens(tokens);
+    this.manage((current) => {
+      current.settings.styleTokens = normalized;
+    });
+    return clone(normalized);
+  }
+
+  async saveCustomPanels(
+    _campaignId: string,
+    panels: BoardCustomPanel[],
+  ): Promise<BoardCustomPanel[]> {
+    const normalized = normalizeCustomPanels(panels);
+    this.manage((current) => {
+      current.settings.customPanels = normalized;
+    });
+    return clone(normalized);
+  }
+
+  async interactCustomPanel(
+    _campaignId: string,
+    panelId: string,
+    blockId: string,
+    interaction: CustomPanelInteraction,
+  ): Promise<BoardCustomPanel[]> {
+    const board = this.updateAsMember((current) => {
+      const target = current.settings.customPanels.find((p) => p.id === panelId);
+      if (!target) throw new Error("展板不存在，请刷新后重试");
+      if (target.interactiveFor === "gm" && current.viewer.role !== "gm") {
+        throw new Error("此展板仅限 GM 操作");
+      }
+      current.settings.customPanels = current.settings.customPanels.map((p) =>
+        p.id === panelId ? applyPanelBlockInteraction(p, blockId, interaction) : p,
+      );
+    });
+    return clone(board.settings.customPanels);
+  }
+
+  async applyBoardBlueprint(
+    _campaignId: string,
+    payload: CompiledCommitPayload,
+  ): Promise<{ board: CampaignBoard; receipt: BlueprintReceipt }> {
+    const receipt: BlueprintReceipt = {
+      createdNoteIds: [],
+      createdLinkIds: [],
+      createdQuestIds: [],
+      createdResourceIds: [],
+      createdClockIds: [],
+      createdChecklistIds: [],
+    };
+    const board = this.manage((current) => {
+      if (payload.campaignName) {
+        current.campaign.name = payload.campaignName;
+      }
+      current.settings.appearance = clone(payload.appearance);
+      current.settings.backgroundPath = payload.appearance.room.imagePath;
+      current.settings.styleTokens = normalizeBoardStyleTokens(payload.styleTokens);
+      current.settings.sectionTitles = clone(payload.sectionTitles);
+      current.settings.sectionColors = clone(payload.sectionColors);
+      current.settings.resourceTitles = clone(payload.resourceTitles);
+      current.settings.hiddenSections = clone(payload.hiddenSections);
+      current.settings.moduleLayout = clone(payload.moduleLayout);
+      current.settings.customPanels = normalizeCustomPanels(payload.customPanels);
+      if (payload.clock) {
+        current.settings.clock = normalizeCampaignClock(payload.clock);
+      }
+
+      const refMap = new Map<string, string>();
+      const maxLayer = current.notes.reduce((m, n) => Math.max(m, n.layer), 0);
+      const nowIso = new Date().toISOString();
+      if (payload.noteUpdates && payload.noteUpdates.length > 0) {
+        receipt.updatedNotesBefore = [];
+        for (const patch of payload.noteUpdates) {
+          const target = current.notes.find((n) => n.id === patch.id);
+          if (!target) continue;
+          receipt.updatedNotesBefore.push({
+            id: target.id,
+            color: target.color,
+            pinColor: target.pinColor,
+            rotation: target.rotation,
+            scale: target.scale ?? 1,
+            effect: target.effect ? clone(target.effect) : null,
+          });
+          if (patch.color !== undefined) target.color = patch.color;
+          if (patch.pinColor !== undefined) target.pinColor = patch.pinColor;
+          if (patch.rotation !== undefined) target.rotation = patch.rotation;
+          if (patch.scale !== undefined) target.scale = patch.scale;
+          if (patch.effect !== undefined) {
+            target.effect = patch.effect
+              ? normalizeCardVisualEffect(patch.effect)
+              : null;
+          }
+        }
+      }
+      payload.notes.forEach((n, idx) => {
+        const id = uid("note");
+        receipt.createdNoteIds.push(id);
+        if (n.refId) refMap.set(n.refId, id);
+        current.notes.push({
+          id,
+          title: n.title,
+          body: n.body,
+          color: n.color,
+          pinColor: n.pinColor,
+          x: n.x,
+          y: n.y,
+          rotation: n.rotation,
+          scale: n.scale ?? 1,
+          effect: n.effect ? normalizeCardVisualEffect(n.effect) : null,
+          createdAt: nowIso,
+          authorId: current.viewer.id,
+          authorName: current.viewer.displayName,
+          pinned: n.pinned,
+          pinnedAt: n.pinned ? nowIso : null,
+          layer: maxLayer + idx + 1,
+          imagePath: null,
+        });
+      });
+
+      payload.noteLinks.forEach((l) => {
+        const fromId = refMap.get(l.from) ?? l.from;
+        const toId = refMap.get(l.to) ?? l.to;
+        if (
+          fromId !== toId &&
+          current.notes.some((n) => n.id === fromId) &&
+          current.notes.some((n) => n.id === toId)
+        ) {
+          const id = uid("link");
+          receipt.createdLinkIds.push(id);
+          current.noteLinks.push({
+            id,
+            fromNoteId: fromId,
+            toNoteId: toId,
+            label: l.label,
+          });
+        }
+      });
+
+      payload.quests.forEach((q) => {
+        const id = uid("quest");
+        receipt.createdQuestIds.push(id);
+        current.quests.push({
+          id,
+          title: q.title,
+          body: q.body,
+          assigneeName: q.assigneeName || "待认领",
+          due: q.due,
+          status: "open",
+          createdBy: current.viewer.id,
+          claimedBy: null,
+        });
+      });
+
+      payload.resources.forEach((r) => {
+        const id = uid("resource");
+        receipt.createdResourceIds.push(id);
+        current.resources.push({
+          id,
+          group: r.group,
+          name: r.name,
+          quantity: r.quantity,
+          status: r.status,
+        });
+      });
+
+      payload.eventClocks.forEach((c) => {
+        if (current.eventClocks.length >= EVENT_CLOCK_LIMIT) return;
+        const id = uid("clock");
+        receipt.createdClockIds.push(id);
+        current.eventClocks.push({
+          id,
+          ...validateEventClock(c),
+          mode: "progress",
+          stages: null,
+          revision: 1,
+        });
+      });
+
+      payload.checklist.forEach((item) => {
+        let categoryId: string | null = null;
+        if (item.categoryName) {
+          let cat = current.checklistCategories.find((c) => c.name === item.categoryName);
+          if (!cat) {
+            cat = { id: uid("cat"), name: item.categoryName };
+            current.checklistCategories.push(cat);
+          }
+          categoryId = cat.id;
+        }
+        const id = uid("chk");
+        receipt.createdChecklistIds.push(id);
+        current.checklist.push({
+          id,
+          label: item.label,
+          completed: false,
+          categoryId,
+        });
+      });
+    });
+    return { board, receipt };
+  }
+
+  async rollbackBoardBlueprint(
+    _campaignId: string,
+    snapshot: BoardUndoSnapshot,
+  ): Promise<CampaignBoard> {
+    return this.manage((current) => {
+      const dropLinks = new Set(snapshot.createdLinkIds);
+      const dropNotes = new Set(snapshot.createdNoteIds);
+      const dropQuests = new Set(snapshot.createdQuestIds);
+      const dropRes = new Set(snapshot.createdResourceIds);
+      const dropClocks = new Set(snapshot.createdClockIds);
+      const dropChk = new Set(snapshot.createdChecklistIds);
+
+      current.noteLinks = current.noteLinks.filter(
+        (l) => !dropLinks.has(l.id) && !dropNotes.has(l.fromNoteId) && !dropNotes.has(l.toNoteId),
+      );
+      current.notes = current.notes.filter((n) => !dropNotes.has(n.id));
+      if (snapshot.updatedNotesBefore) {
+        for (const prevNote of snapshot.updatedNotesBefore) {
+          const target = current.notes.find((n) => n.id === prevNote.id);
+          if (!target) continue;
+          target.color = prevNote.color;
+          target.pinColor = prevNote.pinColor;
+          target.rotation = prevNote.rotation;
+          target.scale = prevNote.scale;
+          target.effect = prevNote.effect ? clone(prevNote.effect) : null;
+        }
+      }
+      current.quests = current.quests.filter((q) => !dropQuests.has(q.id));
+      current.resources = current.resources.filter((r) => !dropRes.has(r.id));
+      current.eventClocks = current.eventClocks.filter((c) => !dropClocks.has(c.id));
+      current.checklist = current.checklist.filter((c) => !dropChk.has(c.id));
+
+      const s = snapshot.settings;
+      if (s.campaignName) current.campaign.name = s.campaignName;
+      current.settings.appearance = clone(s.appearance);
+      current.settings.backgroundPath = s.appearance.room.imagePath;
+      current.settings.styleTokens = normalizeBoardStyleTokens(s.styleTokens);
+      current.settings.sectionTitles = clone(s.sectionTitles);
+      current.settings.sectionColors = clone(s.sectionColors);
+      current.settings.resourceTitles = clone(s.resourceTitles);
+      current.settings.hiddenSections = clone(s.hiddenSections);
+      current.settings.moduleLayout = clone(s.moduleLayout);
+      current.settings.customPanels = normalizeCustomPanels(s.customPanels);
+      if (s.clock) current.settings.clock = normalizeCampaignClock(s.clock);
+    });
   }
 
   async saveCampaignClock(

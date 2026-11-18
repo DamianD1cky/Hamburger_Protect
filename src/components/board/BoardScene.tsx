@@ -1,6 +1,7 @@
 import { List, Plus, SmilePlus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type Ref, type RefObject } from "react";
 import {
+  resolvePinColorVisual,
   sectionColor,
   sectionTitle,
   titleColorStyle,
@@ -9,7 +10,6 @@ import type {
   BoardNote,
   BoardNoteLink,
   CampaignBoard,
-  PinColor,
   CampaignSectionKey,
   Quest,
   QuestStatus,
@@ -29,12 +29,20 @@ import { EmojiSticker } from "./EmojiSticker";
 import { BoardModuleFrame } from "./BoardModuleFrame";
 import { BOARD_HEIGHT, BOARD_WIDTH } from "../../features/campaign/domain/boardModules";
 import { boardGeometryStyle } from "../../features/campaign/domain/boardGeometry";
-import { NoteCard } from "./NoteCard";
+import { boardStyleVariables } from "../../features/campaign/domain/boardStyleTokens";
+import type {
+  BoardCustomPanel,
+  CustomPanelInteraction,
+} from "../../features/campaign/domain/customPanels";
+import { BASE_NOTE_WIDTH, clampNoteScale, NoteCard } from "./NoteCard";
+import { CustomPanelCard } from "./CustomPanelCard";
 import {
-  moduleRect,
   boardModuleKeys,
+  moduleRect,
+  resolveModuleCardEffect,
   type BoardModuleKey,
   type BoardModuleLayout,
+  type BoardModuleRect,
 } from "../../features/campaign/domain/boardModules";
 import { eventClockRects } from "../../features/campaign/domain/eventClockLayout";
 
@@ -62,6 +70,7 @@ interface BoardSceneProps {
     source: HTMLElement,
   ) => Promise<void>;
   onMoveNote: (noteId: string, x: number, y: number) => Promise<unknown>;
+  onResizeNote?: (noteId: string, scale: number) => Promise<unknown>;
   onNoteLayer: (noteId: string, direction: -1 | 1) => Promise<unknown>;
   onCreateSticker: (emoji: string, x: number, y: number, rotation: number) => Promise<unknown>;
   onMoveSticker: (stickerId: string, x: number, y: number) => Promise<unknown>;
@@ -84,6 +93,24 @@ interface BoardSceneProps {
     key: BoardModuleKey,
     x: number,
     y: number,
+  ) => Promise<unknown>;
+  onResizeModule?: (
+    key: BoardModuleKey,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) => Promise<unknown>;
+  onEditCustomPanel?: (panel: BoardCustomPanel) => void;
+  onDeleteCustomPanel?: (panelId: string) => void;
+  onInteractCustomPanel?: (
+    panelId: string,
+    blockId: string,
+    action: CustomPanelInteraction,
+  ) => void;
+  onUpdateCustomPanelGeometry?: (
+    panelId: string,
+    rect: BoardModuleRect,
   ) => Promise<unknown>;
   onOpenClockSettings: () => void;
   diceTool?: ReactNode;
@@ -109,7 +136,8 @@ export function BoardScene({
   onEditNote,
   onTransitionQuest,
   onMoveNote,
-  onNoteLayer,
+  onResizeNote,
+  onNoteLayer: _onNoteLayer,
   onCreateNoteLink,
   onCreateSticker,
   onMoveSticker,
@@ -122,6 +150,11 @@ export function BoardScene({
   onHideSection,
   moduleLayout,
   onMoveModule,
+  onResizeModule,
+  onEditCustomPanel,
+  onDeleteCustomPanel,
+  onInteractCustomPanel,
+  onUpdateCustomPanelGeometry,
   onOpenClockSettings,
   diceTool,
 }: BoardSceneProps) {
@@ -131,13 +164,6 @@ export function BoardScene({
     board.viewer.role === "gm" && board.campaign.status === "active";
   const canUpdateSharedBoard =
     board.viewer.role !== "observer" && board.campaign.status === "active";
-  const pinColors: Record<PinColor, { fill: string; stroke: string }> = {
-    red: { fill: "#e72b3c", stroke: "#71101a" },
-    blue: { fill: "#2785d8", stroke: "#164a76" },
-    green: { fill: "#36a467", stroke: "#1d5f3b" },
-    yellow: { fill: "#f1c933", stroke: "#806a16" },
-    black: { fill: "#343536", stroke: "#101112" },
-  };
   const stickerChoices = ["😀", "⭐", "🔥", "❤️", "⚠️", "✅", "❓", "💡", "👑", "🎲", "💀", "🍔"];
   const hidden = new Set(board.settings.hiddenSections);
   const clockRects = eventClockRects(board.eventClocks, moduleLayout, board.settings.hiddenSections);
@@ -158,18 +184,23 @@ export function BoardScene({
           editLabel: `编辑${title(key)}模块`,
         }
       : undefined;
-  // 连线的锚点固定在便签顶部的图钉上，所以只跟 x 和固定偏移有关。
-  const NOTE_WIDTH = 276;
+  // 连线的锚点固定在便签顶部中点的图钉上（缩放时随便签宽度居中，旋转绕此图钉孔转动所以不偏移）。
   const PIN_Y = 16.5;
-  const pinPoint = (note: Pick<BoardNote, "x" | "y">) => ({
-    x: note.x + NOTE_WIDTH / 2,
+  const pinPoint = (note: Pick<BoardNote, "x" | "y"> & { scale?: number }) => ({
+    x: note.x + Math.round(BASE_NOTE_WIDTH * clampNoteScale(note.scale)) / 2,
     y: note.y + PIN_Y,
   });
   const boardRef = useRef<HTMLElement>(null);
-  const updateNoteLinkPosition = (noteId: string, x: number, y: number) => {
+  const updateNoteLinkPosition = (
+    noteId: string,
+    x: number,
+    y: number,
+    scale?: number,
+  ) => {
     const element = boardRef.current;
     if (!element) return;
-    const point = pinPoint({ x, y });
+    const currentNote = board.notes.find((n) => n.id === noteId);
+    const point = pinPoint({ x, y, scale: scale ?? currentNote?.scale });
     const lines = element.querySelectorAll<SVGLineElement>(
       "line[data-from-note-id], line[data-to-note-id]",
     );
@@ -423,18 +454,38 @@ export function BoardScene({
   };
   const resourceTitles = board.settings.resourceTitles ?? {};
   const notesColor = color("notes");
-  /** 把区块包进可拖拽模块；位置来自 module_layout，缺省时用内置位置。 */
+  const customPanels = board.settings.customPanels ?? [];
+  const hiddenModuleSet = new Set(
+    board.settings.hiddenSections.filter((s): s is BoardModuleKey =>
+      boardModuleKeys.includes(s as BoardModuleKey),
+    ),
+  );
+  const customPanelRects: BoardModuleRect[] = customPanels.map((p) => ({
+    x: p.x,
+    y: p.y,
+    w: p.w,
+    h: p.h,
+  }));
+  const defaultCardEffect = board.settings.styleTokens?.defaultCardEffect;
+  /** 把区块包进可拖拽与缩放模块；位置、尺寸与卡片装饰效果来自 module_layout。 */
   const moduleFrame = (key: BoardModuleKey, node: ReactNode) => (
     <BoardModuleFrame
       moduleKey={key}
       rect={moduleRect(key, moduleLayout)}
+      effect={resolveModuleCardEffect(key, moduleLayout, defaultCardEffect)}
       layout={moduleLayout}
       canDrag={canManage}
       viewScaleRef={viewScaleRef}
+      placementContext={{
+        hiddenKeys: hiddenModuleSet,
+        extraObstacles: customPanelRects,
+      }}
       onMove={onMoveModule}
+      onResize={onResizeModule}
       obstacles={[
         ...occupiedModules.filter((module) => module.key !== key).map((module) => module.rect),
         ...visibleClockRects,
+        ...customPanelRects,
         ...(!hidden.has("index") && !board.eventClocks.length && key !== "index" ? [moduleRect("index", moduleLayout)] : []),
       ]}
     >
@@ -453,9 +504,17 @@ export function BoardScene({
       <div
         className="world"
         ref={worldRef}
-        style={boardGeometryStyle as CSSProperties}
+        style={
+          {
+            ...boardGeometryStyle,
+            ...boardStyleVariables(board.settings.styleTokens),
+          } as CSSProperties
+        }
       >
-        <BoardFrame frame={board.settings.appearance.frame} />
+        <BoardFrame
+          frame={board.settings.appearance.frame}
+          shader={board.settings.styleTokens?.frameShader}
+        />
 
         <main
           className="board"
@@ -475,7 +534,11 @@ export function BoardScene({
             setStickerPlacement(stickerPoint(event));
           }}
         >
-          <BoardSurface appearance={board.settings.appearance} imageUrl={board.settings.boardTextureUrl} />
+          <BoardSurface
+            appearance={board.settings.appearance}
+            imageUrl={board.settings.boardTextureUrl}
+            shader={board.settings.styleTokens?.surfaceShader}
+          />
           {selectedEmoji && stickerPlacement && (
             <div
               className="board-emoji-placement"
@@ -584,7 +647,7 @@ export function BoardScene({
           >
             {board.notes.map((note) => {
               const point = pinPoint(note);
-              const color = pinColors[note.pinColor];
+              const color = resolvePinColorVisual(note.pinColor);
               return (
                 <circle
                   key={note.id}
@@ -738,9 +801,12 @@ export function BoardScene({
           {!hidden.has("index") && board.eventClocks.map((clock, i) => (
             <BoardModuleFrame key={clock.id} moduleKey="index"
               instanceId={i === 0 ? "index" : `event-clock:${clock.id}`}
-              rect={clockRects.get(clock.id)!} layout={moduleLayout} canDrag={canManage}
+              rect={clockRects.get(clock.id)!}
+              effect={resolveModuleCardEffect("index", moduleLayout, defaultCardEffect)}
+              layout={moduleLayout} canDrag={canManage}
               viewScaleRef={viewScaleRef}
               obstacles={[...occupiedModules.map((module) => module.rect),
+                ...customPanelRects,
                 ...[...clockRects].filter(([id]) => id !== clock.id).map(([, rect]) => rect)]}
               onMove={(_key, x, y) => onMoveEventClock(clock.id, x, y, clock.revision)}>
               <EventClockSection clock={clock} title={title("index")} color={color("index")} canManage={canManage}
@@ -777,6 +843,44 @@ export function BoardScene({
               />,
             )}
 
+          {customPanels.map((panel) => {
+            const visibleModuleRects = [
+              ...occupiedModules.map((m) => m.rect),
+              ...visibleClockRects,
+              ...(!hidden.has("index") && !board.eventClocks.length ? [moduleRect("index", moduleLayout)] : []),
+            ];
+            const otherPanelRects = customPanels
+              .filter((other) => other.id !== panel.id)
+              .map((other) => ({
+                x: other.x,
+                y: other.y,
+                w: other.w,
+                h: other.h,
+              }));
+            return (
+              <CustomPanelCard
+                key={panel.id}
+                panel={panel}
+                actorName={board.viewer.displayName}
+                defaultEffect={defaultCardEffect}
+                obstacles={[...visibleModuleRects, ...otherPanelRects]}
+                canManage={canManage}
+                canMemberInteract={canUpdateSharedBoard}
+                viewScaleRef={viewScaleRef}
+                onEdit={(target) => onEditCustomPanel?.(target)}
+                onDelete={(id) => onDeleteCustomPanel?.(id)}
+                onInteract={(id, blockId, action) =>
+                  onInteractCustomPanel?.(id, blockId, action)
+                }
+                onUpdateGeometry={async (id, nextRect) => {
+                  if (onUpdateCustomPanelGeometry) {
+                    await onUpdateCustomPanelGeometry(id, nextRect);
+                  }
+                }}
+              />
+            );
+          })}
+
           {!hidden.has("notes") && (
             <>
               <div
@@ -794,6 +898,7 @@ export function BoardScene({
                   <NoteCard
                     key={note.id}
                     note={note}
+                    defaultEffect={board.settings.styleTokens?.defaultNoteEffect}
                     noteTextureUrl={board.settings.noteTextureUrl}
                     viewScaleRef={viewScaleRef}
                     canEdit={
@@ -803,8 +908,8 @@ export function BoardScene({
                     }
                     onEdit={onEditNote}
                     onMove={onMoveNote}
+                    onResize={onResizeNote}
                     onPositionPreview={updateNoteLinkPosition}
-                    onLayerChange={onNoteLayer}
                     canLink={canUpdateSharedBoard}
                     linkingFrom={linking?.fromId === note.id}
                     onPinClick={handlePinClick}
