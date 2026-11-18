@@ -83,8 +83,18 @@ test("new passwords support passphrases, reject mismatch and bcrypt overflow", (
   assert.doesNotThrow(() =>
     validateNewPassword("字".repeat(24), "字".repeat(24)),
   );
+  assert.doesNotThrow(() =>
+    validateNewPassword("a".repeat(10), "a".repeat(10)),
+  );
+  assert.doesNotThrow(() =>
+    validateNewPassword("字".repeat(10), "字".repeat(10)),
+  );
   assert.throws(
-    () => validateNewPassword("x".repeat(14), "x".repeat(14)),
+    () => validateNewPassword("x".repeat(9), "x".repeat(9)),
+    /PASSWORD_TOO_SHORT/,
+  );
+  assert.throws(
+    () => validateNewPassword("字".repeat(9), "字".repeat(9)),
     /PASSWORD_TOO_SHORT/,
   );
   assert.throws(
@@ -111,6 +121,10 @@ test("account validation rejects blank names and invalid usernames", () => {
   assert.throws(() => usernameToEmail("bad@other.test"), /INVALID_USERNAME/);
 });
 test("known Auth errors are understandable and unknown details stay private", () => {
+  assert.equal(
+    getAccessErrorMessage(new Error("PASSWORD_TOO_SHORT")),
+    "新密码至少需要 10 个字符。",
+  );
   assert.equal(
     getAccessErrorMessage({ code: "invalid_credentials", message: "raw" }),
     "账号或密码不正确。",

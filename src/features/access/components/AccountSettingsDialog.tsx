@@ -130,7 +130,7 @@ export function AccountSettingsDialog({
           value={confirmation}
           onChange={(event) => setConfirmation(event.target.value)}
         />
-        <small>至少 15 个字符；支持空格和长口令，最多 72 个 UTF-8 字节。</small>
+        <small>至少 {PASSWORD_MIN_LENGTH} 个字符；支持空格和长口令，最多 72 个 UTF-8 字节。</small>
         <button className="access-submit" disabled={busy}>
           更新密码
         </button>

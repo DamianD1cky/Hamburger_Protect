@@ -14,7 +14,7 @@ site_url = "http://localhost:5173"
 additional_redirect_urls = ["http://localhost:5173", "http://localhost:4173", "https://hamburger.damiandicky.site", "https://hamburger-protect.vercel.app", "https://veilboard.damiandicky.site"]
 enable_signup = true
 enable_anonymous_sign_ins = false
-minimum_password_length = 15
+minimum_password_length = 10
 [auth.email]
 enable_signup = true
 enable_confirmations = false

@@ -195,7 +195,7 @@ npx supabase db query --linked --file supabase/tests/public_visits_smoke.sql
 Auth 云配置需要逐项与生产核对，不能把本地 `site_url` 覆盖到生产：
 
 - `external_anonymous_users_enabled=false`，对应本地 `auth.enable_anonymous_sign_ins=false`。2026-10-29 本次只读核查发现生产仍为开启状态。
-- `password_min_length=15`，对应本地 `auth.minimum_password_length=15`。只影响新密码，原密码仍可登录；应与新版前端同时发布。生产核查时仍为 8。
+- VeilBoard 分支使用 `password_min_length=10`，对应本地 `auth.minimum_password_length=10`。只影响注册与新密码，原密码仍可登录；云端配置仅应用到 VeilBoard 的独立项目 `eacuvvrejnlaavaaulaf`。
 - `security_update_password_require_current_password=true`：使用 Auth 管理配置启用原密码验证；改密代码传递 `current_password`，并额外用不持久化的 SDK 会话验证旧密码。
 - **不要误用** `auth.email.secure_password_change`：当前 CLI 2.122.0 将它映射为 `security_update_password_require_reauthentication`，会让超过 24 小时的会话需要邮箱 nonce；虚拟邮箱无法接收。官方 CLI 页面对此字段的说明与安装版本存在差异，以上以安装版本映射及 Auth 服务源代码为准。
 

@@ -1,5 +1,5 @@
 export const GM_USERNAME_PATTERN = /^[a-z0-9_-]{3,20}$/;
-export const PASSWORD_MIN_LENGTH = 15;
+export const PASSWORD_MIN_LENGTH = 10;
 export const PASSWORD_MAX_BYTES = 72;
 // Kept as an alias for the existing access form imports.
 export const GM_PASSWORD_MIN_LENGTH = PASSWORD_MIN_LENGTH;
@@ -60,7 +60,7 @@ const accessErrorMessages: Array<[string[], string]> = [
   [["invalid_username"], "账号名需要 3–20 位小写字母、数字、下划线或短横线。"],
   [["invalid_display_name"], "昵称需要 1–32 个字符，不能只填空格。"],
   [["password_mismatch"], "两次输入的密码不一致。"],
-  [["password_too_short"], "新密码至少需要 15 个字符。"],
+  [["password_too_short"], `新密码至少需要 ${PASSWORD_MIN_LENGTH} 个字符。`],
   [["password_too_long"], "密码不能超过 72 个 UTF-8 字节；中文通常每字占 3 个字节。"],
   [["same_password"], "新密码不能与当前密码相同。"],
   [["reauthentication_needed", "reauthentication_not_valid"], "需要重新验证身份，请重新登录后再修改密码。"],

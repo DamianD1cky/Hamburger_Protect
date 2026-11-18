@@ -496,7 +496,7 @@ export function AccessPortal({
                   <>
                     <PasswordField label="确认密码" required value={confirmPassword}
                       onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
-                    <small>新密码至少 15 个字符，最多 72 个 UTF-8 字节。建议使用密码管理器保存。</small>
+                    <small>新密码至少 {GM_PASSWORD_MIN_LENGTH} 个字符，最多 72 个 UTF-8 字节。建议使用密码管理器保存。</small>
                   </>
                 )}
                 <button className="access-submit" type="submit" disabled={busy}>
