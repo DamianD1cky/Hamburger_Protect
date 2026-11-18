@@ -16,6 +16,7 @@ export interface EventClock {
   mode: "progress" | "scale";
   stages: EventClockStage[] | null;
   revision: number;
+  position?: { x: number; y: number } | null;
 }
 export type EventClockDraft = Pick<EventClock, "name" | "segments" | "progress" | "consequence" | "color">;
 export const EVENT_CLOCK_LIMIT = 24;

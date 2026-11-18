@@ -2857,7 +2857,7 @@ button {
 .event-clock-section[data-complete="true"] .event-clock-consequence,
 .event-clock-readonly[data-complete="true"] > p { color: #92291d; font-weight: 700; }
 .event-clock-footer { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 6px; }
-.event-clock-pager, .event-clock-progress-actions { display: flex; align-items: center; gap: 6px; }
+.event-clock-progress-actions { display: flex; align-items: center; gap: 6px; }
 .event-clock-footer button { display: grid; place-items: center; width: 28px; height: 28px; padding: 3px;
   border: 1px solid #73674755; border-radius: 4px; background: #fff8; cursor: pointer; }
 .event-clock-footer svg { width: 18px; height: 18px; }
@@ -6334,9 +6334,16 @@ html[data-campaign-transition="exit"]::view-transition-new(root) {
 }
 .board-emoji-size {
   position: absolute; left: 50%; top: calc(100% + 5px); transform: translateX(-50%);
-  display: flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid #fff9;
+  display: grid; grid-template-columns: 28px 44px 28px; align-items: center; gap: 2px; padding: 3px; border: 1px solid #fff9;
   border-radius: 18px; background: #252c28; color: #fff; opacity: 0; pointer-events: none;
   font: 13px -apple-system, BlinkMacSystemFont, sans-serif; white-space: nowrap;
+}
+.board-emoji-glyph { display: grid; width: 100%; height: 100%; place-items: center; pointer-events: none; }
+.focus-clock-picker {
+  position: absolute; bottom: calc(100% + 74px); left: 50%; transform: translateX(-50%);
+  max-width: calc(100vw - 32px); min-height: 44px; padding: 8px 14px;
+  border: 1px solid #bcb19d; border-radius: 8px; background: #f5ecd8; color: #302b24;
+  font: 14px var(--ui-font); pointer-events: auto;
 }
 .board-emoji-size button { display: grid; place-items: center; min-width: 28px; height: 28px; padding: 0 4px; color: inherit; background: transparent; border: 0; border-radius: 50%; cursor: pointer; }
 .board-emoji-size button:hover { background: #ffffff24; }

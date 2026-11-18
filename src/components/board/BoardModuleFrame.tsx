@@ -1,9 +1,10 @@
 import { useEffect, useRef, type PointerEvent, type ReactNode, type RefObject } from "react";
 import {
-  boardModules,
   canPlace,
+  canPlaceRect,
   clampToBoard,
   nearestFreeSpot,
+  nearestFreeRect,
   snap,
   type BoardModuleKey,
   type BoardModuleLayout,
@@ -25,6 +26,8 @@ export function BoardModuleFrame({
   viewScaleRef,
   onMove,
   children,
+  obstacles,
+  instanceId,
 }: {
   moduleKey: BoardModuleKey;
   rect: BoardModuleRect;
@@ -33,6 +36,8 @@ export function BoardModuleFrame({
   viewScaleRef: RefObject<number>;
   onMove: (key: BoardModuleKey, x: number, y: number) => Promise<unknown>;
   children: ReactNode;
+  obstacles?: BoardModuleRect[];
+  instanceId?: string;
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({
@@ -92,7 +97,7 @@ export function BoardModuleFrame({
       }
       event.preventDefault();
 
-      const base = boardModules[moduleKey].rect;
+      const base = rect;
       const target = clampToBoard(
         snap(drag.originX + dx),
         snap(drag.originY + dy),
@@ -103,7 +108,7 @@ export function BoardModuleFrame({
       // 否则中途遇到障碍就完全拖不动了。
       element.classList.toggle(
         "is-blocked",
-        !canPlace(moduleKey, target.x, target.y, layout),
+        !(obstacles ? canPlaceRect({ ...rect, ...target }, obstacles) : canPlace(moduleKey, target.x, target.y, layout)),
       );
       drag.x = target.x;
       drag.y = target.y;
@@ -130,9 +135,11 @@ export function BoardModuleFrame({
         return;
       }
       // 落点压到别的模块时，就近找一个空位，保证松手后一定能放下。
-      const spot = canPlace(moduleKey, drag.x, drag.y, layout)
+      const target = { ...rect, x: drag.x, y: drag.y };
+      const fits = obstacles ? canPlaceRect(target, obstacles) : canPlace(moduleKey, drag.x, drag.y, layout);
+      const spot = fits
         ? { x: drag.x, y: drag.y }
-        : nearestFreeSpot(moduleKey, drag.x, drag.y, layout);
+        : obstacles ? nearestFreeRect(target, obstacles) : nearestFreeSpot(moduleKey, drag.x, drag.y, layout);
       drag.moved = false;
       if (!spot) {
         restore();
@@ -160,7 +167,7 @@ export function BoardModuleFrame({
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerCancel);
     };
-  }, [canDrag, layout, moduleKey, onMove, rect.x, rect.y, viewScaleRef]);
+  }, [canDrag, layout, moduleKey, onMove, rect.x, rect.y, rect.w, rect.h, obstacles, viewScaleRef]);
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (!canDrag || event.button !== 0) return;
@@ -187,7 +194,7 @@ export function BoardModuleFrame({
     <div
       ref={elementRef}
       className={canDrag ? "board-module is-draggable" : "board-module"}
-      data-module={moduleKey}
+      data-module={instanceId ?? moduleKey}
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
       onPointerDown={handlePointerDown}
       onClickCapture={(event) => {

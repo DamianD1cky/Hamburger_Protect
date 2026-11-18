@@ -5,10 +5,12 @@ import {
   PackageOpen,
   ShieldCheck,
   Users,
+  Clock,
 } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { CampaignSectionKey } from "../../features/campaign/domain/types";
 import type { FocusZone } from "../../hooks/useBoardViewport";
+import type { EventClock } from "../../features/campaign/domain/eventClock";
 
 const items: Array<{
   id: FocusZone;
@@ -59,16 +61,22 @@ interface FocusDockProps {
   active: FocusZone;
   onChange: (zone: FocusZone) => void;
   hiddenSections: CampaignSectionKey[];
+  eventClocks?: EventClock[];
 }
 
 export function FocusDock({
   active,
   onChange,
   hiddenSections,
+  eventClocks = [],
 }: FocusDockProps) {
   const visibleItems = items.filter(
     (item) => !item.section || !hiddenSections.includes(item.section),
   );
+  const focusedClock = eventClocks.find((clock) => `event:${clock.id}` === active) ?? eventClocks[0];
+  if (!hiddenSections.includes("index") && focusedClock) visibleItems.splice(4, 0, {
+    id: `event:${focusedClock.id}`, section: "index", label: "事件钟", title: "事件", icon: Clock,
+  });
   const activeIndex = Math.max(
     0,
     visibleItems.findIndex((item) => item.id === active),
@@ -81,6 +89,11 @@ export function FocusDock({
   return (
     <nav className="focus-dock" aria-label="公告板区域" style={style}>
       <span className="focus-dock-indicator" aria-hidden="true" />
+      {active.startsWith("event:") && eventClocks.length > 1 && <select className="focus-clock-picker"
+        aria-label="聚焦事件钟" value={focusedClock?.id}
+        onChange={(event) => onChange(`event:${event.target.value}`)}>
+        {eventClocks.map((clock) => <option key={clock.id} value={clock.id}>{clock.name}</option>)}
+      </select>}
       {visibleItems.map((item) => {
         const Icon = item.icon;
         return (

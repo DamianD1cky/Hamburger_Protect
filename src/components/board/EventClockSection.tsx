@@ -1,5 +1,5 @@
-import { ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Minus, Plus } from "lucide-react";
+import { useState, type CSSProperties } from "react";
 import { eventClockComplete, eventClockError, type EventClock } from "../../features/campaign/domain/eventClock";
 import { defaultSectionColors } from "../../features/campaign/domain/campaignSettings";
 import { BoardContentCard, BoardSectionHeader, type SectionActions } from "./BoardSectionPrimitives";
@@ -18,22 +18,13 @@ export function EventClockTrack({ clock }: { clock: EventClock }) {
   </div>;
 }
 
-export function EventClockSection({ clocks, canManage, onProgress, title, color, actions }: {
-  clocks: EventClock[]; canManage: boolean;
+export function EventClockSection({ clock, canManage, onProgress, title, color, actions }: {
+  clock?: EventClock; canManage: boolean;
   onProgress: (id: string, progress: number, revision: number) => Promise<unknown>;
   title: string; color?: string; actions?: SectionActions;
 }) {
-  const [selected, setSelected] = useState(clocks[0]?.id ?? "");
-  const seen = useRef(new Set(clocks.map((clock) => clock.id)));
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
-  useEffect(() => {
-    const added = clocks.find((clock) => !seen.current.has(clock.id));
-    if (added) setSelected(added.id);
-    seen.current = new Set(clocks.map((clock) => clock.id));
-  }, [clocks]);
-  const clock = clocks.find((item) => item.id === selected) ?? clocks[0];
-  const index = clocks.findIndex((item) => item.id === clock?.id);
   const complete = clock && eventClockComplete(clock);
   const change = async (delta: number) => {
     if (!clock || busy) return;
@@ -45,7 +36,7 @@ export function EventClockSection({ clocks, canManage, onProgress, title, color,
   return <section className="board-section event-clock-section" data-section="index"
     data-event-clock-id={clock?.id} data-complete={!!complete}>
     <BoardSectionHeader title={title} color={color ?? defaultSectionColors.index} actions={actions} />
-    <BoardContentCard className="event-clock-card">
+    <BoardContentCard className="event-clock-card" label={clock?.name ?? "事件钟"}>
     {!clock ? <div className="event-clock-empty"><span>暂无事件钟</span></div> : <>
       <div className="event-clock-name">
         <span>{clock.name}</span>
@@ -58,17 +49,6 @@ export function EventClockSection({ clocks, canManage, onProgress, title, color,
           aria-label={`查看${clock.name}${complete ? "的后果" : "详情"}`} aria-haspopup="dialog">
           {complete ? "查看后果" : "查看详情"}
         </button>
-        <div className="event-clock-pager">
-          {clocks.length > 1 && <>
-            <button type="button" aria-label="上一个事件钟" onClick={() => {
-              setSelected(clocks[(index + clocks.length - 1) % clocks.length].id); setError("");
-            }}><ChevronLeft /></button>
-            <span>{index + 1}/{clocks.length}</span>
-            <button type="button" aria-label="下一个事件钟" onClick={() => {
-              setSelected(clocks[(index + 1) % clocks.length].id); setError("");
-            }}><ChevronRight /></button>
-          </>}
-        </div>
         {canManage && <div className="event-clock-progress-actions">
           <button type="button" aria-label={`${clock.name}进度减一`} disabled={busy || clock.progress <= (clock.mode === "scale" ? 1 : 0)}
             onClick={() => void change(-1)}><Minus /></button>

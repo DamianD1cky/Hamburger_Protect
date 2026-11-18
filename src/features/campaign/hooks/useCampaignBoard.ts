@@ -28,9 +28,9 @@ import type {
   BoardModuleLayout,
 } from "../domain/boardModules";
 import type { CampaignClockConfig } from "../domain/campaignClock";
-import { BOARD_HEIGHT, BOARD_WIDTH, STICKER_SIZE } from "../domain/boardGeometry";
 import { validateEventClock, type EventClock, type EventClockDraft } from "../domain/eventClock";
 import { applySettingsPatch } from "../domain/settingsUpdate";
+import { normalizeStickerRotation, stickerPosition } from "../domain/stickerGeometry";
 
 type PendingNoteMove = { revision: number; x: number; y: number };
 type PendingModuleMove = { revision: number; x: number; y: number };
@@ -500,9 +500,14 @@ export function useCampaignBoard(
   const resizeBoardSticker = (stickerId: string, scale: number) =>
     updateSticker(stickerId, (sticker) => ({
       ...sticker, scale,
-      x: Math.min(sticker.x, BOARD_WIDTH - Math.ceil(STICKER_SIZE * scale)),
-      y: Math.min(sticker.y, BOARD_HEIGHT - Math.ceil(STICKER_SIZE * scale)),
+      ...stickerPosition(sticker.x, sticker.y, scale, sticker.rotation),
     }), () => repository.resizeBoardSticker(campaignId, stickerId, scale));
+  const rotateBoardSticker = (stickerId: string, rotation: number) => {
+    const angle = normalizeStickerRotation(rotation);
+    return updateSticker(stickerId, (sticker) => ({
+      ...sticker, rotation: angle, ...stickerPosition(sticker.x, sticker.y, sticker.scale, angle),
+    }), () => repository.rotateBoardSticker(campaignId, stickerId, angle));
+  };
 
   const deleteBoardSticker = async (stickerId: string) => {
     await stickerWrites.current.get(stickerId)?.catch(() => {});
@@ -548,6 +553,12 @@ export function useCampaignBoard(
       commit(() => repository.deleteChecklistCategory(campaignId, id)),
     saveEventClock,
     setEventClockProgress,
+    moveEventClock: (id: string, x: number, y: number, revision: number) => {
+      const current = board?.eventClocks.find((clock) => clock.id === id);
+      if (!current) return Promise.reject(new Error("EVENT_CLOCK_NOT_FOUND"));
+      return writeEventClock(id, { ...current, position: { x, y } },
+        () => repository.moveEventClock(campaignId, id, x, y, revision));
+    },
     deleteEventClock: (id: string, revision: number) =>
       writeEventClock(id, null, () => repository.deleteEventClock(campaignId, id, revision)),
     toggleChecklist: (itemId: string) =>
@@ -572,6 +583,7 @@ export function useCampaignBoard(
     createBoardSticker,
     moveBoardSticker,
     resizeBoardSticker,
+    rotateBoardSticker,
     deleteBoardSticker,
     createNoteLink,
     deleteNoteLink: (linkId: string) =>

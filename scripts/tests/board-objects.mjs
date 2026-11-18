@@ -247,6 +247,37 @@ try {
     archivedClock.id, "archived clocks remain readable to members");
   await assert.rejects(asUser(() => db.query("select public.set_event_clock_progress($1,$2,2,1)",
     [archivedRoom, archivedClock.id])), /CAMPAIGN_NOT_ACTIVE/);
+  const placementRoom = (await asUser(() => db.query("select id from public.create_campaign('独立卡片验收','GM','主持人')"))).rows[0].id;
+  let placed = (await createClock(authId, placementRoom)).rows[0].value;
+  const beside = (await createClock(authId, placementRoom)).rows[0].value;
+  assert.deepEqual(placed.position, { x: 1081, y: 357 }, "first card preserves the former module position");
+  assert.ok(placed.position.x + 340 <= beside.position.x || beside.position.x + 340 <= placed.position.x ||
+    placed.position.y + 221 <= beside.position.y || beside.position.y + 221 <= placed.position.y,
+  "a new clock receives a separate free card position");
+  for (const uid of [playerAuth, observerAuth, outsideAuth]) {
+    await assert.rejects(asUser(() => db.query("select public.move_event_clock($1,$2,1600,600,1)",
+      [placementRoom, placed.id]), uid), /REQUIRED/);
+  }
+  for (const position of [[null, 5], [0, 100], [1797, 100], [1600, 978]]) {
+    await assert.rejects(asUser(() => db.query("select public.move_event_clock($1,$2,$3,$4,1)",
+      [placementRoom, placed.id, ...position])), /INVALID_EVENT_CLOCK_POSITION/);
+  }
+  placed = (await asUser(() => db.query("select public.move_event_clock($1,$2,1600,650,1) value",
+    [placementRoom, placed.id]))).rows[0].value;
+  assert.deepEqual(placed.position, { x: 1600, y: 650 });
+  assert.equal(placed.revision, 2);
+  assert.equal(placed.progress, 1, "moving a card never changes its progress");
+  await assert.rejects(asUser(() => db.query("select public.move_event_clock($1,$2,1500,600,1)",
+    [placementRoom, placed.id])), /EVENT_CLOCK_CONFLICT/);
+  await asUser(() => db.query("select public.set_event_clock_progress($1,$2,2,2)", [placementRoom, placed.id]));
+  const positions = (await asUser(() => db.query("select public.get_event_clocks($1) value", [placementRoom]))).rows[0].value;
+  assert.deepEqual(positions.find((item) => item.id === placed.id).position, { x: 1600, y: 650 },
+    "progress changes and shared reads preserve the card position");
+  assert.deepEqual(positions.find((item) => item.id === beside.id).position, beside.position,
+    "a different card's position and progress are independent");
+  await asUser(() => db.query("select public.delete_event_clock($1,$2,3)", [placementRoom, placed.id]));
+  assert.deepEqual((await db.query("select position from public.event_clocks where id=$1", [beside.id])).rows[0].position,
+    beside.position, "deleting a card does not relocate its neighbour");
   const limitRoom = (await asUser(() => db.query("select id from public.create_campaign('事件数量测试','GM','店长')"))).rows[0].id;
   for (let i = 0; i < 24; i++) await createClock(authId, limitRoom);
   await assert.rejects(createClock(authId, limitRoom), /EVENT_CLOCK_LIMIT/);
@@ -441,16 +472,16 @@ try {
   const edge = (await asUser(() => db.query(
     "select public.move_board_sticker($1,$2,9999,9999) value", [campaign, sticker.id],
   ))).rows[0].value;
-  assert.deepEqual([edge.x, edge.y], [2072, 1134], "the full sticker stays inside the board");
+  assert.deepEqual([edge.x, edge.y], [2067, 1129], "the rotated sticker stays inside the board");
   const enlarged = (await asUser(() => db.query(
     "select public.resize_board_sticker($1,$2,2.5) value", [campaign, sticker.id],
   ), playerAuth)).rows[0].value;
-  assert.deepEqual([enlarged.scale, enlarged.x, enlarged.y], [2.5, 1964, 1026], "resizing clamps the full sticker within board bounds");
+  assert.deepEqual([enlarged.scale, enlarged.x, enlarged.y], [2.5, 1953, 1015], "resizing clamps the rotated sticker within board bounds");
   const scaledMove = (await asUser(() => db.query(
     "select public.move_board_sticker($1,$2,9999,9999) value", [campaign, sticker.id],
   ))).rows[0].value;
   assert.equal(scaledMove.scale, 2.5, "moving preserves shared scale");
-  assert.deepEqual([scaledMove.x, scaledMove.y], [1964, 1026], "moving uses the scaled bounds");
+  assert.deepEqual([scaledMove.x, scaledMove.y], [1953, 1015], "moving uses the scaled and rotated bounds");
   const loaded = (await asUser(() => db.query("select public.get_board_stickers($1) value", [campaign]))).rows[0].value;
   assert.equal(loaded.find((item) => item.id === sticker.id).scale, 2.5, "shared reads include sticker scale");
   for (const scale of [0, 2.51, null]) await assert.rejects(asUser(() => db.query(
@@ -459,6 +490,28 @@ try {
   await assert.rejects(asUser(() => db.query(
     "select public.resize_board_sticker($1,$2,1)", [campaign, sticker.id],
   ), observerAuth), /REQUIRED/);
+  const rotated = (await asUser(() => db.query(
+    "select public.rotate_board_sticker($1,$2,45) value", [campaign, sticker.id],
+  ), playerAuth)).rows[0].value;
+  assert.equal(rotated.rotation, 45, "players and GM can rotate shared stickers");
+  assert.equal(rotated.scale, 2.5, "rotating preserves the stored scale");
+  assert.deepEqual([rotated.x, rotated.y], [1926, 988], "diagonal corners remain inside the board after rotation");
+  assert.equal((await asUser(() => db.query("select public.get_board_stickers($1) value", [campaign]))).rows[0].value[0].rotation,
+    45, "another member reads the shared angle");
+  await assert.rejects(asUser(() => db.query(
+    "select public.rotate_board_sticker($1,$2,0)", [campaign, sticker.id],
+  ), observerAuth), /REQUIRED/);
+  await assert.rejects(asUser(() => db.query(
+    "select public.rotate_board_sticker($1,$2,0)", [campaign, sticker.id],
+  ), outsideAuth), /REQUIRED/);
+  for (const angle of [null, 360001, -360001]) await assert.rejects(asUser(() => db.query(
+    "select public.rotate_board_sticker($1,$2,$3)", [campaign, sticker.id, angle],
+  )), /INVALID_STICKER_ROTATION/);
+  const fullRotation = (await asUser(() => db.query(
+    "select public.rotate_board_sticker($1,$2,720) value", [campaign, sticker.id],
+  ))).rows[0].value;
+  assert.equal(fullRotation.rotation, 0, "multiple full turns normalize to the original orientation");
+  assert.equal(fullRotation.scale, 2.5);
   await asUser(() => db.query(
     "select public.move_note($1,$2,1800,500)", [campaign, first],
   ));

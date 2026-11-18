@@ -462,6 +462,11 @@ class SupabaseCampaignRepository implements CampaignRepository {
   async deleteEventClock(campaignId: string, id: string, revision: number) {
     return rpc<string>("delete_event_clock", { p_campaign_id: campaignId, p_id: id, p_revision: revision });
   }
+  async moveEventClock(campaignId: string, id: string, x: number, y: number, revision: number) {
+    return rpc<EventClock>("move_event_clock", {
+      p_campaign_id: campaignId, p_id: id, p_x: x, p_y: y, p_revision: revision,
+    });
+  }
   async toggleChecklist(campaignId: string, id: string) {
     await rpc("toggle_checklist", { p_campaign_id: campaignId, p_id: id });
     return this.getBoard(campaignId);
@@ -623,6 +628,15 @@ class SupabaseCampaignRepository implements CampaignRepository {
   async resizeBoardSticker(campaignId: string, id: string, scale: number): Promise<BoardSticker> {
     const sticker = await rpc<RemoteBoardSticker>("resize_board_sticker", {
       p_campaign_id: campaignId, p_id: id, p_scale: scale,
+    });
+    return {
+      id: sticker.id, emoji: sticker.emoji, x: sticker.x, y: sticker.y,
+      rotation: sticker.rotation, scale: sticker.scale ?? 1, createdBy: sticker.created_by,
+    };
+  }
+  async rotateBoardSticker(campaignId: string, id: string, rotation: number): Promise<BoardSticker> {
+    const sticker = await rpc<RemoteBoardSticker>("rotate_board_sticker", {
+      p_campaign_id: campaignId, p_id: id, p_rotation: rotation,
     });
     return {
       id: sticker.id, emoji: sticker.emoji, x: sticker.x, y: sticker.y,

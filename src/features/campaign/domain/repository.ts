@@ -44,6 +44,7 @@ export interface CampaignRepository {
   ): Promise<CampaignBoard>;
   saveEventClock(campaignId: string, draft: EventClockDraft, id?: string, revision?: number): Promise<EventClock>;
   setEventClockProgress(campaignId: string, id: string, progress: number, revision: number): Promise<EventClock>;
+  moveEventClock(campaignId: string, id: string, x: number, y: number, revision: number): Promise<EventClock>;
   deleteEventClock(campaignId: string, id: string, revision: number): Promise<string>;
   toggleChecklist(campaignId: string, itemId: string): Promise<CampaignBoard>;
   saveQuest(
@@ -94,6 +95,7 @@ export interface CampaignRepository {
   ): Promise<BoardSticker>;
   deleteBoardSticker(campaignId: string, stickerId: string): Promise<string>;
   resizeBoardSticker(campaignId: string, stickerId: string, scale: number): Promise<BoardSticker>;
+  rotateBoardSticker(campaignId: string, stickerId: string, rotation: number): Promise<BoardSticker>;
   uploadNotePhoto(campaignId: string, file: File): Promise<string>;
   createNoteLink(
     campaignId: string,

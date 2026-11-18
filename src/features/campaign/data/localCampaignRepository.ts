@@ -25,6 +25,8 @@ import type {
   ResourceStatus,
 } from "../domain/types";
 import { applySettingsPatch, assertSettingsExpected } from "../domain/settingsUpdate";
+import { normalizeStickerRotation, stickerPosition } from "../domain/stickerGeometry";
+import { eventClockRects } from "../domain/eventClockLayout";
 
 const STORAGE_KEY = "veilboard-board-v1";
 const PREVIOUS_STORAGE_KEY = "hamburger-protect-board-v2";
@@ -64,6 +66,13 @@ function normalizeBoard(board: CampaignBoard): CampaignBoard {
   board.settings.appearance ??= defaultBoardAppearance(board.settings.backgroundPath);
   board.settings.boardTextureUrl ??= null;
   board.settings.clock = normalizeCampaignClock(board.settings.clock);
+  const clockRects = eventClockRects(board.eventClocks, board.settings.moduleLayout, board.settings.hiddenSections);
+  board.eventClocks.forEach((clock) => {
+    if (!clock.position) {
+      const rect = clockRects.get(clock.id)!;
+      clock.position = { x: rect.x, y: rect.y };
+    }
+  });
   board.noteLinks ??= [];
   board.stickers ??= [];
   board.stickers.forEach((sticker) => { sticker.scale ??= 1; });
@@ -422,6 +431,10 @@ class LocalCampaignRepository implements CampaignRepository {
       if (!id && board.eventClocks.length >= EVENT_CLOCK_LIMIT) throw new Error("EVENT_CLOCK_LIMIT");
       saved = current ? { ...current, ...validateEventClock(draft, current), revision: current.revision + 1 } :
         { ...validateEventClock(draft), id: crypto.randomUUID(), mode: "progress", stages: null, revision: 1 };
+      if (!current) {
+        const rect = eventClockRects([...board.eventClocks, saved], board.settings.moduleLayout, board.settings.hiddenSections).get(saved.id)!;
+        saved.position = { x: rect.x, y: rect.y };
+      }
       board.eventClocks = current ? board.eventClocks.map((clock) => clock.id === id ? saved : clock) :
         [...board.eventClocks, saved];
     });
@@ -447,6 +460,19 @@ class LocalCampaignRepository implements CampaignRepository {
       board.eventClocks = board.eventClocks.filter((clock) => clock.id !== id);
     });
     return id;
+  }
+  async moveEventClock(_campaignId: string, id: string, x: number, y: number, revision: number) {
+    let saved!: EventClock;
+    this.manage((board) => {
+      const current = board.eventClocks.find((clock) => clock.id === id);
+      if (!current) throw new Error("EVENT_CLOCK_NOT_FOUND");
+      if (current.revision !== revision) throw new Error("EVENT_CLOCK_CONFLICT");
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 8 || x > 1796 || y < 8 || y > 977)
+        throw new Error("INVALID_EVENT_CLOCK_POSITION");
+      saved = { ...current, position: { x, y }, revision: current.revision + 1 };
+      board.eventClocks = board.eventClocks.map((clock) => clock.id === id ? saved : clock);
+    });
+    return saved;
   }
 
   async toggleChecklist(_campaignId: string, itemId: string) {
@@ -664,8 +690,7 @@ class LocalCampaignRepository implements CampaignRepository {
     this.updateAsMember((board) => {
       const sticker = board.stickers.find((item) => item.id === stickerId);
       if (!sticker) throw new Error("贴纸不存在");
-      sticker.x = Math.max(0, Math.min(BOARD_WIDTH - Math.ceil(STICKER_SIZE * sticker.scale), x));
-      sticker.y = Math.max(0, Math.min(BOARD_HEIGHT - Math.ceil(STICKER_SIZE * sticker.scale), y));
+      Object.assign(sticker, stickerPosition(x, y, sticker.scale, sticker.rotation));
       moved = { ...sticker };
     });
     if (!moved) throw new Error("贴纸不存在");
@@ -686,11 +711,21 @@ class LocalCampaignRepository implements CampaignRepository {
       const sticker = board.stickers.find((item) => item.id === stickerId);
       if (!sticker) throw new Error("贴纸不存在");
       sticker.scale = Math.round(scale * 100) / 100;
-      sticker.x = Math.min(sticker.x, BOARD_WIDTH - Math.ceil(STICKER_SIZE * sticker.scale));
-      sticker.y = Math.min(sticker.y, BOARD_HEIGHT - Math.ceil(STICKER_SIZE * sticker.scale));
+      Object.assign(sticker, stickerPosition(sticker.x, sticker.y, sticker.scale, sticker.rotation));
       resized = { ...sticker };
     });
     return resized!;
+  }
+  async rotateBoardSticker(_campaignId: string, stickerId: string, rotation: number): Promise<BoardSticker> {
+    const angle = normalizeStickerRotation(rotation);
+    let rotated!: BoardSticker;
+    this.updateAsMember((board) => {
+      const sticker = board.stickers.find((item) => item.id === stickerId);
+      if (!sticker) throw new Error("贴纸不存在");
+      Object.assign(sticker, { rotation: angle }, stickerPosition(sticker.x, sticker.y, sticker.scale, angle));
+      rotated = { ...sticker };
+    });
+    return rotated;
   }
 
   async updateMemberProfile(_campaignId: string, draft: MemberProfileDraft) {

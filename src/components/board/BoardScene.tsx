@@ -32,9 +32,11 @@ import { boardGeometryStyle } from "../../features/campaign/domain/boardGeometry
 import { NoteCard } from "./NoteCard";
 import {
   moduleRect,
+  boardModuleKeys,
   type BoardModuleKey,
   type BoardModuleLayout,
 } from "../../features/campaign/domain/boardModules";
+import { eventClockRects } from "../../features/campaign/domain/eventClockLayout";
 
 interface BoardSceneProps {
   board: CampaignBoard;
@@ -42,6 +44,8 @@ interface BoardSceneProps {
   viewScaleRef: RefObject<number>;
   onOpenResourceSheet: (group: number) => void;
   onEventClockProgress: (id: string, progress: number, revision: number) => Promise<unknown>;
+  onMoveEventClock: (id: string, x: number, y: number, revision: number) => Promise<unknown>;
+  onEditEventClock: (id: string) => void;
   onViewChecklist: () => void;
   onViewQuests: (completed: boolean) => void;
   onOpenNotes: () => void;
@@ -62,6 +66,7 @@ interface BoardSceneProps {
   onCreateSticker: (emoji: string, x: number, y: number, rotation: number) => Promise<unknown>;
   onMoveSticker: (stickerId: string, x: number, y: number) => Promise<unknown>;
   onResizeSticker: (stickerId: string, scale: number) => Promise<unknown>;
+  onRotateSticker: (stickerId: string, rotation: number) => Promise<unknown>;
   onDeleteSticker: (stickerId: string) => Promise<unknown>;
   onCreateNoteLink: (
     fromNoteId: string,
@@ -90,6 +95,8 @@ export function BoardScene({
   viewScaleRef,
   onOpenResourceSheet,
   onEventClockProgress,
+  onMoveEventClock,
+  onEditEventClock,
   onViewChecklist,
   onViewQuests,
   onOpenNotes,
@@ -107,6 +114,7 @@ export function BoardScene({
   onCreateSticker,
   onMoveSticker,
   onResizeSticker,
+  onRotateSticker,
   onDeleteSticker,
   onDeleteNoteLink,
   onUpdateNoteLinkLabel,
@@ -132,6 +140,10 @@ export function BoardScene({
   };
   const stickerChoices = ["😀", "⭐", "🔥", "❤️", "⚠️", "✅", "❓", "💡", "👑", "🎲", "💀", "🍔"];
   const hidden = new Set(board.settings.hiddenSections);
+  const clockRects = eventClockRects(board.eventClocks, moduleLayout, board.settings.hiddenSections);
+  const occupiedModules = boardModuleKeys.filter((key) => key !== "index" && !hidden.has(key))
+    .map((key) => ({ key, rect: moduleRect(key, moduleLayout) }));
+  const visibleClockRects = hidden.has("index") ? [] : [...clockRects.values()];
   const title = (key: Parameters<typeof sectionTitle>[0]) =>
     sectionTitle(key, board.settings.sectionTitles);
   const color = (key: Parameters<typeof sectionTitle>[0]) => {
@@ -420,6 +432,11 @@ export function BoardScene({
       canDrag={canManage}
       viewScaleRef={viewScaleRef}
       onMove={onMoveModule}
+      obstacles={[
+        ...occupiedModules.filter((module) => module.key !== key).map((module) => module.rect),
+        ...visibleClockRects,
+        ...(!hidden.has("index") && !board.eventClocks.length && key !== "index" ? [moduleRect("index", moduleLayout)] : []),
+      ]}
     >
       {node}
     </BoardModuleFrame>
@@ -476,6 +493,7 @@ export function BoardScene({
               canEdit={canUpdateSharedBoard}
               onMove={onMoveSticker}
               onResize={onResizeSticker}
+              onRotate={onRotateSticker}
               onDelete={onDeleteSticker}
             />
           ))}
@@ -706,18 +724,33 @@ export function BoardScene({
                 onExpand={onExpandRoster}
               />,
             )}
-          {!hidden.has("index") &&
+          {!hidden.has("index") && !board.eventClocks.length &&
             moduleFrame(
               "index",
               <EventClockSection
                 title={title("index")}
                 color={color("index")}
                 actions={actionsFor("index")}
-                clocks={board.eventClocks}
                 canManage={canManage}
                 onProgress={onEventClockProgress}
               />,
             )}
+          {!hidden.has("index") && board.eventClocks.map((clock, i) => (
+            <BoardModuleFrame key={clock.id} moduleKey="index"
+              instanceId={i === 0 ? "index" : `event-clock:${clock.id}`}
+              rect={clockRects.get(clock.id)!} layout={moduleLayout} canDrag={canManage}
+              viewScaleRef={viewScaleRef}
+              obstacles={[...occupiedModules.map((module) => module.rect),
+                ...[...clockRects].filter(([id]) => id !== clock.id).map(([, rect]) => rect)]}
+              onMove={(_key, x, y) => onMoveEventClock(clock.id, x, y, clock.revision)}>
+              <EventClockSection clock={clock} title={title("index")} color={color("index")} canManage={canManage}
+                onProgress={onEventClockProgress}
+                actions={canManage ? {
+                  onEdit: () => onEditEventClock(clock.id), onHide: () => onHideSection("index"),
+                  editLabel: i === 0 ? `编辑${title("index")}模块` : `编辑事件钟：${clock.name}`,
+                } : undefined} />
+            </BoardModuleFrame>
+          ))}
           {!hidden.has("activity") &&
             moduleFrame(
               "activity",

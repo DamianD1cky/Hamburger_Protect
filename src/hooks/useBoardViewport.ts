@@ -9,6 +9,8 @@ import {
   type BoardModuleKey,
   type BoardModuleLayout,
 } from "../features/campaign/domain/boardModules";
+import type { EventClock } from "../features/campaign/domain/eventClock";
+import { eventClockRects } from "../features/campaign/domain/eventClockLayout";
 
 export type FocusZone =
   | "overview"
@@ -16,12 +18,13 @@ export type FocusZone =
   | "tasks"
   | "shifts"
   | "safety"
-  | "notes";
+  | "notes"
+  | `event:${string}`;
 
 const MIN_SCALE = 0.05;
 
 /** 全览只包含板框；移动端区域聚焦使用模块当前坐标。 */
-function focusBounds(zone: FocusZone, layout: BoardModuleLayout | undefined) {
+function focusBounds(zone: FocusZone, layout: BoardModuleLayout | undefined, clocks: EventClock[], hidden: string[]) {
   if (zone === "overview") {
     return {
       x: 0,
@@ -30,12 +33,19 @@ function focusBounds(zone: FocusZone, layout: BoardModuleLayout | undefined) {
       height: BOARD_HEIGHT + BOARD_FRAME_INSET * 2,
     };
   }
+  const clockRects = eventClockRects(clocks, layout ?? {}, hidden);
+  if (zone.startsWith("event:")) {
+    const rect = clockRects.get(zone.slice(6)) ?? clockRects.values().next().value ?? moduleRect("index", layout);
+    return { x: rect.x + BOARD_FRAME_INSET - 24, y: rect.y + BOARD_FRAME_INSET - 24,
+      width: rect.w + 48, height: rect.h + 48 };
+  }
 
   const keys: BoardModuleKey[] =
     zone === "shifts"
       ? ["shifts", "index"]
-      : [zone === "notes" ? "activity" : zone];
-  const rects = keys.map((key) => moduleRect(key, layout));
+      : [zone === "notes" ? "activity" : zone as BoardModuleKey];
+  const rects = keys.map((key) => key === "index" && clocks.length ?
+    clockRects.get(clocks[0].id)! : moduleRect(key, layout));
   const left = Math.min(...rects.map((rect) => rect.x));
   const top = Math.min(...rects.map((rect) => rect.y));
   const right = Math.max(...rects.map((rect) => rect.x + rect.w));
@@ -71,7 +81,7 @@ function viewportBox(container: HTMLElement) {
   };
 }
 
-export function useBoardViewport(moduleLayout?: BoardModuleLayout) {
+export function useBoardViewport(moduleLayout?: BoardModuleLayout, clocks: EventClock[] = [], hidden: string[] = []) {
   const elementRef = useRef<HTMLDivElement>(null);
   const [world, setWorld] = useState<HTMLDivElement | null>(null);
   const worldRef = useCallback((element: HTMLDivElement | null) => {
@@ -81,6 +91,10 @@ export function useBoardViewport(moduleLayout?: BoardModuleLayout) {
   const viewScaleRef = useRef(1);
   const layoutRef = useRef(moduleLayout);
   layoutRef.current = moduleLayout;
+  const clocksRef = useRef(clocks);
+  clocksRef.current = clocks;
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
   const zoneRef = useRef<FocusZone>("overview");
   const [focusZone, updateFocusZone] = useState<FocusZone>("overview");
 
@@ -90,7 +104,7 @@ export function useBoardViewport(moduleLayout?: BoardModuleLayout) {
     if (!element || !container) return;
 
     const viewport = viewportBox(container);
-    const bounds = focusBounds(zoneRef.current, layoutRef.current);
+    const bounds = focusBounds(zoneRef.current, layoutRef.current, clocksRef.current, hiddenRef.current);
     const scale = Math.max(
       MIN_SCALE,
       Math.min(
@@ -124,7 +138,7 @@ export function useBoardViewport(moduleLayout?: BoardModuleLayout) {
 
   useLayoutEffect(() => {
     fit();
-  }, [moduleLayout, fit]);
+  }, [moduleLayout, clocks, fit]);
 
   useLayoutEffect(() => {
     const container = world?.parentElement;

@@ -87,6 +87,7 @@ try {
     let releaseBoard;
     let boardGate = new Promise((resolve) => { releaseBoard = resolve; });
     let boardRequests = 0;
+    let rejectStickerRotation = false;
     let diceResponseGate = null;
     let rejectMove = false;
     let delayedMoveId = null;
@@ -410,12 +411,20 @@ try {
           result = boardStickers.find((sticker) => sticker.id === body.p_id);
         }
       }
+      else if (path.endsWith("/rotate_board_sticker")) {
+        if (rejectStickerRotation) { status = 400; result = { message: "贴纸旋转失败" }; }
+        else {
+          boardStickers = boardStickers.map((sticker) => sticker.id === body.p_id ? { ...sticker, rotation: body.p_rotation } : sticker);
+          result = boardStickers.find((sticker) => sticker.id === body.p_id);
+        }
+      }
       else if (path.endsWith("/delete_board_sticker")) {
         boardStickers = boardStickers.filter((sticker) => sticker.id !== body.p_id);
         result = body.p_id;
       }
       else if (path.endsWith("/get_event_clocks")) result = eventClocks;
-      else if (path.endsWith("/save_event_clock") || path.endsWith("/set_event_clock_progress") || path.endsWith("/delete_event_clock")) {
+      else if (path.endsWith("/save_event_clock") || path.endsWith("/set_event_clock_progress") ||
+        path.endsWith("/delete_event_clock") || path.endsWith("/move_event_clock")) {
         if (eventClockGate) await eventClockGate;
         const clock = eventClocks.find((item) => item.id === body.p_id);
         if (rejectEventClock) { status = 400; result = { message: "EVENT_CLOCK_CONFLICT" }; }
@@ -426,10 +435,14 @@ try {
         } else if (path.endsWith("/set_event_clock_progress")) {
           result = { ...clock, progress: body.p_progress, revision: clock.revision + 1 };
           eventClocks = eventClocks.map((item) => item.id === result.id ? result : item);
+        } else if (path.endsWith("/move_event_clock")) {
+          result = { ...clock, position: { x: body.p_x, y: body.p_y }, revision: clock.revision + 1 };
+          eventClocks = eventClocks.map((item) => item.id === result.id ? result : item);
         } else {
           result = { id: body.p_id ?? crypto.randomUUID(), name: body.p_name, segments: body.p_segments,
             progress: body.p_progress, consequence: body.p_consequence, color: body.p_color,
-            mode: clock?.mode ?? "progress", stages: clock?.stages ?? null, revision: (clock?.revision ?? 0) + 1 };
+            mode: clock?.mode ?? "progress", stages: clock?.stages ?? null, revision: (clock?.revision ?? 0) + 1,
+            position: clock?.position ?? (clock ? { x: 1081, y: 357 } : { x: 1450, y: 640 }) };
           eventClocks = clock ? eventClocks.map((item) => item.id === result.id ? result : item) : [...eventClocks, result];
         }
       }
@@ -1473,10 +1486,10 @@ try {
       await dock.getByRole("button", { name: "成员名册", exact: true }).click();
     }
 
-    const clockSection = page.locator(".event-clock-section");
+    let clockSection = page.locator(".event-clock-section").first();
     const clockDialog = page.getByRole("dialog", { name: "设置「事件钟」", exact: true });
     const openClockManager = async () => {
-      await clockSection.getByRole("button", { name: "编辑事件钟模块", exact: true }).click();
+      await clockSection.getByRole("button", { name: /^编辑/ }).click();
       await clockDialog.waitFor();
     };
     check(await clockSection.getByRole("button", { name: "发起事件钟", exact: true }).count() === 0 &&
@@ -1504,6 +1517,15 @@ try {
     await clockDialog.locator(".event-clock-list").getByRole("button", { name: /被追捕/ }).waitFor();
     await clockDialog.getByRole("button", { name: "关闭", exact: true }).click();
     await clockDialog.waitFor({ state: "hidden" });
+    clockSection = page.locator(".event-clock-section").filter({ has: page.getByRole("progressbar", { name: "被追捕进度", exact: true }) });
+    check(await page.locator(".event-clock-card").count() === 2, "creating a clock adds a separate card and keeps the legacy card visible");
+    check(await page.getByRole("button", { name: /^(上|下)一个事件钟$/ }).count() === 0,
+      "independent clock cards have no content pager");
+    if (scenario.width < 761) {
+      await page.locator(".focus-dock").getByRole("button", { name: "事件钟", exact: true }).click();
+      await page.getByLabel("聚焦事件钟", { exact: true }).selectOption(eventClocks.find((clock) => clock.name === "被追捕").id);
+      await page.waitForFunction(() => document.querySelector(".world")?.getAnimations().every((animation) => animation.playState === "finished"));
+    }
     await clockSection.getByRole("progressbar", { name: "被追捕进度", exact: true }).waitFor();
     check(await clockSection.getByRole("progressbar").getAttribute("aria-valuenow") === "1",
       "GM starts a named six-segment event clock at one");
@@ -1513,7 +1535,7 @@ try {
     let releaseClock;
     eventClockGate = new Promise((resolve) => { releaseClock = resolve; });
     await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).click();
-    await page.waitForFunction(() => document.querySelector('.event-clock-section [role="progressbar"]')?.getAttribute("aria-valuenow") === "2");
+    await page.waitForFunction(() => document.querySelector('[aria-label="被追捕进度"]')?.getAttribute("aria-valuenow") === "2");
     check(eventClocks.find((clock) => clock.name === "被追捕").progress === 1, "progress displays before network confirmation");
     releaseClock(); eventClockGate = null;
     await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).waitFor();
@@ -1521,7 +1543,7 @@ try {
     rejectEventClock = true;
     await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).click();
     await clockSection.getByRole("alert").waitFor();
-    await page.waitForFunction(() => document.querySelector('.event-clock-section [role="progressbar"]')?.getAttribute("aria-valuenow") === "2");
+    await page.waitForFunction(() => document.querySelector('[aria-label="被追捕进度"]')?.getAttribute("aria-valuenow") === "2");
     check(eventClocks.find((clock) => clock.name === "被追捕").progress === 2, "failed progress updates restore the saved value");
     rejectEventClock = false;
     await openClockManager();
@@ -1533,7 +1555,7 @@ try {
     await clockDialog.getByRole("button", { name: "关闭", exact: true }).click();
     await clockDialog.waitFor({ state: "hidden" });
     await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).click();
-    await page.waitForFunction(() => document.querySelector(".event-clock-section")?.dataset.complete === "true");
+    await page.waitForFunction(() => document.querySelector('[aria-label="被追捕进度"]')?.closest(".event-clock-section")?.dataset.complete === "true");
     check(await clockSection.getByRole("status").textContent() === "事件已满",
       "full progress highlights a compact completion signal");
     await clockSection.getByRole("button", { name: "查看被追捕的后果", exact: true }).click();
@@ -1544,13 +1566,63 @@ try {
     await clockDetails.getByRole("button", { name: "关闭", exact: true }).click();
     check(await clockSection.getByRole("button", { name: "被追捕进度加一", exact: true }).isDisabled(),
       "clock progress cannot overflow");
-    await page.waitForFunction(() => document.querySelector(".event-clock-name strong .motion-text-value")?.textContent === "6/6" &&
+    await page.waitForFunction(() => document.querySelector('[aria-label="被追捕进度"]')?.closest(".event-clock-section")?.querySelector(".event-clock-name strong .motion-text-value")?.textContent === "6/6" &&
       [...document.querySelectorAll(".event-clock-section .motion-text-value")].every((element) => !element.getAnimations().length));
     await page.screenshot({ path: join(screenshots, `${scenario.label}-event-clock.png`) });
     await clockSection.getByRole("button", { name: "被追捕进度减一", exact: true }).click();
-    await page.waitForFunction(() => document.querySelector(".event-clock-section")?.dataset.complete === "false");
+    await page.waitForFunction(() => document.querySelector('[aria-label="被追捕进度"]')?.closest(".event-clock-section")?.dataset.complete === "false");
     check(await clockSection.getByRole("progressbar").getAttribute("aria-valuenow") === "5",
       "progress can be rolled back and clears the consequence highlight");
+    if (scenario.label === "desktop") {
+      const originalClock = eventClocks[0];
+      const independentClock = eventClocks.find((clock) => clock.name === "被追捕");
+      const originalRect = await page.locator('[data-module="index"]').getAttribute("style");
+      const independentHeader = clockSection.locator(".board-section-heading");
+      const clockBox = await independentHeader.boundingBox();
+      const moved = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/move_event_clock"));
+      await page.mouse.move(clockBox.x + 60, clockBox.y + 20); await page.mouse.down();
+      await page.mouse.move(clockBox.x + 160, clockBox.y + 170, { steps: 6 }); await page.mouse.up();
+      await moved;
+      await page.waitForFunction(({ id, y }) => {
+        const element = document.querySelector(`[data-event-clock-id="${id}"]`)?.parentElement;
+        return element && Number.parseFloat(element.style.top) !== y && !element.classList.contains("is-dragging");
+      }, { id: independentClock.id, y: independentClock.position.y });
+      check(await page.locator('[data-module="index"]').getAttribute("style") === originalRect &&
+        eventClocks[0].progress === originalClock.progress,
+      "dragging the new event card leaves the original card's position and progress untouched");
+      const movedPosition = eventClocks.find((clock) => clock.id === independentClock.id).position;
+      await openClockManager();
+      check(await clockDialog.getByLabel("事件名称", { exact: true }).inputValue() === "被追捕",
+        "each card's pencil opens that clock directly");
+      await clockDialog.getByLabel("事件名称", { exact: true }).fill("被追捕（独立卡片）");
+      await clockDialog.getByRole("button", { name: "保存事件钟", exact: true }).click();
+      await clockDialog.locator(".event-clock-list").getByRole("button", { name: /被追捕（独立卡片）/ }).waitFor();
+      check(JSON.stringify(eventClocks.find((clock) => clock.id === independentClock.id).position) === JSON.stringify(movedPosition),
+        "editing a moved card preserves its stored location");
+      // Keep the shared visitor assertions named consistently.
+      await clockDialog.getByLabel("事件名称", { exact: true }).fill("被追捕");
+      await clockDialog.getByRole("button", { name: "保存事件钟", exact: true }).click();
+      await clockDialog.locator(".event-clock-list").getByRole("button", { name: /被追捕/ }).waitFor();
+      await clockDialog.getByRole("button", { name: "关闭", exact: true }).click();
+      await clockDialog.waitFor({ state: "hidden" });
+    }
+    if (scenario.label === "mobile") {
+      await page.getByRole("button", { name: "添加 Emoji 贴纸", exact: true }).tap();
+      await page.getByRole("button", { name: "添加贴纸 ⭐", exact: true }).tap();
+      const cardBox = await clockSection.boundingBox();
+      await page.touchscreen.tap(cardBox.x + 30, cardBox.y + cardBox.height - 22);
+      const mobileSticker = page.locator('[data-sticker-id="sticker-1"]');
+      await mobileSticker.waitFor();
+      await mobileSticker.tap();
+      await page.getByRole("button", { name: "顺时针旋转贴纸 ⭐", exact: true }).tap();
+      await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.rotation === "15" &&
+        !document.querySelector('[aria-label="顺时针旋转贴纸 ⭐"]')?.disabled);
+      check(boardStickers[0].rotation === 15, "phone users can rotate a selected sticker by touch");
+      await page.getByRole("button", { name: "恢复贴纸角度 ⭐", exact: true }).tap();
+      await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.rotation === "0");
+      await page.getByRole("button", { name: "删除贴纸 ⭐", exact: true }).tap();
+      await mobileSticker.waitFor({ state: "detached" });
+    }
     const swapLog = await page.evaluate(() => window.motionLog.filter((item) => item.classes === "motion-text-value"));
     check(scenario.reduced ? swapLog.length === 0 : swapLog.some((item) => item.duration === 120) && swapLog.some((item) => item.duration === 220), "status uses short swaps or reduced-motion bypass");
 
@@ -1590,6 +1662,12 @@ try {
           new URL(response.url()).pathname.endsWith("/move_board_module"));
         await dragModule("safety", 600);
         await safetySaved;
+        const expectedModulePositions = await page.evaluate(() => Object.fromEntries(
+          ["activity", "safety"].map((key) => {
+            const element = document.querySelector(`[data-module="${key}"]`);
+            return [key, Number.parseFloat(element.style.left)];
+          }),
+        ));
         const noteSaved = page.waitForResponse((response) =>
           new URL(response.url()).pathname.endsWith("/move_note"));
         const noteBox = await note.boundingBox();
@@ -1610,7 +1688,7 @@ try {
             return [key, Number.parseFloat(element.style.left)];
           }),
         ));
-        check(modulePositions.activity === 1500 && modulePositions.safety === 600,
+        check(JSON.stringify(modulePositions) === JSON.stringify(expectedModulePositions),
           "moving a note cannot roll back either recently moved module");
       }
       const initial = await position();
@@ -1804,6 +1882,25 @@ try {
       rejectStickerResize = false;
       await page.getByRole("button", { name: "缩小贴纸 ⭐", exact: true }).click();
       await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.scale === "1");
+      await page.getByRole("button", { name: "顺时针旋转贴纸 ⭐", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.rotation === "15" &&
+        !document.querySelector('[aria-label="顺时针旋转贴纸 ⭐"]')?.disabled);
+      check(boardStickers[0].rotation === 15, "sticker rotation is shared through its dedicated RPC");
+      check(await emojiSticker.evaluate((element) => element.style.rotate === "" &&
+        element.querySelector(".board-emoji-glyph").style.rotate === "15deg"),
+      "only the glyph rotates; its controls remain upright");
+      rejectStickerRotation = true;
+      await page.getByRole("button", { name: "顺时针旋转贴纸 ⭐", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.rotation === "15" &&
+        !document.querySelector('[aria-label="顺时针旋转贴纸 ⭐"]')?.disabled);
+      check(boardStickers[0].rotation === 15, "a failed rotation restores the previous shared angle");
+      rejectStickerRotation = false;
+      await page.getByRole("button", { name: "放大贴纸 ⭐", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.scale === "1.25");
+      check(boardStickers[0].rotation === 15, "resizing never resets a sticker's saved angle");
+      await page.getByRole("button", { name: "恢复贴纸角度 ⭐", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-sticker-id="sticker-1"]')?.dataset.rotation === "0");
+      check(boardStickers[0].rotation === 0, "clicking the angle restores an upright sticker");
       if (scenario.label === "desktop") {
         await page.screenshot({ path: join(screenshots, "desktop-sticker.png") });
       }
@@ -2031,7 +2128,8 @@ try {
     check(await page.locator(".dice-launcher").count() === 0, "public visitors never receive the dice tool");
     check(await page.getByRole("button", { name: "编辑事件钟模块", exact: true }).count() === 0 &&
       await page.locator(".event-clock-progress-actions").count() === 0, "visitors cannot manage or adjust shared clocks");
-    await page.locator(".event-clock-section").getByRole("button", { name: "下一个事件钟", exact: true }).click();
+    check(await page.locator(".event-clock-card").count() === eventClocks.length,
+      "visitors see all clock cards simultaneously");
     check(await page.getByRole("progressbar", { name: "被追捕进度", exact: true }).getAttribute("aria-valuenow") === "5",
       "visitors see the persisted clock progress and consequence");
     check(await page.locator(`.board > .board-surface[data-surface="${board.settings.appearance.surface.kind}"]`).count() === 1, "visitors read the saved appearance");

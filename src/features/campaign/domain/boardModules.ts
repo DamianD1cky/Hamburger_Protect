@@ -1,5 +1,5 @@
-import { BOARD_HEIGHT, BOARD_WIDTH } from "./boardGeometry";
-export { BOARD_HEIGHT, BOARD_WIDTH } from "./boardGeometry";
+import { BOARD_HEIGHT, BOARD_WIDTH } from "./boardGeometry.ts";
+export { BOARD_HEIGHT, BOARD_WIDTH } from "./boardGeometry.ts";
 
 /**
  * 公告板模块定义。
@@ -81,6 +81,27 @@ export function rectsOverlap(a: BoardModuleRect, b: BoardModuleRect, gap = 0) {
     a.y < b.y + b.h + gap &&
     b.y < a.y + a.h + gap
   );
+}
+
+export function canPlaceRect(candidate: BoardModuleRect, occupied: BoardModuleRect[], gap = 0) {
+  return candidate.x >= EDGE && candidate.y >= EDGE &&
+    candidate.x + candidate.w <= BOARD_WIDTH - EDGE &&
+    candidate.y + candidate.h <= BOARD_HEIGHT - EDGE &&
+    occupied.every((other) => !rectsOverlap(candidate, other, gap));
+}
+
+export function nearestFreeRect(rect: BoardModuleRect, occupied: BoardModuleRect[]) {
+  const target = { ...rect, ...clampToBoard(snap(rect.x), snap(rect.y), rect.w, rect.h) };
+  if (canPlaceRect(target, occupied, 8)) return { x: target.x, y: target.y };
+  let best: { x: number; y: number; distance: number } | null = null;
+  for (let y = SNAP_GRID; y <= BOARD_HEIGHT - rect.h - EDGE; y += SNAP_GRID) {
+    for (let x = SNAP_GRID; x <= BOARD_WIDTH - rect.w - EDGE; x += SNAP_GRID) {
+      const distance = (x - target.x) ** 2 + (y - target.y) ** 2;
+      if (best && distance >= best.distance) continue;
+      if (canPlaceRect({ ...rect, x, y }, occupied, 8)) best = { x, y, distance };
+    }
+  }
+  return best ? { x: best.x, y: best.y } : null;
 }
 
 /** 这个位置能不能放：不超边界、不压到别的模块。 */

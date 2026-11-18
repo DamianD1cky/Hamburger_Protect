@@ -518,7 +518,7 @@ function CampaignBoardWorkspace({
   const queryClient = useQueryClient();
   const campaign = useCampaignBoard(campaignId, publicView);
   const { worldRef, viewScaleRef, focusZone, setFocusZone } =
-    useBoardViewport(campaign.board?.settings.moduleLayout);
+    useBoardViewport(campaign.board?.settings.moduleLayout, campaign.board?.eventClocks, campaign.board?.settings.hiddenSections);
   const [composer, setComposer] = useState<ComposerState>(closedComposer);
   const [resourceSheet, setResourceSheet] = useState<number | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -534,6 +534,7 @@ function CampaignBoardWorkspace({
   };
   const [sectionSettingsKey, setSectionSettingsKey] =
     useState<CampaignSectionKey | null>(null);
+  const [editingClockId, setEditingClockId] = useState<string | undefined>();
   const visitorMessages = useQuery({
     queryKey: ["visitor-messages", campaignId, campaign.board?.viewer.id],
     queryFn: () => getVisitorMessages(campaignId),
@@ -601,7 +602,9 @@ function CampaignBoardWorkspace({
       safety: "safety",
       notes: "activity",
     } as const;
-    if (focusZone !== "overview" && hidden.includes(sectionByZone[focusZone])) {
+    const section = focusZone.startsWith("event:") ? "index" :
+      sectionByZone[focusZone as keyof typeof sectionByZone];
+    if (focusZone !== "overview" && section && hidden.includes(section)) {
       setFocusZone("overview");
     }
   }, [campaign.board?.settings.hiddenSections, focusZone, setFocusZone]);
@@ -766,6 +769,8 @@ function CampaignBoardWorkspace({
           viewScaleRef={viewScaleRef}
           onOpenResourceSheet={setResourceSheet}
           onEventClockProgress={campaign.setEventClockProgress}
+          onMoveEventClock={campaign.moveEventClock}
+          onEditEventClock={(id) => { setEditingClockId(id); setSectionSettingsKey("index"); }}
           onViewChecklist={() => setBoardDetails("checklist")}
           onViewQuests={(completed) => setBoardDetails(completed ? "completed-tasks" : "active-tasks")}
           onExpandRoster={openRoster}
@@ -819,10 +824,17 @@ function CampaignBoardWorkspace({
               throw error;
             }
           }}
+          onRotateSticker={async (id, rotation) => {
+            try { return await campaign.rotateBoardSticker(id, rotation); }
+            catch (error) {
+              showToast(error instanceof Error ? error.message : "贴纸旋转失败，请重试。");
+              throw error;
+            }
+          }}
           onCreateNoteLink={campaign.createNoteLink}
           onDeleteNoteLink={campaign.deleteNoteLink}
           onUpdateNoteLinkLabel={campaign.updateNoteLinkLabel}
-          onEditSection={(key) => setSectionSettingsKey(key)}
+          onEditSection={(key) => { setEditingClockId(undefined); setSectionSettingsKey(key); }}
           onHideSection={(key) => {
             void patchBoardSettings(settingsUpdate(board, { hiddenSections: { [key]: true } }))
               .then(() => showToast("区块已隐藏，可在顶栏恢复"))
@@ -967,6 +979,7 @@ function CampaignBoardWorkspace({
       </div>
 
       <FocusDock
+        eventClocks={board.eventClocks}
         active={focusZone}
         hiddenSections={board.settings.hiddenSections}
         onChange={setFocusZone}
@@ -1084,7 +1097,7 @@ function CampaignBoardWorkspace({
             sectionKey={sectionSettingsKey}
             board={board}
             onClose={() => setSectionSettingsKey(null)}
-            key={sectionSettingsKey}
+            key={`${sectionSettingsKey}:${editingClockId ?? ""}`}
             renderContent={(onBusyChange) => {
               const openContent = (open: () => void) => { setSectionSettingsKey(null); open(); };
               switch (sectionSettingsKey) {
@@ -1092,7 +1105,7 @@ function CampaignBoardWorkspace({
                   return <ResourceCategorySettings board={board} onBusyChange={onBusyChange}
                     onSave={patchBoardSettings} onOpenSheet={(group) => openContent(() => setResourceSheet(group))} />;
                 case "index":
-                  return <EventClockManager board={board} onSave={campaign.saveEventClock}
+                  return <EventClockManager board={board} clockId={editingClockId} onSave={campaign.saveEventClock}
                     onDelete={campaign.deleteEventClock} onBusyChange={onBusyChange} />;
                 case "safety":
                   return <ChecklistEditor kind="checklist" board={board} onBusyChange={onBusyChange}
