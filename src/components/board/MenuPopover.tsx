@@ -100,7 +100,7 @@ export function MenuPopover({ anchor, title, id, children, onClose, className = 
     }}>
     <header className="composer-header">
       <h1>{title}</h1>
-      {compact && <button className="icon-button" type="button" aria-label="关闭" onClick={onClose}><X /></button>}
+      <button className="icon-button" type="button" aria-label="关闭" onClick={onClose}><X /></button>
     </header>
     <div className="paper-dialog-body">{children}</div>
   </dialog>, document.body);

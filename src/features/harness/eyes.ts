@@ -45,9 +45,8 @@ export function captureBoardContext(board: CampaignBoard) {
     },
     campaignName: board.campaign.name,
     appearance: {
-      roomKind: board.settings.appearance.room.kind,
+      roomKind: board.settings.appearance.room.kind === "perspective" ? "color" : board.settings.appearance.room.kind,
       roomColor: board.settings.appearance.room.color,
-      perspectiveScene: board.settings.appearance.room.scene ?? null,
       surfaceKind: board.settings.appearance.surface.kind,
       frame: board.settings.appearance.frame,
     },
@@ -93,10 +92,28 @@ export function captureBoardContext(board: CampaignBoard) {
 }
 
 export const HARNESS_SYSTEM_PROMPT = `你是 VeilBoard（帷幕告示板）的专职「公告板编排 Agent Harness」。
-你的职责是根据跑团 GM（主持人）的自然语言指令，编排 2144×1206 画布上的核心模块、9 大原子能力拼装展板、**便签样式与 WebGL2 着色器（羊皮纸 / 全息投影 / 烈焰烧焦 / AI 自定义 GLSL）**，以及**公告板背景板面（surfaceShader）与外边框（frameShader）的 WebGL2 环境着色器**。
+你的职责是根据跑团 GM（主持人）的自然语言指令，编排 2144×1206 画布上的 15 类原子积木、便签与着色器。
 
 核心设计规范：
-1. 初始三大核心板块：仅保留 "shifts"（成员名册）、"index"（事件钟，独立成卡）、"activity"（行动记录）。所有物资、委托、检查清单均使用 customPanels[].blocks 的 9 大原子积木（resource_list, task_board, checkbox_group, segmented, select, toggle, stepper, kv_list, note_text）拼装。
+1. 所有新板块均通过 customPanels[].blocks 编排。modules[] 仅用于兼容旧战役。已有板块的 id、积木 id 与运行数据必须保留，新增板块不得覆盖其他板块：
+   - 成员名册块 member_roster：{"id":"m1","type":"member_roster","label":"在场成员","maxItems":4,"showRoleBadge":true}
+   - 事件钟块 event_clock：{"id":"e1","type":"event_clock","name":"熔炉过载","segments":6,"progress":2,"color":"#d9481c","consequence":"满格触发蒸汽爆裂"}
+   - 工作记录块 activity_feed：{"id":"a1","type":"activity_feed","label":"最近工作记录","maxItems":5}
+   - 其余能力：resource_list、task_board、checkbox_group、choice_selector、meter_counter、toggle、kv_list、note_text、image_media、dice_macro、initiative_track、roll_table。
+
+【场景选型规则】
+- 悬赏、赏金、雇佣、契约 → task_board(variant:"bounty")；通缉、抓捕、追捕 → task_board(variant:"wanted")；委托、支线、讨伐 → task_board(variant:"quest")；调查目标 → task_board(variant:"objective")。
+  每条任务使用 title/detail/reward/badge/status，status 是 open/in_progress/completed；不得用 note_text 或 kv_list 代替交互任务。人物通缉配 image_media。
+- 地图、平面图、照片、肖像、立绘 → image_media；images[].url 必须是真实可用的图片地址，无来源时使用项目图像生成 API，禁止编造图床地址。
+- HP、SAN、生命、理智 → meter_counter(variant:"bar")；压力格、法术位 → variant:"pips"（最多12格）；声望、好感度 → variant:"bipolar"；其他计数 → variant:"stepper"。
+- 阶段、模式、阵营单选 → choice_selector，display:"auto"（≤4项分段，更多项下拉）；不要再输出 segmented/select/stepper 旧类型。
+- 快捷检定、常用骰子公式 → dice_macro，macros[].notation 使用合法公式；visibility:"public"/"gm"/"self"。
+- 先攻、战斗顺序、回合轨 → initiative_track，entries[].name/initiative/hpNote/isNpc。
+- 随机表、遭遇表、传闻表、疯狂症状 → roll_table，entries[].text/weight/tag。
+
+【黄金示例】
+酒馆通缉榜：{"customPanels":[{"title":"港口通缉榜","blocks":[{"id":"wanted","type":"task_board","label":"通缉令","variant":"wanted","items":[{"id":"w1","title":"黑帆走私头目","detail":"最后出现在北码头","reward":"500金币","badge":"活捉","status":"open"},{"id":"w2","title":"失踪钟表师","detail":"寻找目击证人","reward":"200金币","status":"open"}]}]}]}
+调查员战术板：{"customPanels":[{"title":"调查战术","blocks":[{"id":"san","type":"meter_counter","label":"理智","variant":"bar","value":50,"min":0,"max":80,"step":1},{"id":"checks","type":"dice_macro","label":"检定","macros":[{"id":"spot","name":"侦查","notation":"1d100","visibility":"public"}]},{"id":"danger","type":"event_clock","name":"警戒","segments":6,"progress":0,"color":"#b24b37","consequence":"守卫封锁码头"}]}]}
 2. 全站统一 RGB/#rrggbb 色号：模块标题、展板、便签底色（notes[].color / noteUpdates[].color）与图钉颜色（pinColor）全面支持任意 #rrggbb 色号！
 3. 便签材质预设与 AI 着色器（effect，支持新建 notes[]、修改既有便签 noteUpdates[] 或全局默认 styleTokens.defaultNoteEffect）：
    - 羊皮纸便签预设：{"shader":"parchment","topology":"perimeter","progress":0.36,"glowIntensity":0.5,"seed":15}（推荐配 color:"#ead6b1", pinColor:"#8c5a2b"）
@@ -157,6 +174,36 @@ const AMBIENT_SHADER_JSON_SCHEMA = {
   },
 } as const;
 
+const CLOCK_APPEARANCE_JSON_SCHEMA = {
+  type: ["object", "null"],
+  properties: {
+    preset: {
+      type: "string",
+      enum: [
+        "auto",
+        "veil_cork",
+        "shadow_slate",
+        "parchment_study",
+        "crisis_diner",
+        "cyber_terminal",
+        "molten_forge",
+        "custom",
+      ],
+    },
+    label: { type: ["string", "null"] },
+    surfaceColor: { type: ["string", "null"] },
+    borderColor: { type: ["string", "null"] },
+    textColor: { type: ["string", "null"] },
+    accentColor: { type: ["string", "null"] },
+    glowColor: { type: ["string", "null"] },
+    fontStyle: { type: "string", enum: ["mono", "serif", "handwritten", "display"] },
+    frameStyle: { type: "string", enum: ["glass", "bezel", "parchment", "terminal"] },
+    scanlines: { type: "boolean" },
+    glowStrength: { type: "number" },
+    aiPrompt: { type: ["string", "null"] },
+  },
+} as const;
+
 export const COMPOSE_BOARD_TOOL_SCHEMA = {
   name: "compose_board_blueprint",
   description:
@@ -181,10 +228,8 @@ export const COMPOSE_BOARD_TOOL_SCHEMA = {
           room: {
             type: "object",
             properties: {
-              kind: { type: "string", enum: ["color", "perspective", "default"] },
+              kind: { type: "string", enum: ["color", "default"] },
               color: { type: "string" },
-              scene: { type: "string", enum: ["crossing", "station"] },
-              animated: { type: "boolean" },
               dim: { type: "number" },
             },
           },
@@ -211,6 +256,7 @@ export const COMPOSE_BOARD_TOOL_SCHEMA = {
           defaultNoteEffect: CARD_EFFECT_JSON_SCHEMA,
           surfaceShader: AMBIENT_SHADER_JSON_SCHEMA,
           frameShader: AMBIENT_SHADER_JSON_SCHEMA,
+          clockAppearance: CLOCK_APPEARANCE_JSON_SCHEMA,
         },
       },
       modules: {
@@ -257,18 +303,31 @@ export const COMPOSE_BOARD_TOOL_SCHEMA = {
                   type: {
                     type: "string",
                     enum: [
+                      "member_roster",
+                      "event_clock",
+                      "activity_feed",
                       "resource_list",
                       "task_board",
                       "checkbox_group",
-                      "segmented",
-                      "select",
+                      "choice_selector",
                       "toggle",
-                      "stepper",
+                      "meter_counter",
+                      "image_media",
+                      "dice_macro",
+                      "initiative_track",
+                      "roll_table",
                       "kv_list",
                       "note_text",
                     ],
                   },
                   label: { type: "string" },
+                  name: { type: "string" },
+                  segments: { type: "integer" },
+                  progress: { type: "integer" },
+                  color: { type: "string" },
+                  consequence: { type: "string" },
+                  maxItems: { type: "integer" },
+                  showRoleBadge: { type: "boolean" },
                   heading: { type: "string" },
                   text: { type: "string" },
                   emphasis: { type: "string", enum: ["normal", "callout"] },
@@ -286,8 +345,35 @@ export const COMPOSE_BOARD_TOOL_SCHEMA = {
                     type: "string",
                     enum: ["neutral", "good", "warn", "danger"],
                   },
-                  items: { type: "array", items: { type: "object" } },
-                  rows: { type: "array", items: { type: "object" } },
+                  display: { type: "string", enum: ["auto", "segmented", "dropdown"] },
+                  variant: { type: "string", enum: ["quest", "bounty", "wanted", "objective", "stepper", "bar", "pips", "bipolar"] },
+                  layout: { type: "string", enum: ["hero", "grid", "polaroid"] },
+                  round: { type: "integer", minimum: 1 },
+                  activeIndex: { type: "integer", minimum: 0 },
+                  lastRolledId: { type: ["string", "null"] },
+                  fontSize: { type: "integer", minimum: 12, maximum: 28 },
+                  items: { type: "array", items: { type: "object", required: ["id"], properties: {
+                    id: { type: "string" }, title: { type: "string", description: "task_board 的任务标题" },
+                    detail: { type: "string" }, reward: { type: "string" }, badge: { type: "string" },
+                    imageUrl: { type: ["string", "null"] }, assignee: { type: "string" }, due: { type: "string" },
+                    name: { type: "string", description: "resource_list 的物资名称" }, quantity: { type: "integer", minimum: 0 },
+                    unit: { type: "string" }, status: { type: "string", enum: ["open", "in_progress", "completed", "ok", "low", "out"] },
+                    label: { type: "string", description: "checkbox_group 的核对项" }, checked: { type: "boolean" }, tag: { type: "string" },
+                  } } },
+                  images: { type: "array", maxItems: 9, items: { type: "object", required: ["id", "url"], properties: {
+                    id: { type: "string" }, url: { type: "string" }, caption: { type: "string" }, aspect: { type: "string", enum: ["16:9", "4:3", "1:1", "auto"] },
+                  } } },
+                  macros: { type: "array", maxItems: 12, items: { type: "object", required: ["id", "name", "notation"], properties: {
+                    id: { type: "string" }, name: { type: "string" }, notation: { type: "string" }, visibility: { type: "string", enum: ["public", "gm", "self"] },
+                    tone: { type: "string", enum: ["neutral", "good", "warn", "danger"] },
+                  } } },
+                  entries: { type: "array", items: { type: "object", required: ["id"], properties: {
+                    id: { type: "string" }, name: { type: "string" }, initiative: { type: "integer" }, hpNote: { type: "string" },
+                    isNpc: { type: "boolean" }, acted: { type: "boolean" }, text: { type: "string" }, weight: { type: "integer", minimum: 1 }, tag: { type: "string" },
+                  } } },
+                  rows: { type: "array", items: { type: "object", required: ["label", "value"], properties: {
+                    label: { type: "string" }, value: { type: "string" }, tone: { type: "string", enum: ["neutral", "good", "warn", "danger"] },
+                  } } },
                 },
               },
             },

@@ -1,4 +1,6 @@
-import { List, Plus, SmilePlus, Trash2 } from "lucide-react";
+import { Archive, Plus, SmilePlus, StickyNote, Trash2 } from "lucide-react";
+import { visibleArchiveEntriesForRole } from "../../features/campaign/domain/archiveBox";
+import { Dock3DIcon } from "./Dock3DIcon";
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode, type Ref, type RefObject } from "react";
 import {
   resolvePinColorVisual,
@@ -64,6 +66,11 @@ interface BoardSceneProps {
   onComposeNote: (event: MouseEvent<HTMLElement>) => void;
   onEditQuest: (quest: Quest, event: MouseEvent<HTMLElement>) => void;
   onEditNote: (note: BoardNote, element: HTMLElement) => void;
+  selectedNoteId?: string;
+  onBlankClick?: () => void;
+  onNoteGesture?: (noteId: string, active: boolean) => void;
+  onNoteScalePreview?: (noteId: string, scale?: number) => void;
+  onPostCustomPanelNote?: (title: string, body: string) => Promise<unknown>;
   onTransitionQuest: (
     quest: Quest,
     status: QuestStatus,
@@ -102,6 +109,7 @@ interface BoardSceneProps {
     h: number,
   ) => Promise<unknown>;
   onEditCustomPanel?: (panel: BoardCustomPanel) => void;
+  onHideCustomPanel?: (panelId: string) => void;
   onDeleteCustomPanel?: (panelId: string) => void;
   onInteractCustomPanel?: (
     panelId: string,
@@ -113,6 +121,7 @@ interface BoardSceneProps {
     rect: BoardModuleRect,
   ) => Promise<unknown>;
   onOpenClockSettings: () => void;
+  onOpenArchiveBox: () => void;
   diceTool?: ReactNode;
 }
 
@@ -134,6 +143,11 @@ export function BoardScene({
   onComposeNote,
   onEditQuest,
   onEditNote,
+  selectedNoteId,
+  onBlankClick,
+  onNoteGesture,
+  onNoteScalePreview,
+  onPostCustomPanelNote,
   onTransitionQuest,
   onMoveNote,
   onResizeNote,
@@ -152,10 +166,12 @@ export function BoardScene({
   onMoveModule,
   onResizeModule,
   onEditCustomPanel,
+  onHideCustomPanel,
   onDeleteCustomPanel,
   onInteractCustomPanel,
   onUpdateCustomPanelGeometry,
   onOpenClockSettings,
+  onOpenArchiveBox,
   diceTool,
 }: BoardSceneProps) {
   const canEditNotes =
@@ -191,6 +207,7 @@ export function BoardScene({
     y: note.y + PIN_Y,
   });
   const boardRef = useRef<HTMLElement>(null);
+  const blankPress = useRef({ x: 0, y: 0, time: 0 });
   const updateNoteLinkPosition = (
     noteId: string,
     x: number,
@@ -454,7 +471,12 @@ export function BoardScene({
   };
   const resourceTitles = board.settings.resourceTitles ?? {};
   const notesColor = color("notes");
-  const customPanels = board.settings.customPanels ?? [];
+  const hiddenPanelIds = new Set(
+    board.settings.styleTokens?.hiddenPanelIds ?? [],
+  );
+  const customPanels = (board.settings.customPanels ?? []).filter(
+    (panel) => !hiddenPanelIds.has(panel.id),
+  );
   const hiddenModuleSet = new Set(
     board.settings.hiddenSections.filter((s): s is BoardModuleKey =>
       boardModuleKeys.includes(s as BoardModuleKey),
@@ -497,10 +519,18 @@ export function BoardScene({
     <RoomBackground appearance={board.settings.appearance} imageUrl={board.settings.backgroundUrl} fullscreen />
     <BoardClock
       config={board.settings.clock}
+      clockAppearance={board.settings.styleTokens?.clockAppearance}
+      boardAppearance={board.settings.appearance}
+      styleTokens={board.settings.styleTokens}
       canManage={canManage}
       onOpenSettings={onOpenClockSettings}
     />
-    <div className="viewport">
+    <div className="viewport"
+      onPointerDownCapture={(event) => { blankPress.current = { x: event.clientX, y: event.clientY, time: performance.now() }; }}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest(".board,.user-note,.board-module-frame,button,input,textarea,select,.board-sticker")) return;
+        if (Math.hypot(event.clientX - blankPress.current.x, event.clientY - blankPress.current.y) <= 6 && performance.now() - blankPress.current.time < 350) onBlankClick?.();
+      }}>
       <div
         className="world"
         ref={worldRef}
@@ -523,6 +553,7 @@ export function BoardScene({
           data-placing-sticker={selectedEmoji ? "true" : undefined}
           onPointerDownCapture={placeSticker}
           onClickCapture={(event) => {
+            if (!selectedEmoji && !(event.target as HTMLElement).closest(".user-note,.board-module-frame,button,input,textarea,select,.note-link,.note-link-label,.board-sticker")) onBlankClick?.();
             if (!suppressStickerClick.current) return;
             suppressStickerClick.current = false;
             event.preventDefault();
@@ -561,13 +592,15 @@ export function BoardScene({
             />
           ))}
 
-          {/* 命中层压在便签下面：点便签时不会被线抢走事件 */}
-          <svg
-            className="note-links-hit"
-            viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
+          {!hidden.has("notes") && (
+            <>
+              {/* 命中层压在便签下面：点便签时不会被线抢走事件 */}
+              <svg
+                className="note-links-hit"
+                viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
             {visibleNoteLinks.map((link) => {
               const from = board.notes.find((n) => n.id === link.fromNoteId);
               const to = board.notes.find((n) => n.id === link.toNoteId);
@@ -747,6 +780,8 @@ export function BoardScene({
               </div>
             );
           })}
+            </>
+          )}
           {!hidden.has("inventory") &&
             moduleFrame(
               "inventory",
@@ -861,13 +896,20 @@ export function BoardScene({
               <CustomPanelCard
                 key={panel.id}
                 panel={panel}
+                board={board}
                 actorName={board.viewer.displayName}
                 defaultEffect={defaultCardEffect}
                 obstacles={[...visibleModuleRects, ...otherPanelRects]}
                 canManage={canManage}
                 canMemberInteract={canUpdateSharedBoard}
                 viewScaleRef={viewScaleRef}
+                onExpandRoster={
+                  board.viewer.role !== "observer" ? onExpandRoster : undefined
+                }
+                onOpenActivity={onOpenActivity}
+                onPostNote={onPostCustomPanelNote}
                 onEdit={(target) => onEditCustomPanel?.(target)}
+                onHide={(id) => onHideCustomPanel?.(id)}
                 onDelete={(id) => onDeleteCustomPanel?.(id)}
                 onInteract={(id, blockId, action) =>
                   onInteractCustomPanel?.(id, blockId, action)
@@ -899,6 +941,7 @@ export function BoardScene({
                     key={note.id}
                     note={note}
                     defaultEffect={board.settings.styleTokens?.defaultNoteEffect}
+                    fontSize={board.settings.styleTokens?.noteFontSizes?.[note.id]}
                     noteTextureUrl={board.settings.noteTextureUrl}
                     viewScaleRef={viewScaleRef}
                     canEdit={
@@ -907,10 +950,15 @@ export function BoardScene({
                         note.authorId === board.viewer.id)
                     }
                     onEdit={onEditNote}
+                    selected={selectedNoteId === note.id}
+                    onGesture={onNoteGesture}
                     onMove={onMoveNote}
                     onResize={onResizeNote}
-                    onPositionPreview={updateNoteLinkPosition}
-                    canLink={canUpdateSharedBoard}
+                    onPositionPreview={(id, x, y, scale) => {
+                      updateNoteLinkPosition(id, x, y, scale);
+                      onNoteScalePreview?.(id, scale);
+                    }}
+                    canLink={canUpdateSharedBoard && note.id !== "__draft_new__"}
                     linkingFrom={linking?.fromId === note.id}
                     onPinClick={handlePinClick}
                   />
@@ -923,12 +971,34 @@ export function BoardScene({
 
       </div>
     </div>
-    <nav className="board-tool-dock" aria-label="公告板工具">
+    <nav className="board-tool-dock hig-tool-dock macos-dock" aria-label="公告板程序坞">
+      {!hidden.has("notes") && (canEditNotes ? (
+        <button className="board-tool-button macos-dock-item is-note" type="button" onClick={onComposeNote}
+          aria-label="填写便签" title="便签与全部便签">
+          <Dock3DIcon kind="note" fallback={<Plus />} />
+          <span className="macos-dock-label">便签</span>
+          {board.notes.length > 0 && (
+            <span className="macos-dock-badge">{board.notes.length}</span>
+          )}
+        </button>
+      ) : (
+        <button className="board-tool-button macos-dock-item is-note" type="button" onClick={onOpenNotes}
+          aria-label={`查看全部便签，共 ${board.notes.length} 条`} title="查看全部便签">
+          <Dock3DIcon kind="note" fallback={<StickyNote />} />
+          <span className="macos-dock-label">便签</span>
+          {board.notes.length > 0 && (
+            <span className="macos-dock-badge">{board.notes.length}</span>
+          )}
+        </button>
+      ))}
       {canUpdateSharedBoard && <div className="board-sticker-tool">
-        <button className="board-tool-button" type="button" aria-label="添加 Emoji 贴纸" title="贴纸"
+        <button className="board-tool-button macos-dock-item is-sticker" type="button" aria-label="添加 Emoji 贴纸" title="贴纸"
           aria-expanded={stickerPickerOpen} disabled={stickerSaving} onClick={() => {
             setSelectedEmoji(null); setStickerPlacement(null); setStickerPickerOpen((open) => !open);
-          }}><SmilePlus aria-hidden="true" /></button>
+          }}>
+          <Dock3DIcon kind="sticker" fallback={<SmilePlus />} />
+          <span className="macos-dock-label">贴纸</span>
+        </button>
         {selectedEmoji && <span className="sticker-placement-status" role="status">
           {stickerSaving ? "正在保存贴纸…" : "点击公告板放置，Esc 取消"}
         </span>}
@@ -938,14 +1008,36 @@ export function BoardScene({
             onClick={() => chooseSticker(emoji)}>{emoji}</button>)}
         </div>}
       </div>}
-      {!hidden.has("notes") && <>
-        {canEditNotes && <button className="board-tool-button" type="button" onClick={onComposeNote}
-          aria-label="填写便签" title="便签"><Plus aria-hidden="true" /></button>}
-        <button className="board-tool-button" type="button" onClick={onOpenNotes}
-          aria-label={`查看全部便签，共 ${board.notes.length} 条`} title="便签栏">
-          <List aria-hidden="true" /><span className="board-tool-badge">{board.notes.length}</span>
-        </button>
-      </>}
+      {(() => {
+        const visibleArchiveCount = visibleArchiveEntriesForRole(
+          board.settings.styleTokens?.archiveEntries ?? [],
+          board.viewer.role === "gm",
+        ).length;
+        return (
+          <button
+            className="board-tool-button macos-dock-item is-archive"
+            type="button"
+            onClick={onOpenArchiveBox}
+            aria-label={
+              visibleArchiveCount > 0
+                ? `打开档案盒，共 ${visibleArchiveCount} 份归档`
+                : "打开档案盒"
+            }
+            title={
+              board.viewer.role === "gm"
+                ? "档案盒（线索 / 证据 / 人物 / 新闻 · GM 可编辑）"
+                : "档案盒（线索 / 证据 / 人物 / 新闻 · 只读）"
+            }
+          >
+            <Dock3DIcon kind="archive" fallback={<Archive />} />
+            <span className="macos-dock-label">档案盒</span>
+            {visibleArchiveCount > 0 && (
+              <span className="macos-dock-badge">{visibleArchiveCount}</span>
+            )}
+          </button>
+        );
+      })()}
+      {diceTool && <span className="macos-dock-divider" aria-hidden="true" />}
       {diceTool}
     </nav>
     </>

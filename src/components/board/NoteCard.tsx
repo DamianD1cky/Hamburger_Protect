@@ -39,8 +39,11 @@ export function clampNoteScale(scale: number | undefined): number {
 interface NoteCardProps {
   note: BoardNote;
   defaultEffect?: CardVisualEffect | null;
+  fontSize?: number;
   viewScaleRef: RefObject<number>;
   canEdit: boolean;
+  selected?: boolean;
+  onGesture?: (noteId: string, active: boolean) => void;
   noteTextureUrl: string | null;
   onEdit: (note: BoardNote, element: HTMLElement) => void;
   onMove: (noteId: string, x: number, y: number) => Promise<unknown>;
@@ -59,8 +62,11 @@ interface NoteCardProps {
 export function NoteCard({
   note,
   defaultEffect,
+  fontSize,
   viewScaleRef,
   canEdit,
+  selected,
+  onGesture,
   noteTextureUrl,
   onEdit,
   onMove,
@@ -80,11 +86,11 @@ export function NoteCard({
   const noteWidth = Math.round(BASE_NOTE_WIDTH * noteScale);
   const noteMinHeight = Math.round(BASE_NOTE_MIN_HEIGHT * noteScale);
 
-  const resolvedEffect = hasActiveCardEffect(note.effect)
-    ? note.effect!
+  const resolvedEffect = note.effect != null
+    ? hasActiveCardEffect(note.effect) ? note.effect : null
     : hasActiveCardEffect(defaultEffect)
       ? defaultEffect!
-      : null;
+        : null;
   const shaderActive = Boolean(resolvedEffect);
 
   const noteBgHex = resolveNoteColorHex(note.color);
@@ -106,7 +112,9 @@ export function NoteCard({
     originScale: 1,
     nextScale: 1,
     moved: false,
+    downAt: 0,
   });
+  const lastTap = useRef(0);
   const escapeListener = useRef<
     ((event: globalThis.KeyboardEvent) => void) | null
   >(null);
@@ -125,6 +133,10 @@ export function NoteCard({
   const cancelDrag = (animate = true) => {
     const element = elementRef.current;
     const pointerId = dragRef.current.pointerId;
+    const active = dragRef.current.mode !== "idle";
+    const restoreX = active ? dragRef.current.originX : note.x;
+    const restoreY = active ? dragRef.current.originY : note.y;
+    const restoreScale = active ? dragRef.current.originScale : noteScale;
     if (element) {
       const currentX = Number.parseFloat(element.style.left);
       const currentY = Number.parseFloat(element.style.top);
@@ -132,15 +144,15 @@ export function NoteCard({
         element.releasePointerCapture(pointerId);
       }
       element.classList.remove("is-dragging", "is-resizing", "is-settling");
-      element.style.left = note.x + "px";
-      element.style.top = note.y + "px";
-      element.style.width = Math.round(BASE_NOTE_WIDTH * noteScale) + "px";
+      element.style.left = restoreX + "px";
+      element.style.top = restoreY + "px";
+      element.style.width = Math.round(BASE_NOTE_WIDTH * restoreScale) + "px";
       element.style.minHeight =
-        Math.round(BASE_NOTE_MIN_HEIGHT * noteScale) + "px";
-      element.style.setProperty("--note-scale", String(noteScale));
+        Math.round(BASE_NOTE_MIN_HEIGHT * restoreScale) + "px";
+      element.style.setProperty("--note-scale", String(restoreScale));
       element.style.zIndex = String(baseZ);
-      const dx = (Number.isFinite(currentX) ? currentX : note.x) - note.x;
-      const dy = (Number.isFinite(currentY) ? currentY : note.y) - note.y;
+      const dx = (Number.isFinite(currentX) ? currentX : restoreX) - restoreX;
+      const dy = (Number.isFinite(currentY) ? currentY : restoreY) - restoreY;
       if (
         animate &&
         !window.matchMedia("(prefers-reduced-motion: reduce)").matches &&
@@ -159,7 +171,8 @@ export function NoteCard({
         );
       }
     }
-    onPositionPreview(note.id, note.x, note.y, noteScale);
+    onPositionPreview(note.id, restoreX, restoreY, restoreScale);
+    onGesture?.(note.id, false);
     dragRef.current.mode = "idle";
     dragRef.current.pointerId = -1;
     dragRef.current.moved = false;
@@ -196,6 +209,7 @@ export function NoteCard({
       originScale: noteScale,
       nextScale: noteScale,
       moved: false,
+      downAt: performance.now(),
     };
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -203,11 +217,6 @@ export function NoteCard({
       // ignore
     }
     event.currentTarget.style.zIndex = String(dragZ);
-    if (event.pointerType === "mouse") {
-      event.currentTarget.classList.add(
-        dragRef.current.mode === "resize" ? "is-resizing" : "is-dragging",
-      );
-    }
     event.preventDefault();
     const onEscape = (keyEvent: globalThis.KeyboardEvent) => {
       if (keyEvent.key !== "Escape") return;
@@ -230,6 +239,7 @@ export function NoteCard({
       if (Math.hypot(dx, dy) > 4 && !drag.moved) {
         drag.moved = true;
         event.currentTarget.classList.add("is-resizing");
+        onGesture?.(note.id, true);
       }
       if (!drag.moved) return;
       const originW = BASE_NOTE_WIDTH * drag.originScale;
@@ -245,9 +255,10 @@ export function NoteCard({
       return;
     }
 
-    if (Math.hypot(dx, dy) > 8 && !drag.moved) {
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 8 && !drag.moved) {
       drag.moved = true;
       event.currentTarget.classList.add("is-dragging");
+      onGesture?.(note.id, true);
     }
     if (!drag.moved) return;
     const x = clamp(
@@ -276,6 +287,7 @@ export function NoteCard({
     const targetScale = drag.nextScale;
     element.style.zIndex = String(baseZ);
     element.classList.remove("is-dragging", "is-resizing");
+    onGesture?.(note.id, false);
     drag.mode = "idle";
     drag.pointerId = -1;
     if (escapeListener.current) {
@@ -312,7 +324,13 @@ export function NoteCard({
         })
         .catch(() => cancelDrag());
     } else {
-      onEdit(note, element);
+      const now = performance.now();
+      const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+      if (distance <= 6 && now - drag.downAt < 350) {
+        if (selected && now - lastTap.current < 300) window.dispatchEvent(new Event("veilboard:focus-note-body"));
+        else onEdit(note, element);
+        lastTap.current = now;
+      }
     }
   };
 
@@ -342,6 +360,7 @@ export function NoteCard({
       }}
       className="user-note"
       data-note-id={note.id}
+      data-selected={selected ? "true" : undefined}
       data-color={note.color}
       data-pinned={note.pinned}
       data-pin-color={note.pinColor}
@@ -362,6 +381,7 @@ export function NoteCard({
           transformOrigin: "50% 16.5px",
           transform: `rotate(${note.rotation}deg)`,
           "--note-scale": noteScale,
+          ...(fontSize ? { "--note-font-size": `${fontSize}px` } : {}),
           "--note-custom-bg": noteBgHex,
           "--note-custom-ink": noteInk,
           "--pin-custom-fill": pinVisual.fill,

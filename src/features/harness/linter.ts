@@ -88,7 +88,9 @@ export function lintBoardLayout(board: CampaignBoard): BoardSpatialLintIssue[] {
       rect: moduleRect(key, board.settings.moduleLayout),
     });
   }
+  const hiddenPanels = new Set(board.settings.styleTokens.hiddenPanelIds ?? []);
   for (const panel of board.settings.customPanels) {
+    if (hiddenPanels.has(panel.id)) continue;
     items.push({
       label: panel.title,
       rect: { x: panel.x, y: panel.y, w: panel.w, h: panel.h },
@@ -152,9 +154,9 @@ function mergeAppearance(
   }
   if (patch.room) {
     const r = patch.room;
-    if (r.kind && ["default", "color", "perspective"].includes(r.kind)) {
+    if (r.kind && ["default", "color"].includes(r.kind)) {
       next.room.kind = r.kind;
-      if (r.kind !== "image") next.room.imagePath = null;
+      next.room.imagePath = null;
     }
     if (r.color) {
       const hex = normalizeColor(r.color);
@@ -164,19 +166,7 @@ function mergeAppearance(
       next.room.dim = Math.max(0, Math.min(0.8, Number(r.dim.toFixed(2))));
     }
     if (r.fit && ["cover", "contain", "tile"].includes(r.fit)) {
-      next.room.fit =
-        next.room.kind === "perspective" && r.fit === "tile" ? "cover" : r.fit;
-    }
-    if (next.room.kind === "perspective") {
-      next.room.scene =
-        r.scene && ["crossing", "station"].includes(r.scene)
-          ? r.scene
-          : next.room.scene ?? "crossing";
-      next.room.animated =
-        typeof r.animated === "boolean"
-          ? r.animated
-          : next.room.animated ?? true;
-      if (next.room.fit === "tile") next.room.fit = "cover";
+      next.room.fit = r.fit;
     }
   }
   return next;
@@ -246,10 +236,27 @@ function findOpenNotePosition(
 export function compileHarnessBlueprint(
   board: CampaignBoard,
   raw: BoardHarnessBlueprint,
+  originalPrompt = "",
 ): CompiledBoardBlueprint {
   const preApplySettings = captureSettingsSnapshot(board);
   const lintNotes: string[] = [];
   const changeBadges: string[] = [];
+  const intendedTask = /通缉|赏金|悬赏|委托|任务|契约|调查目标/.test(
+    [originalPrompt, raw.summary, ...(raw.customPanels ?? []).map((panel) => panel.title)].join(" "),
+  );
+  const panelSpecs = [...(raw.customPanels ?? [])];
+  if (intendedTask && !panelSpecs.some((panel) => panel.blocks?.some((block) => block.type === "task_board"))) {
+    const tasks = (raw.quests ?? []).filter((quest) => quest.title?.trim());
+    if (tasks.length) {
+      panelSpecs.push({ title: "委托与调查任务", blocks: [{ id: "converted-tasks", type: "task_board",
+        label: "任务", variant: "quest", allowQuickAdd: true,
+        items: tasks.map((quest, index) => ({ id: `converted-${index}`, title: quest.title, detail: quest.body.slice(0, 160), status: "open", assignee: quest.assigneeName, due: quest.due })) }] });
+      raw = { ...raw, quests: [] };
+      lintNotes.push("旧 quests 已转换为可操作的任务积木。");
+    } else {
+      lintNotes.push("请求涉及任务或通缉，但蓝图未包含 task_board；请补充交互任务积木后应用。");
+    }
+  }
 
   const nextName =
     raw.campaignName && raw.campaignName.trim()
@@ -427,7 +434,7 @@ export function compileHarnessBlueprint(
     basePanels.map((p) => [p.id, structuredClone(p)]),
   );
 
-  for (const spec of raw.customPanels ?? []) {
+  for (const spec of panelSpecs) {
     const existing = spec.id ? mergedPanelsMap.get(spec.id) : undefined;
     const normalized = normalizeCustomPanel({
       ...(existing ?? {}),

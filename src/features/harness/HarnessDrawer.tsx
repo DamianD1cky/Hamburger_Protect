@@ -1,10 +1,13 @@
 import {
+  Bookmark,
   Check,
   KeyRound,
   Plus,
   RotateCcw,
   Send,
   Sparkles,
+  Star,
+  Trash2,
   WandSparkles,
   X,
 } from "lucide-react";
@@ -12,6 +15,15 @@ import { useState, type FormEvent } from "react";
 import { backend } from "../../lib/backend";
 import type { CampaignBoard } from "../campaign/domain/types";
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
+import {
+  ACCOUNT_ASSET_KIND_LABELS,
+  captureBlueprintAssetsToAccount,
+  deleteAccountAsset,
+  toggleAccountAssetFavorite,
+  useAccountAssets,
+  type AccountAssetKind,
+  type AccountDesignAsset,
+} from "../assets/accountAssetLibrary";
 import {
   HARNESS_PROVIDER_PRESETS,
   loadSavedHarnessConfig,
@@ -112,7 +124,9 @@ export function HarnessDrawer({
   onCreateCustomPanel: () => void;
 }) {
   const ime = useImeEnterGuard();
-  const [tab, setTab] = useState<"compose" | "api">("compose");
+  const [tab, setTab] = useState<"compose" | "assets" | "api">("compose");
+  const [assetFilter, setAssetFilter] = useState<AccountAssetKind | "all">("all");
+  const [assetStatus, setAssetStatus] = useState("");
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -120,8 +134,73 @@ export function HarnessDrawer({
     loadSavedHarnessConfig(),
   );
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const accountAssets = useAccountAssets(board.viewer.id);
 
   if (!open) return null;
+
+  const filteredAssets =
+    assetFilter === "all"
+      ? accountAssets
+      : accountAssets.filter((item) => item.kind === assetFilter);
+
+  const applySavedAsset = (asset: AccountDesignAsset) => {
+    setError("");
+    setAssetStatus("");
+    const baseBoard = stagedBlueprint ? stagedBlueprint.previewBoard : board;
+    if (asset.payload.kind === "dice_material") {
+      try {
+        const key = "hp-dice-presentation";
+        const current = JSON.parse(localStorage.getItem(key) ?? "{}");
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            ...current,
+            skin: asset.payload.config.presetId,
+            material: asset.payload.config,
+          }),
+        );
+        window.dispatchEvent(new CustomEvent("vb:dice-material-applied"));
+        setAssetStatus(`已将「${asset.name}」设为当前骰子材质，打开骰盘即可查看。`);
+      } catch {
+        setAssetStatus("骰子材质应用失败。");
+      }
+      return;
+    }
+
+    const nextTokens = structuredClone(baseBoard.settings.styleTokens);
+    let clockPatch: Partial<CampaignBoard["settings"]["clock"]> | undefined;
+
+    if (asset.payload.kind === "ambient_shader") {
+      if (asset.payload.surfaceShader) {
+        nextTokens.surfaceShader = structuredClone(asset.payload.surfaceShader);
+      }
+      if (asset.payload.frameShader) {
+        nextTokens.frameShader = structuredClone(asset.payload.frameShader);
+      }
+    } else if (asset.payload.kind === "card_shader") {
+      if (asset.payload.target === "note") {
+        nextTokens.defaultNoteEffect = structuredClone(asset.payload.effect);
+      } else {
+        nextTokens.defaultCardEffect = structuredClone(asset.payload.effect);
+      }
+    } else if (asset.payload.kind === "board_style") {
+      Object.assign(nextTokens, structuredClone(asset.payload.styleTokens));
+    } else if (asset.payload.kind === "clock_style") {
+      nextTokens.clockAppearance = structuredClone(asset.payload.clockAppearance);
+      if (asset.payload.clockStyle) {
+        clockPatch = { style: asset.payload.clockStyle };
+      }
+    }
+
+    const compiled = compileHarnessBlueprint(baseBoard, {
+      summary: `套用个人资产：${asset.name}`,
+      assistantReply: `已从你的个人资产库加载「${asset.name}」到画布预览。`,
+      styleTokens: nextTokens,
+      ...(clockPatch ? { clock: clockPatch } : {}),
+    });
+    onStageBlueprint(compiled);
+    setAssetStatus(`已在左侧画布预览「${asset.name}」，点击「确认应用」即对全员生效。`);
+  };
 
   const currentLintIssues = lintBoardLayout(
     stagedBlueprint ? stagedBlueprint.previewBoard : board,
@@ -141,6 +220,11 @@ export function HarnessDrawer({
     setError("");
     const raw = recipe.build(board);
     const compiled = compileHarnessBlueprint(board, raw);
+    const captured = captureBlueprintAssetsToAccount(
+      board.viewer.id,
+      compiled,
+      recipe.promptHint,
+    );
     onStageBlueprint(compiled);
     setTurns((prev) => [
       ...prev,
@@ -149,7 +233,10 @@ export function HarnessDrawer({
         id: crypto.randomUUID(),
         role: "assistant",
         content: compiled.assistantReply,
-        badges: compiled.changeBadges,
+        badges: [
+          ...compiled.changeBadges,
+          ...(captured.length > 0 ? [`已存入 ${captured.length} 项个人资产`] : []),
+        ],
         lintNotes: compiled.lintNotes,
         source: "recipe",
       },
@@ -172,7 +259,12 @@ export function HarnessDrawer({
         config,
         history,
       });
-      const compiled = compileHarnessBlueprint(baseBoard, blueprint);
+      const compiled = compileHarnessBlueprint(baseBoard, blueprint, trimmed);
+      const captured = captureBlueprintAssetsToAccount(
+        board.viewer.id,
+        compiled,
+        trimmed,
+      );
       onStageBlueprint(compiled);
       setPrompt("");
       setTurns((prev) => [
@@ -182,7 +274,10 @@ export function HarnessDrawer({
           id: crypto.randomUUID(),
           role: "assistant",
           content: compiled.assistantReply,
-          badges: compiled.changeBadges,
+          badges: [
+            ...compiled.changeBadges,
+            ...(captured.length > 0 ? [`已存入 ${captured.length} 项个人资产`] : []),
+          ],
           lintNotes: compiled.lintNotes,
           source,
         },
@@ -230,12 +325,25 @@ export function HarnessDrawer({
         <button
           type="button"
           role="tab"
+          aria-selected={tab === "assets"}
+          className={tab === "assets" ? "is-active" : ""}
+          onClick={() => setTab("assets")}
+        >
+          <Bookmark aria-hidden="true" />
+          资产库
+          {accountAssets.length > 0 && (
+            <em className="harness-asset-count">{accountAssets.length}</em>
+          )}
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === "api"}
           className={tab === "api" ? "is-active" : ""}
           onClick={() => setTab("api")}
         >
           <KeyRound aria-hidden="true" />
-          API 配置
+          API
           {config.apiKey.trim() && <i className="harness-key-dot" aria-hidden="true" />}
         </button>
       </div>
@@ -398,6 +506,103 @@ export function HarnessDrawer({
               {busy ? "正在编排预览…" : "生成排版预览"}
             </button>
           </form>
+        </div>
+      ) : tab === "assets" ? (
+        <div className="harness-drawer-body harness-assets-panel">
+          <div className="harness-asset-intro">
+            <strong>我的账号资产库</strong>
+            <small>
+              使用 AI 生成的 Shader、板面材质、时钟与骰子样式都会自动归档到当前账号（{board.viewer.displayName}），随时跨战役复用。
+            </small>
+          </div>
+          <div className="harness-asset-filters" role="tablist" aria-label="资产分类筛选">
+            {(
+              [
+                ["all", "全部"],
+                ["card_shader", "卡片/便签"],
+                ["ambient_shader", "黑板/外框"],
+                ["clock_style", "时钟样式"],
+                ["dice_material", "骰子材质"],
+                ["board_style", "视觉风格"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                type="button"
+                key={key}
+                role="tab"
+                aria-selected={assetFilter === key}
+                className={assetFilter === key ? "effect-chip is-active" : "effect-chip"}
+                onClick={() => setAssetFilter(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {assetStatus && (
+            <p className="harness-asset-status" role="status">
+              {assetStatus}
+            </p>
+          )}
+
+          {filteredAssets.length === 0 ? (
+            <p className="harness-empty-hint">
+              当前分类下暂无资产。使用 AI 编排官生成任意 Shader、时钟样式，或在骰子工坊点击「存入资产库」后会自动出现在这里。
+            </p>
+          ) : (
+            <div className="harness-asset-list">
+              {filteredAssets.map((asset) => (
+                <article key={asset.id} className="harness-asset-card">
+                  <div
+                    className="harness-asset-bar"
+                    style={{
+                      background:
+                        asset.previewColors.length >= 2
+                          ? `linear-gradient(135deg, ${asset.previewColors[0]} 0%, ${asset.previewColors[1]} 100%)`
+                          : asset.previewColors[0] ?? "#5ca8f5",
+                    }}
+                    aria-hidden="true"
+                  />
+                  <div className="harness-asset-content">
+                    <header>
+                      <strong>{asset.name}</strong>
+                      <em>{ACCOUNT_ASSET_KIND_LABELS[asset.kind]}</em>
+                    </header>
+                    {asset.description && <p>{asset.description}</p>}
+                    <div className="harness-asset-actions">
+                      <button
+                        type="button"
+                        className="harness-asset-apply"
+                        disabled={applying || busy}
+                        onClick={() => applySavedAsset(asset)}
+                      >
+                        <WandSparkles size={13} aria-hidden="true" />
+                        套用
+                      </button>
+                      <button
+                        type="button"
+                        className={asset.favorite ? "harness-asset-icon is-fav" : "harness-asset-icon"}
+                        aria-label={asset.favorite ? "取消收藏" : "收藏资产"}
+                        onClick={() =>
+                          toggleAccountAssetFavorite(board.viewer.id, asset.id)
+                        }
+                      >
+                        <Star size={14} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="harness-asset-icon"
+                        aria-label={`删除资产 ${asset.name}`}
+                        onClick={() => deleteAccountAsset(board.viewer.id, asset.id)}
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div className="harness-drawer-body harness-api-settings">

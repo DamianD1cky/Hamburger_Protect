@@ -1,24 +1,24 @@
 import type { CampaignSectionKey } from "./types.ts";
 
 /**
- * 初始保留的核心系统板块：成员名册（shifts）、事件钟（index）、行动记录（activity）与自由便签（notes）。
- * 原「可用物资与设施」「委托与行动报告」「行动检查清单」已拆解为可由原子能力自由拼装的展板。
+ * 全部历史固定内置模块均已提炼为 12 类原子能力积木，
+ * 新建桌面默认隐藏旧固定容器，仅保留全局自由便签层（notes），三大初始板块以原子展板形式呈现。
  */
 export const coreCampaignSections: Array<{
   id: CampaignSectionKey;
   defaultTitle: string;
 }> = [
-  { id: "shifts", defaultTitle: "成员名册" },
-  { id: "index", defaultTitle: "事件钟" },
-  { id: "activity", defaultTitle: "行动记录" },
-  { id: "notes", defaultTitle: "便签" },
+  { id: "notes", defaultTitle: "自由便签与红绳层" },
 ];
 
-/** 初始默认隐藏（已原子化重构）的历史内置模块键。 */
+/** 初始默认隐藏（已全部原子化重构）的历史内置模块键。 */
 export const DEFAULT_DECOMPOSED_SECTIONS: CampaignSectionKey[] = [
   "inventory",
   "tasks",
   "safety",
+  "shifts",
+  "index",
+  "activity",
 ];
 
 /** 包含历史兼容键的完整定义表（确保旧战役数据与数据库校验 100% 兼容）。 */

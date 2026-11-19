@@ -1,6 +1,6 @@
 import type { TrayDie } from "./trayModels";
 import type { DiePose } from "./trayPlacement";
-import type { ThrowLaunch } from "./trayPhysics";
+import type { ThrowImpact, ThrowLaunch } from "./trayPhysics";
 
 export interface PhysicsRequest {
   id: number;
@@ -12,6 +12,7 @@ export interface ReplayTrack {
   die: TrayDie;
   samples: Float32Array;
   preparationFrames: number;
+  impacts?: ThrowImpact[];
 }
 export interface PhysicsResponse {
   id: number;

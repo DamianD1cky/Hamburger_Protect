@@ -71,6 +71,7 @@ export function CardShaderCanvas({
   onContentMaskChange: (maskUrl: string | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const visibleRef = useRef(true);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 360, h: 260 });
   const [baseHex, setBaseHex] = useState(baseColorOverride ?? "#f3e9d2");
 
@@ -110,6 +111,17 @@ export function CardShaderCanvas({
     const contentMask = bakeCardContentSurvivalMaskUrl(params);
     onContentMaskChange(contentMask);
 
+    let observer: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver(
+        (entries) => {
+          visibleRef.current = entries.some((entry) => entry.isIntersecting);
+        },
+        { threshold: 0.01 },
+      );
+      observer.observe(canvas);
+    }
+
     const reducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -119,12 +131,16 @@ export function CardShaderCanvas({
         effect.shader === "ai_glsl" ||
         effect.shader === "hologram");
 
-    if (!needsRealtimeClock) return;
-    return subscribeCardShaderClock((elapsed) => {
-      if (canvasRef.current) {
+    if (!needsRealtimeClock) return () => observer?.disconnect();
+    const unsub = subscribeCardShaderClock((elapsed) => {
+      if (canvasRef.current && visibleRef.current) {
         blitCardShaderToCanvas(canvasRef.current, params, elapsed);
       }
     });
+    return () => {
+      unsub();
+      observer?.disconnect();
+    };
   }, [size.w, size.h, baseHex, effect, seedOffset, onContentMaskChange]);
 
   return (
@@ -145,6 +161,7 @@ export function CardEffectPicker({
   disabled = false,
   mode = "card",
   basePreviewHex = "#f3e9d2",
+  showPreview = true,
   onChange,
   onRecommendColors,
 }: {
@@ -152,6 +169,7 @@ export function CardEffectPicker({
   disabled?: boolean;
   mode?: "card" | "note";
   basePreviewHex?: string;
+  showPreview?: boolean;
   onChange: (next: CardVisualEffect) => void;
   onRecommendColors?: (noteColorHex: string, pinColorHex: string) => void;
 }) {
@@ -165,7 +183,7 @@ export function CardEffectPicker({
 
   useEffect(() => {
     const canvas = previewCanvasRef.current;
-    if (!canvas || !active) return;
+    if (!canvas || !active || !showPreview) return;
     const params = {
       width: 280,
       height: 168,
@@ -191,7 +209,7 @@ export function CardEffectPicker({
         blitCardShaderToCanvas(previewCanvasRef.current, params, t);
       }
     });
-  }, [active, basePreviewHex, normalized]);
+  }, [active, basePreviewHex, normalized, showPreview]);
 
   const pickOriginOnPreview = (event: PointerEvent<HTMLCanvasElement>) => {
     if (disabled || !active) return;
@@ -272,7 +290,7 @@ export function CardEffectPicker({
 
       {active && (
         <div className="shader-lab-panel">
-          <div className="shader-lab-preview-stage">
+          {showPreview && <div className="shader-lab-preview-stage">
             <div className="shader-lab-card-wrap">
               <canvas
                 ref={previewCanvasRef}
@@ -324,7 +342,7 @@ export function CardEffectPicker({
               )}
               <span className="shader-preview-hint">点击卡面定起火点</span>
             </div>
-          </div>
+          </div>}
 
           <div className="shader-lab-controls">
             {(normalized.shader === "burnt" ||

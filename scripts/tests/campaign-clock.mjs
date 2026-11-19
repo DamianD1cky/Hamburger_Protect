@@ -9,6 +9,13 @@ import {
   materializeCampaignClock,
   normalizeCampaignClock,
 } from "../../src/features/campaign/domain/campaignClock.ts";
+import {
+  CLOCK_THEME_PRESET_LIST,
+  inferBoardMatchingClockPreset,
+  normalizeBoardClockAppearance,
+  resolveClockVisual,
+  synthesizeClockStyleFromPrompt,
+} from "../../src/features/campaign/domain/clockAppearance.ts";
 
 function localDate(year, month, day, hours = 12, minutes = 34, seconds = 56) {
   const date = new Date(0);
@@ -78,4 +85,23 @@ test("duration edits and progress do not rewrite the chosen campaign era", () =>
     assert.equal(campaignClockValue(config, next.getTime()), mode === "countdown" ? 58_000 : 62_000);
     assert.ok(normalizeCampaignClock({ ...config, valueMs: -1 }).valueMs >= 0);
   }
+});
+
+test("theme-matched clock presets and AI clock style synthesizer work cleanly", () => {
+  assert.equal(CLOCK_THEME_PRESET_LIST.length, 6);
+  assert.equal(
+    inferBoardMatchingClockPreset({ room: { kind: "color", color: "#000", imagePath: null, fit: "cover", positionX: 50, positionY: 50, dim: 0 }, surface: { kind: "paper", imagePath: null }, frame: "wood" }),
+    "parchment_study",
+  );
+  assert.equal(
+    inferBoardMatchingClockPreset(null, { surfaceShader: "hologram_grid" }),
+    "cyber_terminal",
+  );
+  const ai = synthesizeClockStyleFromPrompt("赛博紫霓虹全息矩阵时钟");
+  assert.equal(ai.appearance.preset, "custom");
+  assert.equal(ai.appearance.scanlines, true);
+  assert.equal(ai.recommendedDial, "digital");
+  const visual = resolveClockVisual(normalizeBoardClockAppearance(ai.appearance));
+  assert.equal(visual.id, "custom");
+  assert.equal(visual.scanlines, true);
 });

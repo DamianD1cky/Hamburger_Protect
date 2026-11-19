@@ -40,8 +40,9 @@ import type {
 import { applySettingsPatch, assertSettingsExpected } from "../domain/settingsUpdate";
 import { normalizeStickerRotation, stickerPosition } from "../domain/stickerGeometry";
 import { eventClockRects } from "../domain/eventClockLayout";
+import { noteEditableFields } from "../domain/liveNoteDraft";
 
-const STORAGE_KEY = "veilboard-board-v2";
+const STORAGE_KEY = "veilboard-board-v3";
 const PREVIOUS_STORAGE_KEY = "hamburger-protect-board-v2";
 const LEGACY_STORAGE_KEY = "laojie-burger-board-v1";
 
@@ -549,8 +550,11 @@ class LocalCampaignRepository implements CampaignRepository {
   }
 
   async saveNote(_campaignId: string, draft: NoteDraft, noteId?: string) {
-    return this.mutate((board) => {
+    return this.updateAsMember((board) => {
       const note = board.notes.find((item) => item.id === noteId);
+      if (noteId && !note) throw new Error("NOTE_NOT_FOUND");
+      if (note && board.viewer.role !== "gm" && note.authorId !== board.viewer.id) throw new Error("NOTE_NOT_EDITABLE");
+      if (note && draft.expected && JSON.stringify(noteEditableFields(note, board.settings.styleTokens.noteFontSizes?.[note.id] ?? 15)) !== JSON.stringify(draft.expected)) throw new Error("NOTE_CONFLICT");
       const normalizedScale =
         draft.scale !== undefined && Number.isFinite(draft.scale)
           ? Math.max(0.6, Math.min(2.2, Number(draft.scale.toFixed(2))))
@@ -572,18 +576,24 @@ class LocalCampaignRepository implements CampaignRepository {
         }
         if (normalizedScale !== undefined) note.scale = normalizedScale;
         if (normalizedEffect !== undefined) note.effect = normalizedEffect;
+        if (draft.fontSize !== undefined) board.settings.styleTokens.noteFontSizes = {
+          ...board.settings.styleTokens.noteFontSizes, [note.id]: Math.max(12, Math.min(28, draft.fontSize)) };
+        if (draft.pinned !== undefined && board.viewer.role === "gm") {
+          note.pinned = draft.pinned; note.pinnedAt = draft.pinned ? new Date().toISOString() : null;
+        }
         return;
       }
       const count = board.notes.length;
+      const newId = uid("note");
       board.notes.push({
-        id: uid("note"),
+        id: newId,
         title: draft.title,
         body: draft.body,
         color: draft.color,
         pinColor: draft.pinColor,
         imagePath: draft.imagePath,
-        x: 1098 + (count % 2) * 36,
-        y: 605 + (count % 3) * 168,
+        x: draft.x ?? 1098 + (count % 2) * 36,
+        y: draft.y ?? 605 + (count % 3) * 168,
         rotation:
           draft.rotation !== undefined && Number.isFinite(draft.rotation)
             ? Math.max(-180, Math.min(180, draft.rotation))
@@ -597,6 +607,8 @@ class LocalCampaignRepository implements CampaignRepository {
         pinnedAt: null,
         layer: Math.max(0, ...board.notes.map((item) => item.layer)) + 1,
       });
+      if (draft.fontSize !== undefined) board.settings.styleTokens.noteFontSizes = {
+        ...board.settings.styleTokens.noteFontSizes, [newId]: Math.max(12, Math.min(28, draft.fontSize)) };
     });
   }
 
@@ -687,8 +699,12 @@ class LocalCampaignRepository implements CampaignRepository {
     });
   }
   async uploadNotePhoto(_campaignId: string, file: File) {
-    // 演示模式没有后端存储，直接用本地对象地址预览。
-    return URL.createObjectURL(file);
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("读取照片失败"));
+      reader.readAsDataURL(file);
+    });
   }
   async moveNoteLayer(
     _campaignId: string,
@@ -929,6 +945,16 @@ class LocalCampaignRepository implements CampaignRepository {
       current.settings.customPanels = current.settings.customPanels.map((p) =>
         p.id === panelId ? applyPanelBlockInteraction(p, blockId, interaction) : p,
       );
+      if (interaction.type === "roll_table") {
+        const block = current.settings.customPanels.find((panel) => panel.id === panelId)?.blocks.find((block) => block.id === blockId);
+        if (block?.type === "roll_table" && block.lastRolledId) {
+          current.activities.unshift({
+            id: String(BigInt(current.activities[0]?.id ?? "0") + 1n), actorId: current.viewer.id,
+            actorName: current.viewer.displayName, entityId: null, entityType: "custom_panel", eventType: "roll_table_draw",
+            payload: { text: block.entries.find((entry) => entry.id === block.lastRolledId)?.text }, createdAt: new Date().toISOString(),
+          });
+        }
+      }
     });
     return clone(board.settings.customPanels);
   }

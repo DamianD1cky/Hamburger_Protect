@@ -1,6 +1,4 @@
 import {
-  lazy,
-  Suspense,
   useEffect,
   useRef,
   useState,
@@ -24,12 +22,6 @@ import {
   blitAmbientShaderToCanvas,
   subscribeCardShaderClock,
 } from "../../features/shaders/cardShaderEngine";
-
-const PerspectiveBackground = lazy(() =>
-  import("../../features/perspective/PerspectiveBackground").then((module) => ({
-    default: module.PerspectiveBackground,
-  })),
-);
 
 function useReadyImage(source: string | null, retainOnFailure = false) {
   const previous = useRef<string | null>(null);
@@ -83,6 +75,7 @@ function AmbientShaderLayer({
   height: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const visibleRef = useRef(true);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -90,15 +83,32 @@ function AmbientShaderLayer({
     const params = { width, height, role, ambient: shader };
     blitAmbientShaderToCanvas(canvas, params, 0);
 
+    let observer: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver(
+        (entries) => {
+          visibleRef.current = entries.some((entry) => entry.isIntersecting);
+        },
+        { threshold: 0.01 },
+      );
+      observer.observe(canvas);
+    }
+
     const reduced =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced || shader.speed <= 0.01) return;
-    return subscribeCardShaderClock((t) => {
-      if (canvasRef.current) {
+    if (reduced || shader.speed <= 0.01) {
+      return () => observer?.disconnect();
+    }
+    const unsub = subscribeCardShaderClock((t) => {
+      if (canvasRef.current && visibleRef.current) {
         blitAmbientShaderToCanvas(canvasRef.current, params, t);
       }
     });
+    return () => {
+      unsub();
+      observer?.disconnect();
+    };
   }, [width, height, role, shader]);
 
   return (
@@ -143,24 +153,11 @@ export function RoomBackground({
       className={
         fullscreen ? "room-background is-wallpaper" : "room-background"
       }
-      data-background-kind={room.kind}
+      data-background-kind={room.kind === "perspective" ? "color" : room.kind}
       data-background-error={failed || undefined}
       style={style}
       aria-hidden="true"
-    >
-      {room.kind === "perspective" && (
-        <Suspense fallback={null}>
-          <PerspectiveBackground
-            scene={room.scene ?? "crossing"}
-            animated={room.animated ?? true}
-            preview={!fullscreen}
-            fit={room.fit}
-            positionX={room.positionX}
-            positionY={room.positionY}
-          />
-        </Suspense>
-      )}
-    </div>
+    />
   );
 }
 
@@ -238,10 +235,14 @@ export function AppearancePreview({
   appearance,
   backgroundUrl,
   surfaceUrl,
+  surfaceShader,
+  frameShader,
 }: {
   appearance: Appearance;
   backgroundUrl: string | null;
   surfaceUrl: string | null;
+  surfaceShader?: BoardAmbientShader | null;
+  frameShader?: BoardAmbientShader | null;
 }) {
   return (
     <div className="appearance-preview" aria-label="公告板外观预览">
@@ -262,9 +263,13 @@ export function AppearancePreview({
           } as CSSProperties
         }
       >
-        <BoardFrame frame={appearance.frame} />
+        <BoardFrame frame={appearance.frame} shader={frameShader} />
         <div className="appearance-preview-board">
-          <BoardSurface appearance={appearance} imageUrl={surfaceUrl} />
+          <BoardSurface
+            appearance={appearance}
+            imageUrl={surfaceUrl}
+            shader={surfaceShader}
+          />
           <div className="appearance-preview-note">
             调查线索<span>记下重要的发现</span>
           </div>

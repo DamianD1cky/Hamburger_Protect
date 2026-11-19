@@ -149,6 +149,7 @@ export function useCampaignBoard(
   const pendingStickers = useRef(new Map<string, PendingSticker>());
   const stickerWrites = useRef(new Map<string, Promise<unknown>>());
   const stickerRevision = useRef(0);
+  const panelBlockRevisions = useRef(new Map<string, number>());
   const eventClockWrites = useRef(new Map<string, EventClockWrite>());
   const eventClockScope = useRef(requestedCampaignId);
   if (eventClockScope.current !== requestedCampaignId) {
@@ -743,7 +744,10 @@ export function useCampaignBoard(
       interaction: CustomPanelInteraction,
     ) => {
       const previous = queryClient.getQueryData<CampaignBoard>(boardKey)
-        ?.settings.customPanels;
+        ?.settings.customPanels.find((panel) => panel.id === panelId)?.blocks.find((block) => block.id === blockId);
+      const revisionKey = `${campaignId}:${panelId}:${blockId}`;
+      const revision = (panelBlockRevisions.current.get(revisionKey) ?? 0) + 1;
+      panelBlockRevisions.current.set(revisionKey, revision);
       await queryClient.cancelQueries({ queryKey: boardKey });
       queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
         current
@@ -753,7 +757,7 @@ export function useCampaignBoard(
                 ...current.settings,
                 customPanels: current.settings.customPanels.map((p) =>
                   p.id === panelId
-                    ? applyPanelBlockInteraction(p, blockId, interaction)
+                    ? interaction.type === "roll_table" ? p : applyPanelBlockInteraction(p, blockId, interaction)
                     : p,
                 ),
               },
@@ -767,22 +771,26 @@ export function useCampaignBoard(
           blockId,
           interaction,
         );
+        if (panelBlockRevisions.current.get(revisionKey) !== revision) return saved;
+        const receipt = saved.find((panel) => panel.id === panelId)?.blocks.find((block) => block.id === blockId);
         queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
           current
             ? mergePendingPositions({
                 ...current,
-                settings: { ...current.settings, customPanels: saved },
+                settings: { ...current.settings, customPanels: current.settings.customPanels.map((panel) =>
+                  panel.id === panelId && receipt ? { ...panel, blocks: panel.blocks.map((block) => block.id === blockId ? receipt : block) } : panel) },
               })
             : current,
         );
         return saved;
       } catch (error) {
-        if (previous) {
+        if (previous && panelBlockRevisions.current.get(revisionKey) === revision) {
           queryClient.setQueryData<CampaignBoard>(boardKey, (current) =>
             current
               ? mergePendingPositions({
                   ...current,
-                  settings: { ...current.settings, customPanels: previous },
+                  settings: { ...current.settings, customPanels: current.settings.customPanels.map((panel) =>
+                    panel.id === panelId ? { ...panel, blocks: panel.blocks.map((block) => block.id === blockId ? previous : block) } : panel) },
                 })
               : current,
           );

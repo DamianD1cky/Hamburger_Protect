@@ -1,17 +1,18 @@
 import {
   ClipboardList,
+  Clock,
   LayoutDashboard,
   MessageSquare,
   PackageOpen,
   PanelTop,
   ShieldCheck,
   Users,
-  Clock,
 } from "lucide-react";
 import type { CSSProperties } from "react";
+import type { BoardCustomPanel } from "../../features/campaign/domain/customPanels";
+import type { EventClock } from "../../features/campaign/domain/eventClock";
 import type { CampaignSectionKey } from "../../features/campaign/domain/types";
 import type { FocusZone } from "../../hooks/useBoardViewport";
-import type { EventClock } from "../../features/campaign/domain/eventClock";
 
 const baseItems: Array<{
   id: FocusZone;
@@ -58,6 +59,15 @@ const baseItems: Array<{
   },
 ];
 
+function iconForPanel(panel: BoardCustomPanel) {
+  if (panel.blocks.some((b) => b.type === "member_roster")) return Users;
+  if (panel.blocks.some((b) => b.type === "event_clock")) return Clock;
+  if (panel.blocks.some((b) => b.type === "activity_feed")) return MessageSquare;
+  if (panel.blocks.some((b) => b.type === "resource_list")) return PackageOpen;
+  if (panel.blocks.some((b) => b.type === "task_board")) return ClipboardList;
+  return PanelTop;
+}
+
 interface FocusDockProps {
   active: FocusZone;
   onChange: (zone: FocusZone) => void;
@@ -65,6 +75,7 @@ interface FocusDockProps {
   eventClocks?: EventClock[];
   sectionTitles?: Partial<Record<CampaignSectionKey, string>>;
   hasCustomPanels?: boolean;
+  customPanels?: readonly BoardCustomPanel[];
 }
 
 export function FocusDock({
@@ -74,29 +85,46 @@ export function FocusDock({
   eventClocks = [],
   sectionTitles,
   hasCustomPanels = false,
+  customPanels = [],
 }: FocusDockProps) {
-  const allItems = hasCustomPanels
-    ? [
-        ...baseItems,
-        {
-          id: "panels" as const,
-          label: "自由展板",
-          title: "展板",
-          icon: PanelTop,
-        },
-      ]
-    : baseItems;
-  const visibleItems = allItems.filter(
+  const visibleItems = baseItems.filter(
     (item) => !item.section || !hiddenSections.includes(item.section),
   );
-  const focusedClock = eventClocks.find((clock) => `event:${clock.id}` === active) ?? eventClocks[0];
+
+  const focusedClock =
+    eventClocks.find((clock) => `event:${clock.id}` === active) ??
+    eventClocks[0];
   if (!hiddenSections.includes("index") && focusedClock) {
     const shiftsIdx = visibleItems.findIndex((item) => item.id === "shifts");
     const insertAt = shiftsIdx >= 0 ? shiftsIdx + 1 : visibleItems.length;
     visibleItems.splice(insertAt, 0, {
-      id: `event:${focusedClock.id}`, section: "index", label: "事件钟", title: "事件", icon: Clock,
+      id: `event:${focusedClock.id}`,
+      section: "index",
+      label: "事件钟",
+      title: "事件",
+      icon: Clock,
     });
   }
+
+  // Surface up to 4 atomic panels directly in the mobile FocusDock when legacy sections are decomposed
+  if (customPanels.length > 0 && customPanels.length <= 4) {
+    for (const panel of customPanels) {
+      visibleItems.push({
+        id: `panel:${panel.id}`,
+        label: panel.title,
+        title: panel.title.slice(0, 4),
+        icon: iconForPanel(panel),
+      });
+    }
+  } else if (hasCustomPanels || customPanels.length > 4) {
+    visibleItems.push({
+      id: "panels",
+      label: "自由展板",
+      title: "展板",
+      icon: PanelTop,
+    });
+  }
+
   const activeIndex = Math.max(
     0,
     visibleItems.findIndex((item) => item.id === active),
@@ -104,16 +132,28 @@ export function FocusDock({
   const style = {
     "--focus-index": activeIndex,
     "--focus-count": visibleItems.length,
-    "--focus-width": `calc(${100 / visibleItems.length}% - ${10 / visibleItems.length}px)`,
+    "--focus-width": `calc(${100 / visibleItems.length}% - ${
+      10 / visibleItems.length
+    }px)`,
   } as CSSProperties;
+
   return (
     <nav className="focus-dock" aria-label="公告板区域" style={style}>
       <span className="focus-dock-indicator" aria-hidden="true" />
-      {active.startsWith("event:") && eventClocks.length > 1 && <select className="focus-clock-picker"
-        aria-label="聚焦事件钟" value={focusedClock?.id}
-        onChange={(event) => onChange(`event:${event.target.value}`)}>
-        {eventClocks.map((clock) => <option key={clock.id} value={clock.id}>{clock.name}</option>)}
-      </select>}
+      {active.startsWith("event:") && eventClocks.length > 1 && (
+        <select
+          className="focus-clock-picker"
+          aria-label="聚焦事件钟"
+          value={focusedClock?.id}
+          onChange={(event) => onChange(`event:${event.target.value}`)}
+        >
+          {eventClocks.map((clock) => (
+            <option key={clock.id} value={clock.id}>
+              {clock.name}
+            </option>
+          ))}
+        </select>
+      )}
       {visibleItems.map((item) => {
         const Icon = item.icon;
         const customName = item.section

@@ -5,7 +5,14 @@
 -- 3. Upgrade validate_custom_panels and interact_custom_panel to support all 9 atomic capabilities.
 
 alter table public.campaign_settings
-  alter column hidden_sections set default array['inventory', 'tasks', 'safety']::text[];
+  alter column hidden_sections set default array['inventory', 'tasks', 'safety', 'shifts', 'index', 'activity']::text[];
+
+alter table public.campaign_settings
+  alter column custom_panels set default '[
+    {"id":"core-panel-roster","kind":"interactive","title":"成员名册","color":"#254e70","body":"","rows":[],"blocks":[{"id":"core-blk-roster","type":"member_roster","label":"在场成员","maxItems":4,"showRoleBadge":true}],"interactiveFor":"gm","effect":{"shader":"none","topology":"corner","progress":0,"origin":[0.88,0.1],"glowIntensity":2.3,"spreadWidth":0.22,"noiseAmount":0.45,"seed":7,"accentColor":null,"customGlsl":null,"shaderName":null,"ornament":"none","placement":"bottom","edgeWear":"clean","intensity":"medium"},"x":50,"y":50,"w":380,"h":300},
+    {"id":"core-panel-clock","kind":"interactive","title":"事件钟","color":"#8c4a27","body":"","rows":[],"blocks":[{"id":"core-blk-clock","type":"event_clock","name":"调查局势推进","segments":6,"progress":0,"color":"#b24b37","consequence":"进度填满时触发关键局势变化，由主持人裁定后果。"}],"interactiveFor":"gm","effect":{"shader":"none","topology":"corner","progress":0,"origin":[0.88,0.1],"glowIntensity":2.3,"spreadWidth":0.22,"noiseAmount":0.45,"seed":7,"accentColor":null,"customGlsl":null,"shaderName":null,"ornament":"none","placement":"bottom","edgeWear":"clean","intensity":"medium"},"x":460,"y":50,"w":380,"h":280},
+    {"id":"core-panel-activity","kind":"interactive","title":"工作记录","color":"#b8862b","body":"","rows":[],"blocks":[{"id":"core-blk-activity","type":"activity_feed","label":"最近操作动态","maxItems":5}],"interactiveFor":"gm","effect":{"shader":"none","topology":"corner","progress":0,"origin":[0.88,0.1],"glowIntensity":2.3,"spreadWidth":0.22,"noiseAmount":0.45,"seed":7,"accentColor":null,"customGlsl":null,"shaderName":null,"ornament":"none","placement":"bottom","edgeWear":"clean","intensity":"medium"},"x":50,"y":380,"w":380,"h":380}
+  ]'::jsonb;
 
 create or replace function private.validate_card_effect(p_effect jsonb)
 returns jsonb
@@ -415,6 +422,7 @@ begin
         end if;
         blk_type := coalesce(blk_item->>'type', '');
         if blk_type not in (
+          'member_roster', 'event_clock', 'activity_feed',
           'segmented', 'select', 'checkbox_group', 'toggle', 'stepper',
           'resource_list', 'task_board', 'kv_list', 'note_text'
         ) or char_length(btrim(coalesce(blk_item->>'id', ''))) not between 1 and 48 then
@@ -651,7 +659,17 @@ begin
         if (blk->>'id') = p_block_id then
           found_block := true;
 
-          if (blk->>'type') in ('segmented', 'select') and action_type = 'set_option' then
+          if (blk->>'type') = 'event_clock' and action_type = 'step_event_clock' then
+            next_num := greatest(
+              0,
+              least(
+                greatest(2, coalesce((blk->>'segments')::integer, 6)),
+                coalesce((blk->>'progress')::integer, 0) + coalesce((p_interaction->>'delta')::integer, 0)
+              )
+            );
+            blk := jsonb_set(blk, array['progress'], to_jsonb(next_num), true);
+
+          elsif (blk->>'type') in ('segmented', 'select') and action_type = 'set_option' then
             if exists (
               select 1 from jsonb_array_elements_text(coalesce(blk->'options', '[]'::jsonb)) opt
               where opt = (p_interaction->>'value')

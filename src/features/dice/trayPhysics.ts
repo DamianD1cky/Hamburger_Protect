@@ -10,7 +10,17 @@ export interface ThrowLaunch {
   dice: { sides: TrayDie["sides"]; pose: DiePose }[];
   velocity: [number, number, number];
 }
-export interface ThrowTrack { die: TrayDie; frames: DiePose[]; preparationFrames: number }
+export interface ThrowImpact {
+  frame: number;
+  intensity: number;
+  kind: "floor" | "wall" | "die";
+}
+export interface ThrowTrack {
+  die: TrayDie;
+  frames: DiePose[];
+  preparationFrames: number;
+  impacts?: ThrowImpact[];
+}
 export interface StationaryDie { die: TrayDie; shape: DieShape; pose: DiePose }
 
 function collisionShape(die: TrayDie, shape: DieShape) {
@@ -29,11 +39,13 @@ function createThrowSimulation(dice: TrayDie[], shapes: DieShape[], stationary: 
   const material = new C.Material("dice");
   world.defaultContactMaterial.friction = .35;
   world.defaultContactMaterial.restitution = .32;
-  const addWall = (half: C.Vec3, position: C.Vec3) => {
+  const bodyKind = new WeakMap<C.Body, "floor" | "wall" | "die">();
+  const addWall = (half: C.Vec3, position: C.Vec3, kind: "floor" | "wall") => {
     const body = new C.Body({ mass: 0, material, shape: new C.Box(half), position });
+    bodyKind.set(body, kind);
     world.addBody(body);
   };
-  addWall(new C.Vec3(6, .2, 5.5), new C.Vec3(0, -.2, 0));
+  addWall(new C.Vec3(6, .2, 5.5), new C.Vec3(0, -.2, 0), "floor");
   for (const edge of trayEdges) {
     const body = new C.Body({ mass: 0, material,
       shape: new C.Box(new C.Vec3(edge.length / 2 + .2, 5, .2)),
@@ -41,14 +53,20 @@ function createThrowSimulation(dice: TrayDie[], shapes: DieShape[], stationary: 
         (edge.z + edge.nextZ) / 2 - edge.nz * .2),
     });
     body.quaternion.setFromEuler(0, Math.atan2(-(edge.nextZ - edge.z), edge.nextX - edge.x), 0);
+    bodyKind.set(body, "wall");
     world.addBody(body);
   }
   for (const { die, shape, pose } of stationary) {
-    world.addBody(new C.Body({
+    const body = new C.Body({
       mass: 0, material, shape: collisionShape(die, shape),
       position: new C.Vec3(...pose.position), quaternion: new C.Quaternion(...pose.quaternion),
-    }));
+    });
+    bodyKind.set(body, "die");
+    world.addBody(body);
   }
+  let currentStep = 0;
+  const impactsPerDie: ThrowImpact[][] = dice.map(() => []);
+  const lastImpactStep = dice.map(() => -10);
   const sources = [...launch?.dice ?? []];
   const bodies = dice.map((die, i) => {
     const shape = shapes[i];
@@ -70,17 +88,37 @@ function createThrowSimulation(dice: TrayDie[], shapes: DieShape[], stationary: 
       body.velocity.set(...launch.velocity.map((value) => Math.max(-12, Math.min(12, value))) as [number, number, number]);
       body.angularVelocity.set(launch.velocity[2] * 1.2 + 3, 4 + i % 3, -launch.velocity[0] * 1.2 - 3);
     }
+    bodyKind.set(body, "die");
+    body.addEventListener("collide", (event: { body: C.Body; contact: C.ContactEquation }) => {
+      if (impactsPerDie[i].length >= 16) return;
+      if (currentStep - lastImpactStep[i] < 4) return;
+      const speed = Math.abs(event.contact.getImpactVelocityAlongNormal());
+      if (speed < 1.15) return;
+      const otherKind = bodyKind.get(event.body) ?? "floor";
+      // Deduplicate symmetric die-on-die hits by recording only on the lower index.
+      if (otherKind === "die") {
+        const otherIndex = bodies.indexOf(event.body);
+        if (otherIndex >= 0 && otherIndex < i) return;
+      }
+      lastImpactStep[i] = currentStep;
+      impactsPerDie[i].push({
+        frame: currentStep,
+        intensity: Math.min(1, (speed - 0.8) / 11),
+        kind: otherKind,
+      });
+    });
     world.addBody(body);
     return body;
   });
   return {
-    step() { world.step(1 / 120); },
+    step() { currentStep++; world.step(1 / 120); },
     poses(): DiePose[] {
       return bodies.map((body) => ({
         position: [body.position.x, body.position.y, body.position.z],
         quaternion: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w],
       }));
     },
+    impacts() { return impactsPerDie; },
     sleeping() { return bodies.every((body) => body.sleepState === C.Body.SLEEPING); },
   };
 }
@@ -162,10 +200,15 @@ export function buildThrow(dice: TrayDie[], shapes: DieShape[], stationary: Stat
     // half-turn preparation from looking like a one-frame face change.
     track.preparationFrames = Math.max(18, Math.ceil(held.angleTo(ready) * 1.5 / 10 * 120));
   });
+  const impacts = simulation.impacts();
   // Dice that collided in the simulation must share the same playback time.
   const preparationFrames = Math.max(18, ...tracks.map((track) => track.preparationFrames));
   tracks.forEach((track, i) => {
     track.preparationFrames = preparationFrames;
+    track.impacts = impacts[i].map((impact) => ({
+      ...impact,
+      frame: impact.frame + preparationFrames,
+    }));
     const ready = new Quaternion(...track.frames[0].quaternion);
     const held = new Quaternion(...initial[i].quaternion);
     const prefix: DiePose[] = [];

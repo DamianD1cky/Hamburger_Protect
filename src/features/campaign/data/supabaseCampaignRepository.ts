@@ -531,27 +531,13 @@ class SupabaseCampaignRepository implements CampaignRepository {
   }
   async saveNote(campaignId: string, draft: NoteDraft, id?: string) {
     const count = id ? 0 : (await this.getBoard(campaignId)).notes.length;
-    await rpc("save_note", {
+    await rpc("save_note_live", {
       p_campaign_id: campaignId,
       p_id: id ?? null,
-      p_title: draft.title,
-      p_body: draft.body,
-      p_color: draft.color,
-      p_x: 1098 + (count % 2) * 36,
-      p_y: 605 + (count % 3) * 168,
-      p_rotation:
-        draft.rotation !== undefined && Number.isFinite(draft.rotation)
-          ? draft.rotation
-          : id
-            ? null
-            : [-2.4, 1.8, -0.8][count % 3],
-      p_image_path: draft.imagePath ?? null,
-      p_pin_color: draft.pinColor,
-      p_scale:
-        draft.scale !== undefined && Number.isFinite(draft.scale)
-          ? draft.scale
-          : null,
-      p_effect: draft.effect ?? null,
+      p_expected: draft.expected ?? null,
+      p_draft: { ...draft, expected: undefined,
+        x: draft.x ?? 1098 + (count % 2) * 36, y: draft.y ?? 605 + (count % 3) * 168,
+        rotation: draft.rotation ?? (id ? null : [-2.4, 1.8, -0.8][count % 3]) },
     });
     return this.getBoard(campaignId);
   }

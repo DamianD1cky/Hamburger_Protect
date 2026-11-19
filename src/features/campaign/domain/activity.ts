@@ -75,6 +75,8 @@ export function activitySummary(event: BoardActivity) {
   const subject = title ? `「${title}」` : "";
   const label = entityLabels[event.entityType] ?? "公告板";
   switch (event.eventType) {
+    case "roll_table_draw":
+      return `随机抽取：${String(event.payload.text ?? "")}`;
     case "event_clock_completed":
       return `事件钟${subject}已填满：${String(target.consequence ?? "")}`;
     case "event_clock_reopened":

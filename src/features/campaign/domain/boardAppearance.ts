@@ -81,10 +81,8 @@ export const boardAppearancePresets: readonly BoardAppearancePreset[] = [
     label: "暗影黑板",
     appearance: {
       room: {
-        kind: "perspective",
-        scene: "crossing",
-        animated: true,
-        color: "#1a2024",
+        kind: "color",
+        color: "#151b21",
         imagePath: null,
         fit: "cover",
         positionX: 50,

@@ -33,9 +33,10 @@ export function createModelLibrary(surfaces: SurfaceLibrary) {
   };
   const appearance = (model: DieModel, skin: string, state: DieAppearance) => {
     const sides = model.group.userData.sides as TrayDie["sides"];
-    const geometry = geometryFor(sides, state === "secret");
+    const secret = state === "secret";
+    const geometry = geometryFor(sides, secret);
     model.body.geometry = geometry.body;
-    model.body.material = surfaces.material("body", skin);
+    model.body.material = surfaces.material("body", skin, false, secret ? { opaque: true } : undefined);
     model.marks.geometry = geometry.marks;
     model.marks.material = surfaces.material("marks", skin, !geometry.recessed);
     model.marks.visible = true;
@@ -44,14 +45,14 @@ export function createModelLibrary(surfaces: SurfaceLibrary) {
     model.body.quaternion.identity();
     model.marks.quaternion.identity();
     model.group.userData.appearance = state;
-    model.group.userData.hidden = state === "secret";
+    model.group.userData.hidden = secret;
   };
   return {
     create(die: TrayDie, skin: string) {
       const hidden = !!die.rollId && die.value === null;
       const geometry = geometryFor(die.sides, hidden);
       const group = new Group();
-      const body = new Mesh(geometry.body, surfaces.material("body", skin));
+      const body = new Mesh(geometry.body, surfaces.material("body", skin, false, hidden ? { opaque: true } : undefined));
       body.name = "body"; body.userData.surfaceSlot = "body";
       body.castShadow = true; body.receiveShadow = true;
       group.add(body);

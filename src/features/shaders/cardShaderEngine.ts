@@ -515,6 +515,233 @@ interface CompiledAmbientProgram {
   uSecondaryColor: WebGLUniformLocation | null;
 }
 
+interface CompiledPalaceQuartzProgram {
+  program: WebGLProgram;
+  uTime: WebGLUniformLocation | null;
+  uResolution: WebGLUniformLocation | null;
+  uHourAngle: WebGLUniformLocation | null;
+  uMinuteAngle: WebGLUniformLocation | null;
+  uSecondAngle: WebGLUniformLocation | null;
+  uSurfaceColor: WebGLUniformLocation | null;
+  uBorderColor: WebGLUniformLocation | null;
+  uAccentColor: WebGLUniformLocation | null;
+  uRunning: WebGLUniformLocation | null;
+}
+
+const PALACE_QUARTZ_FRAGMENT_300 = `#version 300 es
+precision highp float;
+
+in vec2 vUv;
+out vec4 fragColor;
+
+uniform float uTime;
+uniform vec2  uResolution;
+uniform float uHourAngle;
+uniform float uMinuteAngle;
+uniform float uSecondAngle;
+uniform vec3  uSurfaceColor;
+uniform vec3  uBorderColor;
+uniform vec3  uAccentColor;
+uniform float uRunning;
+
+const float PI = 3.14159265359;
+const float TAU = 6.28318530718;
+
+float sdSegment(vec2 p, vec2 a, vec2 b, out float h) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  h = clamp(dot(pa, ba) / max(1e-5, dot(ba, ba)), 0.0, 1.0);
+  return length(pa - ba * h);
+}
+
+vec2 rotateCW(vec2 p, float a) {
+  float c = cos(a);
+  float s = sin(a);
+  return vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+}
+
+float sdBreguetHand(vec2 p, float angle, float len, float tail, float baseW, float tipW, float ringPos, float ringR) {
+  vec2 q = rotateCW(p, -angle);
+  float h = 0.0;
+  float shaft = sdSegment(q, vec2(0.0, -tail), vec2(0.0, len), h);
+  float w = mix(baseW, tipW, smoothstep(0.0, 1.0, h));
+  // Subtle baroque diamond swell before the Breguet ring
+  float swell = exp(-pow((h - 0.56) * 8.0, 2.0)) * baseW * 0.72;
+  float dShaft = shaft - (w + swell);
+  // Iconic Breguet pomme (open gold ring near tip)
+  float dRingOuter = length(q - vec2(0.0, ringPos)) - ringR;
+  float dRingInner = -(length(q - vec2(0.0, ringPos)) - ringR * 0.52);
+  float dRing = max(dRingOuter, dRingInner);
+  return min(dShaft, dRing);
+}
+
+float sdSecondHand(vec2 p, float angle, float len, float tail) {
+  vec2 q = rotateCW(p, -angle);
+  float h = 0.0;
+  float shaft = sdSegment(q, vec2(0.0, -tail), vec2(0.0, len), h);
+  float w = mix(0.015, 0.006, h);
+  float dShaft = shaft - w;
+  // Counterweight crescent/ornament at tail
+  float dTailRing = abs(length(q - vec2(0.0, -tail * 0.85)) - 0.042) - 0.012;
+  return min(dShaft, dTailRing);
+}
+
+void main() {
+  vec2 p = (vUv - 0.5) * 2.0;
+  float r = length(p);
+  float aa = 2.2 / max(64.0, min(uResolution.x, uResolution.y));
+  // 0 at 12 o'clock, increasing clockwise
+  float theta = atan(p.x, p.y);
+  float theta01 = mod(theta + TAU, TAU);
+
+  // 24-petal baroque imperial lotus scalloped gold outer rim
+  float scallop = 0.018 * cos(theta * 24.0);
+  float outerR = 0.968 + scallop;
+  float outerAlpha = smoothstep(outerR + aa, outerR - aa, r);
+  if (outerAlpha <= 0.001) discard;
+
+  // Metallic burnished imperial gold palette harmonized with active theme border
+  vec3 goldDark = vec3(0.42, 0.28, 0.09);
+  vec3 goldMid  = mix(vec3(0.84, 0.65, 0.28), uBorderColor, 0.24);
+  vec3 goldHi   = vec3(1.0, 0.93, 0.70);
+  vec3 crimson  = vec3(0.68, 0.11, 0.13);
+
+  float shimmerPhase = uTime * 0.45 * (0.35 + 0.65 * uRunning);
+  float aniso = 0.5 + 0.5 * cos(theta * 2.0 - shimmerPhase);
+  float topLight = clamp(dot(normalize(p + vec2(0.0001)), normalize(vec2(-0.55, 0.83))) * 0.5 + 0.5, 0.0, 1.0);
+
+  vec3 col = vec3(0.0);
+
+  // ── 1. Outer Filigree Gilt Bezel (r: 0.79 .. outerR) ──
+  if (r >= 0.785) {
+    float t = clamp((r - 0.785) / max(0.001, outerR - 0.785), 0.0, 1.0);
+    float bevel = sin(t * PI);
+    float filigree = 0.5 + 0.5 * cos(theta * 24.0) * sin(t * PI * 2.0);
+    vec3 bezelCol = mix(goldDark, goldMid, 0.35 + 0.65 * bevel);
+    bezelCol = mix(bezelCol, goldHi, pow(aniso, 3.0) * 0.48 * bevel + topLight * 0.22);
+    bezelCol *= 0.86 + 0.18 * filigree;
+
+    // 36 gilded pearl beads inset along the bezel crown
+    float pearlSector = mod(theta01, TAU / 36.0) - (TAU / 72.0);
+    vec2 pearlDelta = vec2(pearlSector * 0.885, r - 0.885);
+    float pearlD = length(pearlDelta);
+    float pearlMask = smoothstep(0.032 + aa, 0.026 - aa, pearlD);
+    float pearlShade = clamp(1.0 - pearlD / 0.034, 0.0, 1.0);
+    vec3 pearlCol = mix(goldDark, goldHi, pow(pearlShade, 0.65) * (0.65 + 0.35 * topLight));
+    bezelCol = mix(bezelCol, pearlCol, pearlMask * 0.9);
+
+    // Fine dark engraved groove separating bezel from dial
+    float groove = smoothstep(0.785 + aa * 2.0, 0.798, r);
+    col = bezelCol * (0.58 + 0.42 * groove);
+  } else {
+    // ── 2. Porcelain Ivory Enamel Chapter Ring (r: 0.46 .. 0.785) ──
+    float guilloche = 0.5 + 0.5 * sin(r * 74.0 + cos(theta * 12.0) * 1.45);
+    vec3 ivoryBase = mix(vec3(0.95, 0.90, 0.79), uSurfaceColor, 0.11);
+    vec3 dialCol = ivoryBase - vec3(0.035, 0.03, 0.022) * (1.0 - guilloche);
+    // Warm aged patina near bezel + subtle inner dome shading
+    dialCol *= 1.0 - smoothstep(0.68, 0.79, r) * 0.16;
+
+    // ── 3. Inner Royal Cloisonné Astronomical Medallion (r < 0.465) ──
+    float innerMask = smoothstep(0.468 + aa, 0.456 - aa, r);
+    if (innerMask > 0.001) {
+      vec3 lapisDeep = mix(vec3(0.05, 0.11, 0.24), uAccentColor * 0.25, 0.20);
+      vec3 lapisMid  = mix(vec3(0.11, 0.22, 0.44), uAccentColor * 0.45, 0.24);
+      vec3 enamel = mix(lapisMid, lapisDeep, smoothstep(0.05, 0.46, r));
+
+      // 12-ray gilded imperial sunburst astrolabe filigree
+      float rayA = pow(max(0.0, cos(theta * 12.0 + shimmerPhase * 0.22)), 6.0);
+      float rayB = pow(max(0.0, cos(theta * 12.0 + PI / 12.0 - shimmerPhase * 0.15)), 10.0);
+      float sunFade = smoothstep(0.44, 0.10, r);
+      enamel = mix(enamel, goldMid, (rayA * 0.48 + rayB * 0.26) * sunFade);
+      enamel += goldHi * rayA * sunFade * 0.16 * (0.65 + 0.35 * aniso);
+
+      // Astrolabe concentric golden filigree arcs
+      float astroRing1 = smoothstep(0.012 + aa, 0.004, abs(r - 0.30));
+      float astroRing2 = smoothstep(0.010 + aa, 0.003, abs(r - 0.18));
+      enamel = mix(enamel, goldMid, (astroRing1 * 0.65 + astroRing2 * 0.45));
+
+      // Subtle gilded star-dust dots inside celestial enamel
+      float starAngle = mod(theta01 + 0.26, TAU / 12.0) - TAU / 24.0;
+      float starD = length(vec2(starAngle * 0.37, r - 0.37));
+      float starMask = smoothstep(0.018 + aa, 0.007, starD);
+      float twinkle = 0.72 + 0.28 * sin(uTime * 2.4 + floor(theta01 * 12.0 / TAU) * 3.7);
+      enamel = mix(enamel, goldHi, starMask * twinkle * 0.92);
+
+      dialCol = mix(dialCol, enamel, innerMask);
+    }
+
+    // Golden filigree ring bordering inner enamel medallion
+    float innerBorder = smoothstep(0.018 + aa, 0.006, abs(r - 0.462));
+    dialCol = mix(dialCol, mix(goldMid, goldHi, 0.35 * aniso), innerBorder);
+
+    // Outer railway minute track (60 fine ticks + twin hairline rails)
+    float railOuter = smoothstep(0.009 + aa, 0.002, abs(r - 0.768));
+    float railInner = smoothstep(0.008 + aa, 0.002, abs(r - 0.715));
+    float minSector = abs(mod(theta01 + TAU / 120.0, TAU / 60.0) - TAU / 120.0) * r;
+    float minTick = smoothstep(0.008 + aa, 0.003, minSector) * step(0.715, r) * step(r, 0.768);
+    dialCol = mix(dialCol, vec3(0.24, 0.18, 0.12), max(max(railOuter, railInner) * 0.72, minTick * 0.62));
+
+    // 12 Ornate Faceted Hour Indices (cardinal 12/3/6/9 accented with imperial ruby!)
+    float hourIdx = mod(floor((theta01 + TAU / 24.0) / (TAU / 12.0)), 12.0);
+    float hourSector = mod(theta01 + TAU / 24.0, TAU / 12.0) - TAU / 24.0;
+    vec2 hp = vec2(hourSector * r, r - 0.61);
+    bool isCardinal = (mod(hourIdx, 3.0) < 0.5);
+    // Diamond/lozenge SDF
+    float diam = abs(hp.x) * (isCardinal ? 2.1 : 3.0) + abs(hp.y) * (isCardinal ? 1.15 : 1.45);
+    float markerMask = smoothstep(0.082 + aa, 0.072 - aa, diam);
+    vec3 markerCol = isCardinal
+      ? mix(crimson, vec3(1.0, 0.42, 0.34), clamp(0.65 - diam * 4.5, 0.0, 0.65))
+      : mix(goldDark, goldHi, 0.45 + 0.45 * step(0.0, -hp.x));
+    // Fine gold bezel around cardinal ruby markers
+    float cardinalRim = isCardinal ? smoothstep(0.095 + aa, 0.082, diam) * (1.0 - markerMask) : 0.0;
+    dialCol = mix(dialCol, goldMid, cardinalRim * 0.92);
+    dialCol = mix(dialCol, markerCol, markerMask);
+
+    col = dialCol;
+  }
+
+  // ── 4. Sculpted Baroque Breguet Hands + Soft Drop Shadows ──
+  vec2 sp = p - vec2(0.020, -0.026);
+  float dHourS = sdBreguetHand(sp, uHourAngle, 0.44, 0.10, 0.032, 0.011, 0.30, 0.056);
+  float dMinS  = sdBreguetHand(sp, uMinuteAngle, 0.64, 0.12, 0.025, 0.008, 0.48, 0.048);
+  float dSecS  = sdSecondHand(sp, uSecondAngle, 0.71, 0.17);
+  float shadowMask =
+    smoothstep(0.028, -0.005, dHourS) * 0.34 +
+    smoothstep(0.025, -0.005, dMinS) * 0.30 +
+    smoothstep(0.018, -0.004, dSecS) * 0.22;
+  col *= 1.0 - clamp(shadowMask, 0.0, 0.46) * step(r, 0.79);
+
+  float dHour = sdBreguetHand(p, uHourAngle, 0.44, 0.10, 0.032, 0.011, 0.30, 0.056);
+  float hourMask = smoothstep(aa, -aa, dHour);
+  vec3 handGold = mix(goldDark, goldHi, 0.48 + 0.42 * topLight);
+  col = mix(col, handGold, hourMask);
+
+  float dMin = sdBreguetHand(p, uMinuteAngle, 0.64, 0.12, 0.025, 0.008, 0.48, 0.048);
+  float minMask = smoothstep(aa, -aa, dMin);
+  col = mix(col, mix(goldMid, goldHi, 0.55), minMask);
+
+  float dSec = sdSecondHand(p, uSecondAngle, 0.71, 0.17);
+  float secMask = smoothstep(aa, -aa, dSec);
+  vec3 secCol = mix(crimson, vec3(0.96, 0.34, 0.26), 0.35 + 0.35 * topLight);
+  col = mix(col, secCol, secMask);
+
+  // ── 5. Center Ruby Cabochon Boss & Domed Sapphire Glass Glint ──
+  float bossRim = smoothstep(0.082 + aa, 0.072 - aa, r);
+  float bossGem = smoothstep(0.054 + aa, 0.044 - aa, r);
+  col = mix(col, mix(goldDark, goldHi, 0.55 + 0.35 * topLight), bossRim);
+  vec3 rubyCol = mix(vec3(0.45, 0.05, 0.08), vec3(1.0, 0.38, 0.32), smoothstep(0.052, 0.0, length(p - vec2(-0.016, 0.018))));
+  col = mix(col, rubyCol, bossGem);
+
+  // Subtle curved sapphire crystal reflection across upper-left glass dome
+  float glassArc = smoothstep(0.77, 0.73, r)
+    * smoothstep(0.24, 0.68, dot(p, normalize(vec2(-0.55, 0.83))))
+    * smoothstep(0.55, 0.08, abs(dot(p, normalize(vec2(0.83, 0.55)))));
+  col += vec3(1.0, 0.98, 0.93) * glassArc * 0.18;
+
+  fragColor = vec4(clamp(col, 0.0, 1.0), outerAlpha);
+}
+`;
+
 export interface CardShaderDrawParams {
   width: number;
   height: number;
@@ -530,6 +757,17 @@ export interface AmbientShaderDrawParams {
   ambient: BoardAmbientShader;
 }
 
+export interface PalaceQuartzDrawParams {
+  size: number;
+  hourRad: number;
+  minuteRad: number;
+  secondRad: number;
+  surfaceColorHex: string;
+  borderColorHex: string;
+  accentColorHex: string;
+  running: boolean;
+}
+
 export type CardShaderMaskMode = 0 | 1 | 2;
 
 class SharedCardGlEngine {
@@ -538,6 +776,7 @@ class SharedCardGlEngine {
   readonly vertexShader: WebGLShader;
   readonly defaultCardProgram: CompiledCardProgram;
   readonly defaultAmbientProgram: CompiledAmbientProgram;
+  private palaceQuartzProgram: CompiledPalaceQuartzProgram | null = null;
   private readonly customCardPrograms = new Map<string, CompiledCardProgram | false>();
   private readonly customAmbientPrograms = new Map<string, CompiledAmbientProgram | false>();
 
@@ -730,6 +969,59 @@ class SharedCardGlEngine {
     return canvas;
   }
 
+  private resolvePalaceQuartzProgram(): CompiledPalaceQuartzProgram {
+    if (this.palaceQuartzProgram) return this.palaceQuartzProgram;
+    const prog = this.linkProgram(PALACE_QUARTZ_FRAGMENT_300);
+    const U = (name: string) => this.gl.getUniformLocation(prog, name);
+    this.palaceQuartzProgram = {
+      program: prog,
+      uTime: U("uTime"),
+      uResolution: U("uResolution"),
+      uHourAngle: U("uHourAngle"),
+      uMinuteAngle: U("uMinuteAngle"),
+      uSecondAngle: U("uSecondAngle"),
+      uSurfaceColor: U("uSurfaceColor"),
+      uBorderColor: U("uBorderColor"),
+      uAccentColor: U("uAccentColor"),
+      uRunning: U("uRunning"),
+    };
+    return this.palaceQuartzProgram;
+  }
+
+  renderPalaceQuartzFrame(
+    params: PalaceQuartzDrawParams,
+    timeSec: number,
+  ): HTMLCanvasElement {
+    const { gl, canvas } = this;
+    const s = Math.max(64, Math.min(256, Math.round(params.size)));
+    if (canvas.width !== s || canvas.height !== s) {
+      canvas.width = s;
+      canvas.height = s;
+    }
+    gl.viewport(0, 0, s, s);
+    const u = this.resolvePalaceQuartzProgram();
+    gl.useProgram(u.program);
+
+    const surf = parseCssHexToRgb01(params.surfaceColorHex, [0.95, 0.90, 0.79]);
+    const bord = parseCssHexToRgb01(params.borderColorHex, [0.84, 0.65, 0.28]);
+    const acc = parseCssHexToRgb01(params.accentColorHex, [0.16, 0.34, 0.62]);
+
+    gl.uniform1f(u.uTime, timeSec);
+    gl.uniform2f(u.uResolution, s, s);
+    gl.uniform1f(u.uHourAngle, params.hourRad);
+    gl.uniform1f(u.uMinuteAngle, params.minuteRad);
+    gl.uniform1f(u.uSecondAngle, params.secondRad);
+    gl.uniform3f(u.uSurfaceColor, surf[0], surf[1], surf[2]);
+    gl.uniform3f(u.uBorderColor, bord[0], bord[1], bord[2]);
+    gl.uniform3f(u.uAccentColor, acc[0], acc[1], acc[2]);
+    gl.uniform1f(u.uRunning, params.running ? 1.0 : 0.0);
+
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return canvas;
+  }
+
   renderAmbientFrame(
     params: AmbientShaderDrawParams,
     timeSec: number,
@@ -802,6 +1094,63 @@ export function blitCardShaderToCanvas(
   return true;
 }
 
+export type ShaderQualityMode = "high" | "balanced" | "eco";
+
+const SHADER_QUALITY_KEY = "vb-shader-quality";
+const qualityListeners = new Set<(mode: ShaderQualityMode) => void>();
+let currentQualityMode: ShaderQualityMode = (() => {
+  if (typeof localStorage === "undefined") return "balanced";
+  const saved = localStorage.getItem(SHADER_QUALITY_KEY);
+  return saved === "high" || saved === "balanced" || saved === "eco"
+    ? saved
+    : "balanced";
+})();
+
+export function getShaderQualityMode(): ShaderQualityMode {
+  return currentQualityMode;
+}
+
+export function setShaderQualityMode(mode: ShaderQualityMode) {
+  currentQualityMode = mode;
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(SHADER_QUALITY_KEY, mode);
+    } catch {
+      // ignore storage errors
+    }
+  }
+  qualityListeners.forEach((fn) => fn(mode));
+}
+
+export function subscribeShaderQuality(
+  fn: (mode: ShaderQualityMode) => void,
+): () => void {
+  qualityListeners.add(fn);
+  return () => {
+    qualityListeners.delete(fn);
+  };
+}
+
+export function blitPalaceQuartzToCanvas(
+  target: HTMLCanvasElement,
+  params: PalaceQuartzDrawParams,
+  timeSec: number,
+): boolean {
+  const engine = getSharedEngine();
+  if (!engine) return false;
+  const s = Math.max(64, Math.min(256, Math.round(params.size)));
+  if (target.width !== s || target.height !== s) {
+    target.width = s;
+    target.height = s;
+  }
+  const ctx = target.getContext("2d");
+  if (!ctx) return false;
+  const rendered = engine.renderPalaceQuartzFrame({ ...params, size: s }, timeSec);
+  ctx.clearRect(0, 0, s, s);
+  ctx.drawImage(rendered, 0, 0, s, s);
+  return true;
+}
+
 export function blitAmbientShaderToCanvas(
   target: HTMLCanvasElement,
   params: AmbientShaderDrawParams,
@@ -809,15 +1158,21 @@ export function blitAmbientShaderToCanvas(
 ): boolean {
   const engine = getSharedEngine();
   if (!engine) return false;
-  const w = Math.max(128, Math.min(1280, Math.round(params.width)));
-  const h = Math.max(128, Math.min(760, Math.round(params.height)));
+  const scale =
+    currentQualityMode === "high"
+      ? 1
+      : currentQualityMode === "balanced"
+        ? 0.72
+        : 0.65;
+  const w = Math.max(128, Math.min(1280, Math.round(params.width * scale)));
+  const h = Math.max(128, Math.min(760, Math.round(params.height * scale)));
   if (target.width !== w || target.height !== h) {
     target.width = w;
     target.height = h;
   }
   const ctx = target.getContext("2d");
   if (!ctx) return false;
-  const rendered = engine.renderAmbientFrame(params, timeSec);
+  const rendered = engine.renderAmbientFrame({ ...params, width: w, height: h }, timeSec);
   ctx.clearRect(0, 0, w, h);
   ctx.drawImage(rendered, 0, 0, w, h);
   return true;
@@ -897,6 +1252,7 @@ export function bakeCardContentSurvivalMaskUrl(
 type FrameSubscriber = (timeSec: number) => void;
 const subscribers = new Set<FrameSubscriber>();
 let rafId = 0;
+let lastTickMs = 0;
 const t0 = typeof performance !== "undefined" ? performance.now() : 0;
 
 function tick(now: number) {
@@ -904,12 +1260,16 @@ function tick(now: number) {
     rafId = 0;
     return;
   }
-  const diceOpen =
-    typeof document !== "undefined" &&
-    Boolean(document.querySelector(".dice-dialog[open]"));
-  if (!document.hidden && !diceOpen) {
-    const elapsed = (now - t0) / 1000;
-    subscribers.forEach((fn) => fn(elapsed));
+  if (currentQualityMode !== "eco") {
+    const minIntervalMs = currentQualityMode === "high" ? 15 : 33;
+    const diceOpen =
+      typeof document !== "undefined" &&
+      Boolean(document.querySelector(".dice-dialog[open]"));
+    if (!document.hidden && !diceOpen && now - lastTickMs >= minIntervalMs) {
+      lastTickMs = now;
+      const elapsed = (now - t0) / 1000;
+      subscribers.forEach((fn) => fn(elapsed));
+    }
   }
   rafId = window.requestAnimationFrame(tick);
 }

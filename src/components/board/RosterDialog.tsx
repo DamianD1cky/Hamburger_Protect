@@ -1,4 +1,4 @@
-import { LogOut, Pencil, UserRound } from "lucide-react";
+import { ChevronRight, LogOut, Pencil, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import type { CampaignJoinRequest } from "../../features/access/data/campaignAccess";
 import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
@@ -34,19 +34,26 @@ function JoinRequestRow({
     }
   };
   return (
-    <article className="join-request-row" aria-label={`加入申请：${identity}`}>
-      <header>
-        <strong>{request.characterName}</strong>
-        <span>{request.jobTitle}</span>
+    <article
+      className="join-request-row hig-editor-group"
+      aria-label={`加入申请：${identity}`}
+    >
+      <header className="hig-request-head">
+        <span className="hig-roster-avatar" aria-hidden="true">
+          {request.characterName.slice(0, 1)}
+        </span>
+        <div className="hig-request-titles">
+          <strong>{request.characterName}</strong>
+          <small>
+            {request.jobTitle} · 编号 {request.id.slice(0, 8)} ·{" "}
+            <time dateTime={request.requestedAt}>
+              {formatNoteTimestamp(request.requestedAt)}
+            </time>
+          </small>
+        </div>
       </header>
-      <p className="join-request-meta">
-        申请编号 {request.id.slice(0, 8)}　
-        <time dateTime={request.requestedAt}>
-          {formatNoteTimestamp(request.requestedAt)}
-        </time>
-      </p>
       {duplicateName && (
-        <p className="join-request-warning">
+        <p className="hig-inline-warning">
           存在同名成员或申请，请先核对编号与本人身份。
         </p>
       )}
@@ -120,6 +127,7 @@ function MemberDetail({
     (quest) =>
       quest.claimedBy === member.userId && quest.status !== "completed",
   );
+
   const save = async () => {
     if (busy || !characterName.trim() || !jobTitle.trim()) return;
     setBusy(true);
@@ -137,6 +145,7 @@ function MemberDetail({
       setBusy(false);
     }
   };
+
   const remove = async () => {
     if (!confirmRemove) {
       setConfirmRemove(true);
@@ -151,34 +160,56 @@ function MemberDetail({
       setBusy(false);
     }
   };
+
   return (
     <section
-      className="member-detail"
+      className="member-detail hig-member-detail-card"
       aria-label={`${member.characterName}资料`}
     >
-      <header>
-        <div>
-          <small>
-            成员编号 {member.userId.slice(0, 8)}　
-            {member.active ? "在场" : "已离场"}
-          </small>
-          <h2>{member.characterName}</h2>
-          <p>{member.jobTitle}</p>
+      <header className="hig-member-detail-head">
+        <span
+          className={
+            member.role === "gm"
+              ? "hig-member-avatar-lg is-gm"
+              : "hig-member-avatar-lg"
+          }
+          aria-hidden="true"
+        >
+          {member.characterName.slice(0, 1)}
+        </span>
+        <div className="hig-member-detail-titles">
+          <div className="hig-member-name-row">
+            <h2>{member.characterName}</h2>
+            <span
+              className={
+                member.active
+                  ? "hig-status-pill is-online"
+                  : "hig-status-pill"
+              }
+            >
+              {member.active ? "在场" : "已离场"}
+            </span>
+          </div>
+          <p>
+            {member.jobTitle} · 编号 {member.userId.slice(0, 8)}
+          </p>
         </div>
         {own && member.active && board.campaign.status === "active" && (
           <button
             type="button"
-            className="icon-button"
+            className="hig-pill-action"
             onClick={() => setEditing((value) => !value)}
             aria-label="编辑自己的角色资料"
             title="编辑资料"
           >
-            <Pencil />
+            <Pencil aria-hidden="true" />
+            {editing ? "预览" : "编辑"}
           </button>
         )}
       </header>
+
       {editing ? (
-        <fieldset className="editor-fields" disabled={busy}>
+        <fieldset className="hig-editor-sections" disabled={busy}>
           <label className="field">
             <span>角色名字</span>
             <input
@@ -225,15 +256,19 @@ function MemberDetail({
           </div>
         </fieldset>
       ) : (
-        <p className="member-profile-text">
-          {member.profileText || "这位成员还没有填写角色资料。"}
-        </p>
+        <div className="hig-member-bio-box">
+          <span className="hig-section-label">角色简介</span>
+          <p className="member-profile-text">
+            {member.profileText || "这位成员还没有填写角色资料。"}
+          </p>
+        </div>
       )}
+
       {canRemove && (
-        <div className="member-removal">
+        <div className="member-removal hig-member-danger-zone">
           <p>
             未完成任务：<strong>{unfinished.length}</strong>{" "}
-            项。尚未提交的任务会释放，待审核报告会保留给 GM 处理。
+            项。移出后尚未提交的任务会自动释放。
           </p>
           {confirmRemove && (
             <label className="field">
@@ -248,15 +283,16 @@ function MemberDetail({
           )}
           <button
             type="button"
-            className="text-button danger-button"
+            className="delete-button"
             disabled={busy}
             onClick={() => void remove()}
           >
-            <LogOut />
+            <LogOut aria-hidden="true" />
             {confirmRemove ? "确认移出房间" : "移出房间"}
           </button>
         </div>
       )}
+
       {error && (
         <p className="access-error" role="alert">
           {error}
@@ -266,6 +302,9 @@ function MemberDetail({
   );
 }
 
+/**
+ * Apple HIG 主从分栏成员名册浮层（macOS Sidebar + Detail Card）。
+ */
 export function RosterDialog({
   anchor,
   board,
@@ -296,120 +335,199 @@ export function RosterDialog({
   );
   const selected = board.members.find((member) => member.userId === selectedId);
   const [tab, setTab] = useState<"members" | "requests">("members");
+
   return (
     <MenuPopover
       anchor={anchor}
       id="roster-menu"
       keepMounted
-      width={560}
+      width={580}
       title="成员名册"
-      className="roster-dialog"
+      className="roster-dialog hig-popover"
       onClose={onClose}
     >
-      {joinInbox && <div className="room-settings-tabs" role="tablist" aria-label="名册分类">
-        {([["members", `成员 · ${active.length}`], ["requests", `加入申请 · ${joinInbox.total}`]] as const).map(([key, label]) =>
-          <button type="button" role="tab" key={key} aria-selected={tab === key}
-            aria-controls={`roster-panel-${key}`} id={`roster-tab-${key}`} tabIndex={tab === key ? 0 : -1}
-            onKeyDown={(event) => {
-              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-              event.preventDefault();
-              const next = event.key === "Home" ? "members" : event.key === "End" ? "requests" :
-                tab === "members" ? "requests" : "members";
-              setTab(next); document.getElementById(`roster-tab-${next}`)?.focus();
-            }} onClick={() => setTab(key)}>{label}</button>)}
-      </div>}
-      <div className="roster-shell">
       {joinInbox && (
-        <section className="join-request-inbox" aria-label="待审批加入申请"
-          id="roster-panel-requests" role="tabpanel" aria-labelledby="roster-tab-requests" hidden={tab !== "requests"}>
-          <div className="join-inbox-heading">
-            <h2>加入申请（{joinInbox.total} 条待审批）</h2>
+        <div
+          className="hig-inspector-segmented"
+          role="tablist"
+          aria-label="名册分类"
+        >
+          {(
+            [
+              ["members", `在场成员 · ${active.length}`],
+              ["requests", `加入申请 · ${joinInbox.total}`],
+            ] as const
+          ).map(([key, label]) => (
             <button
               type="button"
-              className="text-button"
-              onClick={() => void onRefreshInbox()}
-            >
-              刷新申请
-            </button>
-          </div>
-          {inboxError && (
-            <p className="access-error" role="alert">
-              申请读取失败，请刷新后重试。
-            </p>
-          )}
-          {!joinInbox.requests.length && !inboxError && (
-            <p className="editor-help">暂无待审批申请。</p>
-          )}
-          {joinInbox.requests.map((request) => (
-            <JoinRequestRow
-              key={request.id}
-              request={request}
-              duplicateName={
-                active.some(
-                  (member) => member.characterName === request.characterName,
-                ) ||
-                joinInbox.requests.some(
-                  (other) =>
-                    other.id !== request.id &&
-                    other.characterName === request.characterName,
+              role="tab"
+              key={key}
+              aria-selected={tab === key}
+              aria-controls={`roster-panel-${key}`}
+              id={`roster-tab-${key}`}
+              tabIndex={tab === key ? 0 : -1}
+              onKeyDown={(event) => {
+                if (
+                  !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                    event.key,
+                  )
                 )
-              }
-              onReview={onReviewJoin}
-            />
-          ))}
-        </section>
-      )}
-      <div className="roster-layout" id="roster-panel-members" role={joinInbox ? "tabpanel" : undefined}
-        aria-labelledby={joinInbox ? "roster-tab-members" : undefined} hidden={!!joinInbox && tab !== "members"}>
-        <div className="roster-member-list" role="list" aria-label="房间成员">
-          {active.map((member) => (
-            <button
-              type="button"
-              role="listitem"
-              className={selectedId === member.userId ? "is-selected" : ""}
-              key={member.userId}
-              onClick={() => setSelectedId(member.userId)}
+                  return;
+                event.preventDefault();
+                const next =
+                  event.key === "Home"
+                    ? "members"
+                    : event.key === "End"
+                      ? "requests"
+                      : tab === "members"
+                        ? "requests"
+                        : "members";
+                setTab(next);
+                document.getElementById(`roster-tab-${next}`)?.focus();
+              }}
+              onClick={() => setTab(key)}
             >
-              <UserRound />
-              <span>
-                <strong>{member.characterName}</strong>
-                <small>{member.jobTitle}</small>
-              </span>
+              {label}
             </button>
           ))}
-          {inactive.length > 0 && (
-            <details className="inactive-members">
-              <summary>已离场（{inactive.length}）</summary>
-              {inactive.map((member) => (
-                <button
-                  type="button"
-                  className={selectedId === member.userId ? "is-selected" : ""}
-                  key={member.userId}
-                  onClick={() => setSelectedId(member.userId)}
-                >
-                  <UserRound />
-                  <span>
-                    <strong>{member.characterName}</strong>
-                    <small>{member.jobTitle}</small>
-                  </span>
-                </button>
+        </div>
+      )}
+
+      <div className="roster-shell">
+        {joinInbox && (
+          <section
+            className="join-request-inbox"
+            aria-label="待审批加入申请"
+            id="roster-panel-requests"
+            role="tabpanel"
+            aria-labelledby="roster-tab-requests"
+            hidden={tab !== "requests"}
+          >
+            <div className="hig-popover-section-head">
+              <span className="hig-section-label">
+                加入申请（{joinInbox.total} 条待审批）
+              </span>
+              <button
+                type="button"
+                className="hig-pill-action"
+                onClick={() => void onRefreshInbox()}
+              >
+                <RefreshCw aria-hidden="true" />
+                刷新申请
+              </button>
+            </div>
+            {inboxError && (
+              <p className="access-error" role="alert">
+                申请读取失败，请刷新后重试。
+              </p>
+            )}
+            {!joinInbox.requests.length && !inboxError && (
+              <div className="hig-empty-card">暂无待审批的加入申请</div>
+            )}
+            <div className="hig-editor-sections">
+              {joinInbox.requests.map((request) => (
+                <JoinRequestRow
+                  key={request.id}
+                  request={request}
+                  duplicateName={
+                    active.some(
+                      (member) => member.characterName === request.characterName,
+                    ) ||
+                    joinInbox.requests.some(
+                      (other) =>
+                        other.id !== request.id &&
+                        other.characterName === request.characterName,
+                    )
+                  }
+                  onReview={onReviewJoin}
+                />
               ))}
-            </details>
+            </div>
+          </section>
+        )}
+
+        <div
+          className="roster-layout hig-roster-split"
+          id="roster-panel-members"
+          role={joinInbox ? "tabpanel" : undefined}
+          aria-labelledby={joinInbox ? "roster-tab-members" : undefined}
+          hidden={!!joinInbox && tab !== "members"}
+        >
+          <div className="hig-sidebar-list" role="list" aria-label="房间成员">
+            {active.map((member) => (
+              <button
+                type="button"
+                role="listitem"
+                className={
+                  selectedId === member.userId
+                    ? "hig-sidebar-item is-selected"
+                    : "hig-sidebar-item"
+                }
+                key={member.userId}
+                onClick={() => setSelectedId(member.userId)}
+              >
+                <span
+                  className={
+                    member.role === "gm"
+                      ? "hig-roster-avatar is-gm"
+                      : "hig-roster-avatar"
+                  }
+                  aria-hidden="true"
+                >
+                  {member.characterName.slice(0, 1)}
+                </span>
+                <span className="hig-sidebar-copy">
+                  <strong>{member.characterName}</strong>
+                  <small>{member.jobTitle}</small>
+                </span>
+                <ChevronRight className="hig-sidebar-chevron" aria-hidden="true" />
+              </button>
+            ))}
+
+            {inactive.length > 0 && (
+              <details className="hig-inactive-disclosure">
+                <summary>已离场（{inactive.length}）</summary>
+                {inactive.map((member) => (
+                  <button
+                    type="button"
+                    className={
+                      selectedId === member.userId
+                        ? "hig-sidebar-item is-selected"
+                        : "hig-sidebar-item"
+                    }
+                    key={member.userId}
+                    onClick={() => setSelectedId(member.userId)}
+                  >
+                    <span className="hig-roster-avatar" aria-hidden="true">
+                      {member.characterName.slice(0, 1)}
+                    </span>
+                    <span className="hig-sidebar-copy">
+                      <strong>{member.characterName}</strong>
+                      <small>{member.jobTitle}</small>
+                    </span>
+                  </button>
+                ))}
+              </details>
+            )}
+          </div>
+
+          {selected && (
+            <MemberDetail
+              key={selected.userId}
+              member={selected}
+              board={board}
+              onUpdateProfile={onUpdateProfile}
+              onRemoveMember={onRemoveMember}
+            />
           )}
         </div>
-        {selected && (
-          <MemberDetail
-            key={selected.userId}
-            member={selected}
-            board={board}
-            onUpdateProfile={onUpdateProfile}
-            onRemoveMember={onRemoveMember}
-          />
-        )}
       </div>
-      </div>
-      <footer className="composer-actions">
-        <button type="button" className="text-button" onClick={onClose}>完成</button>
+
+      <footer className="composer-actions hig-sheet-footer">
+        <span className="action-spacer" />
+        <button type="button" className="publish-button" onClick={onClose}>
+          完成
+        </button>
       </footer>
     </MenuPopover>
   );

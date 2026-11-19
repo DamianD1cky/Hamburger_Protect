@@ -10,6 +10,16 @@ import {
   type BoardAmbientShader,
   type CardVisualEffect,
 } from "./cardEffects.ts";
+import {
+  defaultBoardClockAppearance,
+  isDefaultBoardClockAppearance,
+  normalizeBoardClockAppearance,
+  type BoardClockAppearance,
+} from "./clockAppearance.ts";
+import {
+  normalizeArchiveEntries,
+  type ArchiveEntry,
+} from "./archiveBox.ts";
 
 export type BoardFontPreset = "handwritten" | "serif" | "typewriter" | "mono";
 export type BoardCardStyle = "paper" | "parchment" | "slate" | "terminal";
@@ -31,6 +41,20 @@ export interface BoardStyleTokens {
   surfaceShader?: BoardAmbientShader;
   /** AI 命令可控的公告板外边框 WebGL2 Shader。 */
   frameShader?: BoardAmbientShader;
+  /** 与板面主题配套且支持 AI 定制的战役时钟外观。 */
+  clockAppearance?: BoardClockAppearance;
+  /** 全局字号缩放倍率（0.75–1.50，默认 1.0）。 */
+  fontSizeScale?: number;
+  /** 可选本地导入字体族名称（找不到时自动回退至 fontPreset 内置字体）。 */
+  customFontFamily?: string | null;
+  /** 单张便签字号覆盖（noteId -> 12..28 px）。 */
+  noteFontSizes?: Record<string, number>;
+  /** 经典板块字号覆盖（sectionKey -> 11..24 px）。 */
+  sectionFontSizes?: Record<string, number>;
+  /** 战役「档案盒」归档条目（线索 / 证据 / 人物 / 新闻）。 */
+  archiveEntries?: ArchiveEntry[];
+  /** 已隐藏的自由/展示板块 ID 列表（可随时在板块库恢复显示）。 */
+  hiddenPanelIds?: string[];
 }
 
 const FONT_PRESETS: readonly BoardFontPreset[] = [
@@ -64,7 +88,30 @@ export function defaultBoardStyleTokens(): BoardStyleTokens {
     defaultNoteEffect: defaultCardVisualEffect(),
     surfaceShader: defaultBoardAmbientShader(),
     frameShader: defaultBoardAmbientShader(),
+    clockAppearance: defaultBoardClockAppearance(),
+    fontSizeScale: 1,
+    customFontFamily: null,
+    noteFontSizes: {},
+    sectionFontSizes: {},
+    archiveEntries: [],
+    hiddenPanelIds: [],
   };
+}
+
+function normalizeFontSizeMap(
+  raw: unknown,
+  min: number,
+  max: number,
+): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const result: Record<string, number> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    const num = Number(val);
+    if (key.trim() && Number.isFinite(num)) {
+      result[key.trim().slice(0, 64)] = Math.max(min, Math.min(max, Math.round(num)));
+    }
+  }
+  return result;
 }
 
 export function normalizeBoardStyleTokens(raw: unknown): BoardStyleTokens {
@@ -93,6 +140,28 @@ export function normalizeBoardStyleTokens(raw: unknown): BoardStyleTokens {
   const defaultNoteEffect = normalizeCardVisualEffect(record.defaultNoteEffect);
   const surfaceShader = normalizeBoardAmbientShader(record.surfaceShader);
   const frameShader = normalizeBoardAmbientShader(record.frameShader);
+  const clockAppearance = normalizeBoardClockAppearance(record.clockAppearance);
+  const rawScale = Number(record.fontSizeScale);
+  const fontSizeScale = Number.isFinite(rawScale)
+    ? Math.max(0.75, Math.min(1.5, Number(rawScale.toFixed(2))))
+    : 1;
+  const customFontFamily =
+    typeof record.customFontFamily === "string" &&
+    /^[a-zA-Z0-9_\-\s\u4e00-\u9fa5]{1,64}$/.test(record.customFontFamily.trim())
+      ? record.customFontFamily.trim()
+      : null;
+  const noteFontSizes = normalizeFontSizeMap(record.noteFontSizes, 12, 28);
+  const sectionFontSizes = normalizeFontSizeMap(record.sectionFontSizes, 11, 24);
+  const archiveEntries = normalizeArchiveEntries(record.archiveEntries);
+  const hiddenPanelIds = Array.isArray(record.hiddenPanelIds)
+    ? Array.from(
+        new Set(
+          record.hiddenPanelIds
+            .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+            .map((item) => item.trim().slice(0, 64)),
+        ),
+      ).slice(0, 24)
+    : [];
   return {
     fontPreset,
     cardStyle,
@@ -103,6 +172,13 @@ export function normalizeBoardStyleTokens(raw: unknown): BoardStyleTokens {
     defaultNoteEffect,
     surfaceShader,
     frameShader,
+    clockAppearance,
+    fontSizeScale,
+    customFontFamily,
+    noteFontSizes,
+    sectionFontSizes,
+    archiveEntries,
+    hiddenPanelIds,
   };
 }
 
@@ -191,7 +267,14 @@ export function isDefaultBoardStyleTokens(tokens: BoardStyleTokens): boolean {
     !hasActiveCardEffect(tokens.defaultCardEffect) &&
     !hasActiveCardEffect(tokens.defaultNoteEffect) &&
     !hasActiveAmbientShader(tokens.surfaceShader) &&
-    !hasActiveAmbientShader(tokens.frameShader)
+    !hasActiveAmbientShader(tokens.frameShader) &&
+    isDefaultBoardClockAppearance(tokens.clockAppearance) &&
+    (tokens.fontSizeScale ?? 1) === 1 &&
+    !tokens.customFontFamily &&
+    Object.keys(tokens.noteFontSizes ?? {}).length === 0 &&
+    Object.keys(tokens.sectionFontSizes ?? {}).length === 0 &&
+    (tokens.archiveEntries?.length ?? 0) === 0 &&
+    (tokens.hiddenPanelIds?.length ?? 0) === 0
   );
 }
 
@@ -218,8 +301,14 @@ export function boardStyleVariables(tokens: BoardStyleTokens): CSSProperties {
         : "rgba(232, 224, 205, 0.44)";
   const link = LINK_TOKENS[tokens.linkStyle];
 
+  const resolvedFont = tokens.customFontFamily
+    ? `"${tokens.customFontFamily}", ${FONT_FAMILIES[tokens.fontPreset]}`
+    : FONT_FAMILIES[tokens.fontPreset];
+  const fontScale = tokens.fontSizeScale ?? 1;
+
   return {
-    "--vb-font-family": FONT_FAMILIES[tokens.fontPreset],
+    "--vb-font-family": resolvedFont,
+    "--vb-font-scale": String(fontScale),
     "--vb-card-bg": bg,
     "--vb-card-ink": ink,
     "--vb-card-muted": muted,

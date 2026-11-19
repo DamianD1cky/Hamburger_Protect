@@ -16,11 +16,16 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import type { BoardDetailsKind } from "../components/board/BoardDetailsDialog";
 import { FocusDock } from "../components/board/FocusDock";
+import { useAccountLocalFonts } from "../features/fonts/localFontLibrary";
+import { useLiveNoteEditor } from "../hooks/useLiveNoteEditor";
+import { NoteLiveInspector } from "../components/composer/NoteLiveInspector";
+import { ARCHIVE_CATEGORY_META } from "../features/campaign/domain/archiveBox";
 import type {
   ComposeKind,
   ComposerState,
@@ -164,6 +169,11 @@ const HarnessPreviewBanner = lazy(() =>
 const CustomPanelEditorDialog = lazy(() =>
   import("../components/board/CustomPanelCard").then((module) => ({
     default: module.CustomPanelEditorDialog,
+  })),
+);
+const ArchiveBoxDialog = lazy(() =>
+  import("../components/board/ArchiveBoxDialog").then((module) => ({
+    default: module.ArchiveBoxDialog,
   })),
 );
 
@@ -553,15 +563,21 @@ function CampaignBoardWorkspace({
   const activeBoard = stagedBlueprint
     ? stagedBlueprint.previewBoard
     : campaign.board;
-  const { worldRef, viewScaleRef, focusZone, setFocusZone } = useBoardViewport(
+  const visibleActiveCustomPanels = useMemo(() => (activeBoard?.settings.customPanels ?? []).filter(
+    (panel) => !new Set(activeBoard?.settings.styleTokens.hiddenPanelIds ?? []).has(panel.id),
+  ), [activeBoard?.settings.customPanels, activeBoard?.settings.styleTokens.hiddenPanelIds]);
+  const { worldRef, viewScaleRef, focusZone, setFocusZone, focusNote } = useBoardViewport(
     activeBoard?.settings.moduleLayout,
     activeBoard?.eventClocks,
     activeBoard?.settings.hiddenSections,
-    activeBoard?.settings.customPanels,
+    visibleActiveCustomPanels,
   );
+  const noteEditor = useLiveNoteEditor(activeBoard, campaign, focusNote);
   const [composer, setComposer] = useState<ComposerState>(closedComposer);
   const [resourceSheet, setResourceSheet] = useState<number | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [archiveBoxOpen, setArchiveBoxOpen] = useState(false);
+  useAccountLocalFonts(activeBoard?.viewer.id ?? "local-guest");
   const [activityOpen, setActivityOpen] = useState(false);
   const [boardDetails, setBoardDetails] = useState<BoardDetailsKind | null>(null);
   const rosterTrigger = useRef<HTMLButtonElement>(null);
@@ -635,9 +651,16 @@ function CampaignBoardWorkspace({
   }, [joinInbox.data?.total, showToast]);
   useEffect(() => {
     const hidden = activeBoard?.settings.hiddenSections ?? [];
-    const panelsCount = activeBoard?.settings.customPanels.length ?? 0;
+    const panels = activeBoard?.settings.customPanels ?? [];
     if (focusZone === "panels") {
-      if (!panelsCount) setFocusZone("overview");
+      if (!panels.length) setFocusZone("overview");
+      return;
+    }
+    if (focusZone.startsWith("panel:")) {
+      const targetId = focusZone.slice(6);
+      if (!panels.some((p) => p.id === targetId)) {
+        setFocusZone("overview");
+      }
       return;
     }
     const sectionByZone = {
@@ -666,6 +689,12 @@ function CampaignBoardWorkspace({
       element: HTMLElement,
     ) => {
       setTopMenu(null);
+      if (kind === "note") {
+        const note = target ? activeBoard?.notes.find((item) => item.id === target.id) : null;
+        if (target && !note) return;
+        void noteEditor.select(note ?? null, !target);
+        return;
+      }
       setComposer({
         open: true,
         kind,
@@ -673,7 +702,7 @@ function CampaignBoardWorkspace({
         sourceRect: element.getBoundingClientRect(),
       });
     },
-    [],
+    [activeBoard, noteEditor.select],
   );
 
   const closeComposer = useCallback(() => {
@@ -800,7 +829,7 @@ function CampaignBoardWorkspace({
   }
 
   const rawBoard = campaign.board;
-  const board = stagedBlueprint ? stagedBlueprint.previewBoard : rawBoard;
+  const board = noteEditor.previewBoard ?? (stagedBlueprint ? stagedBlueprint.previewBoard : rawBoard);
   const patchBoardSettings = campaign.updateCampaignSettings;
   const roleLabel = publicView
     ? "访客 / 只读参观"
@@ -932,9 +961,24 @@ function CampaignBoardWorkspace({
           onEditNote={(note, element) =>
             openComposer("note", { kind: "note", id: note.id }, element)
           }
+          selectedNoteId={noteEditor.draft?.note.id}
+          onBlankClick={() => void noteEditor.close()}
+          onNoteGesture={(id, active) => {
+            if (id === noteEditor.draft?.note.id) noteEditor.setDragging(active);
+          }}
+          onNoteScalePreview={(id, scale) => {
+            if (id === noteEditor.draft?.note.id && scale !== undefined && scale !== noteEditor.draft.note.scale) noteEditor.patch({ scale });
+          }}
           onTransitionQuest={transitionQuest}
-          onMoveNote={campaign.moveNote}
-          onResizeNote={campaign.resizeNote}
+          onMoveNote={(id, x, y) => {
+            if (id === "__draft_new__") { noteEditor.patch({ x, y }); return Promise.resolve(); }
+            return campaign.moveNote(id, x, y);
+          }}
+          onResizeNote={(id, scale) => {
+            if (id === noteEditor.draft?.note.id) { noteEditor.patch({ scale }); return Promise.resolve(); }
+            return campaign.resizeNote(id, scale);
+          }}
+          onPostCustomPanelNote={(title, body) => campaign.saveNote({ title, body, color: "yellow", pinColor: "red", imagePath: null })}
           onNoteLayer={campaign.moveNoteLayer}
           onCreateSticker={async (emoji, x, y, rotation) => {
             const created = await campaign.createBoardSticker(emoji, x, y, rotation);
@@ -986,14 +1030,38 @@ function CampaignBoardWorkspace({
           onEditCustomPanel={(panel) =>
             setEditingCustomPanel({ mode: "edit", panel })
           }
+          onHideCustomPanel={(panelId) => {
+            const currentHidden = rawBoard.settings.styleTokens?.hiddenPanelIds ?? [];
+            const nextHidden = currentHidden.includes(panelId)
+              ? currentHidden
+              : [...currentHidden, panelId];
+            void campaign
+              .saveBoardStyleTokens({
+                ...rawBoard.settings.styleTokens,
+                hiddenPanelIds: nextHidden,
+              })
+              .then(() => showToast("板块已隐藏，可在顶栏「板块库」随时恢复"))
+              .catch(() => showToast("隐藏板块失败，请重试"));
+          }}
           onDeleteCustomPanel={(panelId) => {
             const next = rawBoard.settings.customPanels.filter(
               (p) => p.id !== panelId,
             );
+            const nextHidden = (rawBoard.settings.styleTokens?.hiddenPanelIds ?? []).filter(
+              (id) => id !== panelId,
+            );
             void campaign
               .saveCustomPanels(next)
-              .then(() => showToast("自由展板已移除"))
-              .catch(() => showToast("移除自由展板失败，请重试"));
+              .then(() => {
+                if (nextHidden.length !== (rawBoard.settings.styleTokens?.hiddenPanelIds ?? []).length) {
+                  return campaign.saveBoardStyleTokens({
+                    ...rawBoard.settings.styleTokens,
+                    hiddenPanelIds: nextHidden,
+                  });
+                }
+              })
+              .then(() => showToast("展示板块已删除"))
+              .catch(() => showToast("删除展示板块失败，请重试"));
           }}
           onInteractCustomPanel={handleInteractCustomPanel}
           onUpdateCustomPanelGeometry={async (panelId, nextRect) => {
@@ -1003,169 +1071,249 @@ function CampaignBoardWorkspace({
             await campaign.saveCustomPanels(next);
           }}
           onOpenClockSettings={() => setClockSettingsOpen(true)}
+          onOpenArchiveBox={() => setArchiveBoxOpen(true)}
           diceTool={!publicView && board.viewer.role !== "observer"
             ? <DiceWorkspace key={`${board.campaign.id}:${board.viewer.id}`} board={board} /> : undefined}
         />
       </Suspense>
 
-      <div className="shop-status" aria-label="战役状态">
-        <span className="status-dot" />
-        <span className="shop-status-name">
-          <span className="status-part campaign-scene-title">{board.campaign.name}</span>
-          <span className="status-part">{board.viewer.displayName}</span>
-          <span className="status-part">{roleLabel}</span>
-        </span>
-        <span className="shop-room-code">
-          {publicView
-            ? "公开参观（只读）"
-            : demo
-              ? "演示房间"
-              : "房间码 " + board.campaign.joinCode}
-        </span>
-        {!demo && !publicView && (
-          <button
-            type="button"
-            onClick={() =>
-              void navigator.clipboard
-                .writeText(board.campaign.joinCode)
-                .then(() => showToast("房间码已复制"))
-            }
-            aria-label="复制房间码"
-            title="复制房间码"
-          >
-            <Copy aria-hidden="true" />
-          </button>
-        )}
-        {!publicView && board.viewer.role !== "observer" && (
-          <button
-            type="button"
-            ref={rosterTrigger}
-            className={
-              (joinInbox.data?.total ?? 0) > 0
-                ? "join-inbox-button has-pending"
-                : "join-inbox-button"
-            }
-            data-top-menu-trigger="roster"
-            aria-haspopup="dialog"
-            aria-expanded={topMenu?.kind === "roster"}
-            aria-controls="roster-menu"
-            onClick={(event) => setTopMenu(topMenu?.kind === "roster" ? null :
-              { kind: "roster", anchor: event.currentTarget })}
-            aria-label={board.viewer.role === "gm" ? `成员名册，${joinInbox.data?.total ?? 0} 条待审批` : "成员名册"}
-            title="成员名册"
-          >
-            <UserPlus aria-hidden="true" />
-            {board.viewer.role === "gm" && <MotionText value={joinInbox.data?.total ?? 0} />}
-          </button>
-        )}
-        {board.viewer.role === "gm" && (() => {
-          const hiddenCoreCount = board.settings.hiddenSections.filter((s) =>
-            s === "shifts" || s === "index" || s === "activity" || s === "notes",
-          ).length;
-          return (
+      <header className="shop-status hig-topbar" aria-label="战役状态">
+        <div className="hig-topbar-identity">
+          {onExit && (
             <button
               type="button"
-              className="section-visibility-button"
-              data-top-menu-trigger="visibility"
-              aria-haspopup="dialog"
-              aria-expanded={topMenu?.kind === "visibility"}
-              aria-controls="board-visibility-menu"
-              onClick={(event) => setTopMenu(topMenu?.kind === "visibility" ? null :
-                { kind: "visibility", anchor: event.currentTarget })}
-              aria-label={
-                "管理公告板区块" +
-                (hiddenCoreCount ? `，${hiddenCoreCount} 个已隐藏` : "")
-              }
-              title="管理核心板块与原子展板"
+              className="hig-topbar-back"
+              onClick={() => void onExit()}
+              aria-label={publicView ? "返回大厅" : "返回账号与战役"}
+              title={publicView ? "返回大厅" : "返回账号与战役"}
             >
-              <LayoutGrid aria-hidden="true" />
-              {hiddenCoreCount > 0 && (
-                <MotionText value={hiddenCoreCount} />
-              )}
-            </button>
-          );
-        })()}
-        {!publicView && rawBoard.viewer.role === "gm" && rawBoard.campaign.status === "active" && (
-          <button
-            type="button"
-            className={
-              harnessOpen
-                ? "harness-top-button is-active"
-                : "harness-top-button"
-            }
-            aria-expanded={harnessOpen}
-            onClick={() => {
-              setTopMenu(null);
-              setHarnessOpen((open) => !open);
-            }}
-            aria-label="打开 AI 帷幕编排"
-            title="AI 帷幕编排"
-          >
-            <WandSparkles aria-hidden="true" />
-          </button>
-        )}
-        {board.viewer.role === "gm" && (
-          <button
-            type="button"
-            data-top-menu-trigger="room"
-            aria-haspopup="dialog"
-            aria-expanded={topMenu?.kind === "room"}
-            aria-controls="room-settings-menu"
-            onClick={(event) => setTopMenu(topMenu?.kind === "room" ? null :
-              { kind: "room", anchor: event.currentTarget })}
-            aria-label="打开房间配置"
-            title="房间配置"
-          >
-            <Settings aria-hidden="true" />
-          </button>
-        )}
-        {!demo &&
-          (publicView ||
-            board.viewer.role === "gm" ||
-            board.settings.isPublic) && (
-            <button
-              type="button"
-              className="visitor-message-button"
-              data-top-menu-trigger="visitors"
-              aria-haspopup="dialog"
-              aria-expanded={topMenu?.kind === "visitors"}
-              aria-controls="visitor-messages-menu"
-              onClick={(event) => setTopMenu(topMenu?.kind === "visitors" ? null :
-                { kind: "visitors", anchor: event.currentTarget })}
-              aria-label={visitorMessages.data ? `访客留言，${visitorMessages.data.length} 条` : "访客留言"}
-              title="访客留言"
-            >
-              <MessageSquare aria-hidden="true" />
-              {visitorMessages.data && <MotionText value={visitorMessages.data.length} />}
+              <ArrowLeft aria-hidden="true" />
             </button>
           )}
-        <button
-          type="button"
-          onClick={() => { setTopMenu(null); setHandbookOpen(true); }}
-          aria-label="打开桌面手册"
-          title="桌面手册"
-        >
-          <BookOpen aria-hidden="true" />
-        </button>
-        <HelpButton iconOnly onOpen={() => setTopMenu(null)} />
-        {onExit && (
+          <span className="status-dot" aria-hidden="true" />
+          <div className="hig-topbar-titles">
+            <span className="campaign-scene-title">{board.campaign.name}</span>
+            <span className="hig-topbar-subtitle">
+              <span>{board.viewer.displayName}</span>
+              <i aria-hidden="true">·</i>
+              <span>{roleLabel}</span>
+            </span>
+          </div>
+          <div className="hig-room-pill">
+            <span className="shop-room-code">
+              {publicView
+                ? "公开参观"
+                : demo
+                  ? "演示房间"
+                  : board.campaign.joinCode}
+            </span>
+            {!demo && !publicView && (
+              <button
+                type="button"
+                className="hig-room-copy-btn"
+                onClick={() =>
+                  void navigator.clipboard
+                    .writeText(board.campaign.joinCode)
+                    .then(() => showToast("房间码已复制"))
+                }
+                aria-label="复制房间码"
+                title="复制房间码"
+              >
+                <Copy aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <span className="hig-topbar-divider" aria-hidden="true" />
+
+        <div className="hig-topbar-group is-primary" role="group" aria-label="桌面编排工具">
+          {!publicView && board.viewer.role !== "observer" && (
+            <button
+              type="button"
+              ref={rosterTrigger}
+              className={
+                (joinInbox.data?.total ?? 0) > 0
+                  ? "join-inbox-button has-pending"
+                  : "join-inbox-button"
+              }
+              data-top-menu-trigger="roster"
+              aria-haspopup="dialog"
+              aria-expanded={topMenu?.kind === "roster"}
+              aria-controls="roster-menu"
+              onClick={(event) =>
+                setTopMenu(
+                  topMenu?.kind === "roster"
+                    ? null
+                    : { kind: "roster", anchor: event.currentTarget },
+                )
+              }
+              aria-label={
+                board.viewer.role === "gm"
+                  ? `成员名册，${joinInbox.data?.total ?? 0} 条待审批`
+                  : "成员名册"
+              }
+              title="成员名册与审批"
+            >
+              <UserPlus aria-hidden="true" />
+              {board.viewer.role === "gm" && (joinInbox.data?.total ?? 0) > 0 && (
+                <span className="hig-topbar-badge">
+                  <MotionText value={joinInbox.data?.total ?? 0} />
+                </span>
+              )}
+            </button>
+          )}
+          {board.viewer.role === "gm" &&
+            (() => {
+              const hiddenCoreCount = board.settings.hiddenSections.filter(
+                (s) => s === "notes",
+              ).length;
+              const hiddenPanelCount = board.settings.customPanels.filter((p) =>
+                (board.settings.styleTokens?.hiddenPanelIds ?? []).includes(p.id),
+              ).length;
+              const totalHiddenCount = hiddenCoreCount + hiddenPanelCount;
+              return (
+                <button
+                  type="button"
+                  className={
+                    topMenu?.kind === "visibility"
+                      ? "section-visibility-button is-active"
+                      : "section-visibility-button"
+                  }
+                  data-top-menu-trigger="visibility"
+                  aria-haspopup="dialog"
+                  aria-expanded={topMenu?.kind === "visibility"}
+                  aria-controls="board-visibility-menu"
+                  onClick={(event) =>
+                    setTopMenu(
+                      topMenu?.kind === "visibility"
+                        ? null
+                        : { kind: "visibility", anchor: event.currentTarget },
+                    )
+                  }
+                  aria-label={
+                    "管理公告板区块" +
+                    (totalHiddenCount ? `，${totalHiddenCount} 个已隐藏` : "")
+                  }
+                  title="板块与原子组件库"
+                >
+                  <LayoutGrid aria-hidden="true" />
+                  <span className="hig-btn-label">板块库</span>
+                  {totalHiddenCount > 0 && (
+                    <span className="hig-topbar-badge">
+                      <MotionText value={totalHiddenCount} />
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+          {!publicView &&
+            rawBoard.viewer.role === "gm" &&
+            rawBoard.campaign.status === "active" && (
+              <button
+                type="button"
+                className={
+                  harnessOpen
+                    ? "harness-top-button is-active"
+                    : "harness-top-button"
+                }
+                aria-expanded={harnessOpen}
+                onClick={() => {
+                  setTopMenu(null);
+                  setHarnessOpen((open) => !open);
+                }}
+                aria-label="打开 AI 帷幕编排"
+                title="AI 帷幕编排官"
+              >
+                <WandSparkles aria-hidden="true" />
+                <span className="hig-btn-label">AI 编排</span>
+              </button>
+            )}
+          {board.viewer.role === "gm" && (
+            <button
+              type="button"
+              className={topMenu?.kind === "room" ? "is-active" : undefined}
+              data-top-menu-trigger="room"
+              aria-haspopup="dialog"
+              aria-expanded={topMenu?.kind === "room"}
+              aria-controls="room-settings-menu"
+              onClick={(event) =>
+                setTopMenu(
+                  topMenu?.kind === "room"
+                    ? null
+                    : { kind: "room", anchor: event.currentTarget },
+                )
+              }
+              aria-label="打开房间配置"
+              title="房间配置"
+            >
+              <Settings aria-hidden="true" />
+            </button>
+          )}
+        </div>
+
+        <span className="hig-topbar-divider" aria-hidden="true" />
+
+        <div className="hig-topbar-group is-utilities" role="group" aria-label="参考与帮助">
+          {!demo &&
+            (publicView ||
+              board.viewer.role === "gm" ||
+              board.settings.isPublic) && (
+              <button
+                type="button"
+                className={
+                  topMenu?.kind === "visitors"
+                    ? "visitor-message-button is-active"
+                    : "visitor-message-button"
+                }
+                data-top-menu-trigger="visitors"
+                aria-haspopup="dialog"
+                aria-expanded={topMenu?.kind === "visitors"}
+                aria-controls="visitor-messages-menu"
+                onClick={(event) =>
+                  setTopMenu(
+                    topMenu?.kind === "visitors"
+                      ? null
+                      : { kind: "visitors", anchor: event.currentTarget },
+                  )
+                }
+                aria-label={
+                  visitorMessages.data
+                    ? `访客留言，${visitorMessages.data.length} 条`
+                    : "访客留言"
+                }
+                title="访客留言"
+              >
+                <MessageSquare aria-hidden="true" />
+                {visitorMessages.data && visitorMessages.data.length > 0 && (
+                  <span className="hig-topbar-badge">
+                    <MotionText value={visitorMessages.data.length} />
+                  </span>
+                )}
+              </button>
+            )}
           <button
             type="button"
-            onClick={() => void onExit()}
-            aria-label={publicView ? "返回大厅" : "返回账号与战役"}
-            title={publicView ? "返回大厅" : "返回账号与战役"}
+            onClick={() => {
+              setTopMenu(null);
+              setHandbookOpen(true);
+            }}
+            aria-label="打开桌面手册"
+            title="桌面手册"
           >
-            <ArrowLeft aria-hidden="true" />
+            <BookOpen aria-hidden="true" />
           </button>
-        )}
-      </div>
+          <HelpButton iconOnly onOpen={() => setTopMenu(null)} />
+        </div>
+      </header>
 
       <FocusDock
         eventClocks={board.eventClocks}
         active={focusZone}
         hiddenSections={board.settings.hiddenSections}
         sectionTitles={board.settings.sectionTitles}
-        hasCustomPanels={board.settings.customPanels.length > 0}
+        hasCustomPanels={visibleActiveCustomPanels.length > 0}
+        customPanels={visibleActiveCustomPanels}
         onChange={setFocusZone}
       />
 
@@ -1208,17 +1356,41 @@ function CampaignBoardWorkspace({
       )}
 
       <Suspense fallback={<CloudStatus message="正在打开详情" />}>
+        {noteEditor.draft && <NoteLiveInspector editor={noteEditor} board={board} onLayer={campaign.moveNoteLayer} />}
         {composer.open && (
           <ComposerDialog
+            key={
+              composer.target
+                ? `${composer.kind}:${composer.target.id}`
+                : `${composer.kind}:new`
+            }
             state={composer}
             board={board}
             onClose={closeComposer}
+            onSelectNote={(note, element) =>
+              openComposer("note", { kind: "note", id: note.id }, element)
+            }
             onSaveQuest={async (draft, id) => {
               await campaign.saveQuest(draft, id);
               showToast(id ? "任务已更新" : "任务已张贴");
             }}
-            onSaveNote={async (draft, id) => {
-              await campaign.saveNote(draft, id);
+            onSaveNote={async (draft, id, fontSize) => {
+              const savedNote = await campaign.saveNote(draft, id);
+              const noteId = id ?? (savedNote && typeof savedNote === "object" && "id" in savedNote ? String((savedNote as { id: string }).id) : undefined);
+              if (
+                noteId &&
+                typeof fontSize === "number" &&
+                board.viewer.role === "gm" &&
+                fontSize !== (board.settings.styleTokens.noteFontSizes?.[noteId] ?? 15)
+              ) {
+                await campaign.saveBoardStyleTokens({
+                  ...board.settings.styleTokens,
+                  noteFontSizes: {
+                    ...(board.settings.styleTokens.noteFontSizes ?? {}),
+                    [noteId]: fontSize,
+                  },
+                });
+              }
               showToast(id ? "便签已更新" : "便签已贴上公告板");
             }}
             onUploadPhoto={(file) => campaign.uploadNotePhoto(file)}
@@ -1273,6 +1445,46 @@ function CampaignBoardWorkspace({
             }}
           />
         )}
+        {archiveBoxOpen && (
+          <ArchiveBoxDialog
+            board={board}
+            onClose={() => setArchiveBoxOpen(false)}
+            onSaveEntries={async (entries) => {
+              await campaign.saveBoardStyleTokens({
+                ...board.settings.styleTokens,
+                archiveEntries: entries,
+              });
+              showToast("档案盒已更新");
+            }}
+            onUploadPhoto={(file) => campaign.uploadNotePhoto(file)}
+            onPinToBoard={
+              board.viewer.role === "gm" && board.campaign.status === "active"
+                ? async (entry) => {
+                    const meta = ARCHIVE_CATEGORY_META[entry.category];
+                    const colorMap = {
+                      clue: "#f6e7a6",
+                      evidence: "#f3d5d5",
+                      character: "#d4e6f9",
+                      news: "#efe5cf",
+                    } as const;
+                    await campaign.saveNote({
+                      title: `【${meta.shortLabel}】${entry.title}`,
+                      body: [entry.subtitle, entry.summary || entry.body]
+                        .filter(Boolean)
+                        .join("\n\n")
+                        .slice(0, 950),
+                      color: colorMap[entry.category],
+                      pinColor: meta.accent,
+                      imagePath: null,
+                      rotation: -2,
+                      scale: 1.05,
+                    });
+                    showToast(`已将「${entry.title}」贴到公告板`);
+                  }
+                : undefined
+            }
+          />
+        )}
         {!publicView && board.viewer.role === "gm" && (
           <RoomSettingsDialog
             anchor={topMenu?.kind === "room" ? topMenu.anchor : null}
@@ -1312,10 +1524,23 @@ function CampaignBoardWorkspace({
         {clockSettingsOpen && (
           <ClockSettingsDialog
             config={board.settings.clock}
+            boardAppearance={board.settings.appearance}
+            styleTokens={board.settings.styleTokens}
+            ownerId={board.viewer.id}
             onClose={() => setClockSettingsOpen(false)}
-            onSave={async (config) => {
+            onSave={async (config, clockAppearance) => {
               await campaign.saveCampaignClock(config);
-              showToast("战役时钟已更新");
+              if (
+                clockAppearance &&
+                JSON.stringify(clockAppearance) !==
+                  JSON.stringify(board.settings.styleTokens.clockAppearance)
+              ) {
+                await campaign.saveBoardStyleTokens({
+                  ...board.settings.styleTokens,
+                  clockAppearance,
+                });
+              }
+              showToast("战役时钟与外观已更新");
             }}
           />
         )}
@@ -1376,6 +1601,16 @@ function CampaignBoardWorkspace({
               await campaign.setBoardModuleEffect(modKey, effect);
               showToast("卡片装饰特效已更新");
             }}
+            onSaveSectionFontSize={async (secKey, fontSize) => {
+              await campaign.saveBoardStyleTokens({
+                ...board.settings.styleTokens,
+                sectionFontSizes: {
+                  ...(board.settings.styleTokens.sectionFontSizes ?? {}),
+                  [secKey]: fontSize,
+                },
+              });
+              showToast("板块字号已更新");
+            }}
           />
         )}
         {topMenu?.kind === "visibility" && (
@@ -1397,14 +1632,40 @@ function CampaignBoardWorkspace({
             onEditCustomPanel={(panel) =>
               setEditingCustomPanel({ mode: "edit", panel })
             }
+            onToggleCustomPanelVisibility={async (panelId, nextHidden) => {
+              const currentHidden =
+                rawBoard.settings.styleTokens?.hiddenPanelIds ?? [];
+              const updated = nextHidden
+                ? Array.from(new Set([...currentHidden, panelId]))
+                : currentHidden.filter((id) => id !== panelId);
+              await campaign.saveBoardStyleTokens({
+                ...rawBoard.settings.styleTokens,
+                hiddenPanelIds: updated,
+              });
+              showToast(nextHidden ? "板块已隐藏" : "板块已恢复显示");
+            }}
             onDeleteCustomPanel={(panelId) => {
               const next = rawBoard.settings.customPanels.filter(
                 (p) => p.id !== panelId,
               );
+              const nextHidden = (
+                rawBoard.settings.styleTokens?.hiddenPanelIds ?? []
+              ).filter((id) => id !== panelId);
               void campaign
                 .saveCustomPanels(next)
-                .then(() => showToast("自由展板已移除"))
-                .catch(() => showToast("移除自由展板失败，请重试"));
+                .then(() => {
+                  if (
+                    nextHidden.length !==
+                    (rawBoard.settings.styleTokens?.hiddenPanelIds ?? []).length
+                  ) {
+                    return campaign.saveBoardStyleTokens({
+                      ...rawBoard.settings.styleTokens,
+                      hiddenPanelIds: nextHidden,
+                    });
+                  }
+                })
+                .then(() => showToast("展示板块已删除"))
+                .catch(() => showToast("删除展示板块失败，请重试"));
             }}
           />
         )}
@@ -1416,6 +1677,7 @@ function CampaignBoardWorkspace({
                 : null
             }
             onClose={() => setEditingCustomPanel(null)}
+            onUploadPhoto={(file) => campaign.uploadNotePhoto(file)}
             onSave={async (savedPanel) => {
               const existing = rawBoard.settings.customPanels;
               const exists = existing.some((p) => p.id === savedPanel.id);

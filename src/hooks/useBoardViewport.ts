@@ -12,6 +12,7 @@ import {
 import type { EventClock } from "../features/campaign/domain/eventClock";
 import { eventClockRects } from "../features/campaign/domain/eventClockLayout";
 import type { BoardCustomPanel } from "../features/campaign/domain/customPanels";
+import type { BoardNote } from "../features/campaign/domain/types";
 
 export type FocusZone =
   | "overview"
@@ -21,7 +22,8 @@ export type FocusZone =
   | "safety"
   | "notes"
   | "panels"
-  | `event:${string}`;
+  | `event:${string}`
+  | `panel:${string}`;
 
 const MIN_SCALE = 0.05;
 
@@ -46,6 +48,17 @@ function focusBounds(
     const rect = clockRects.get(zone.slice(6)) ?? clockRects.values().next().value ?? moduleRect("index", layout);
     return { x: rect.x + BOARD_FRAME_INSET - 24, y: rect.y + BOARD_FRAME_INSET - 24,
       width: rect.w + 48, height: rect.h + 48 };
+  }
+
+  if (zone.startsWith("panel:") && customPanels && customPanels.length > 0) {
+    const target =
+      customPanels.find((p) => p.id === zone.slice(6)) ?? customPanels[0];
+    return {
+      x: target.x + BOARD_FRAME_INSET - 24,
+      y: target.y + BOARD_FRAME_INSET - 24,
+      width: target.w + 48,
+      height: target.h + 48,
+    };
   }
 
   if (zone === "panels" && customPanels && customPanels.length > 0) {
@@ -126,6 +139,7 @@ export function useBoardViewport(
   hiddenRef.current = hidden;
   const panelsRef = useRef(customPanels);
   panelsRef.current = customPanels;
+  const focusedNoteRef = useRef<BoardNote | null>(null);
   const zoneRef = useRef<FocusZone>("overview");
   const [focusZone, updateFocusZone] = useState<FocusZone>("overview");
 
@@ -133,6 +147,24 @@ export function useBoardViewport(
     const element = elementRef.current;
     const container = element?.parentElement;
     if (!element || !container) return;
+
+    const focusedNote = focusedNoteRef.current;
+    if (focusedNote) {
+      const box = container.getBoundingClientRect();
+      const mobile = window.innerWidth <= 768;
+      const top = Math.max(box.top, 78);
+      const bottom = mobile ? Math.min(box.bottom, window.innerHeight * 0.50) : Math.min(box.bottom, window.innerHeight - 105);
+      const availableW = mobile ? box.width - 32 : Math.max(280, box.width - 390);
+      const noteScale = focusedNote.scale ?? 1;
+      const width = 276 * noteScale, height = Math.max(196, 100 + focusedNote.body.split("\n").length * 24) * noteScale;
+      const scale = Math.max(MIN_SCALE, Math.min(availableW / (width + 48), Math.max(80, bottom - top - 24) / (height + 48), 1.3));
+      const x = availableW / 2 + 16 - (focusedNote.x + BOARD_FRAME_INSET + width / 2) * scale;
+      const y = top - box.top + (bottom - top) / 2 - (focusedNote.y + BOARD_FRAME_INSET + height / 2) * scale;
+      element.style.transition = animate && !window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "transform 240ms cubic-bezier(0.22,1,0.36,1)" : "none";
+      element.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+      viewScaleRef.current = scale;
+      return;
+    }
 
     const viewport = viewportBox(container);
     const bounds = focusBounds(
@@ -166,6 +198,7 @@ export function useBoardViewport(
 
   const setFocusZone = useCallback(
     (zone: FocusZone) => {
+      focusedNoteRef.current = null;
       zoneRef.current = zone;
       updateFocusZone(zone);
       fit(true);
@@ -205,5 +238,9 @@ export function useBoardViewport(
     };
   }, [fit, world]);
 
-  return { worldRef, viewScaleRef, focusZone, setFocusZone };
+  const focusNote = useCallback((note: BoardNote) => {
+    focusedNoteRef.current = note;
+    fit(true);
+  }, [fit]);
+  return { worldRef, viewScaleRef, focusZone, setFocusZone, focusNote };
 }

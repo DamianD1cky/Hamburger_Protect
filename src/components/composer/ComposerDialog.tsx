@@ -1,9 +1,11 @@
 import {
   ChevronDown,
+  ChevronRight,
   ChevronUp,
-  ClipboardList,
+  FileText,
   Image as ImageIcon,
-  MessageSquare,
+  List,
+  Palette,
   Pin,
   RotateCcw,
   RotateCw,
@@ -26,7 +28,9 @@ import {
   normalizeCardVisualEffect,
   type CardVisualEffect,
 } from "../../features/campaign/domain/cardEffects";
+import { formatNoteTimestamp } from "../../features/campaign/domain/noteMetadata";
 import type {
+  BoardNote,
   CampaignBoard,
   ComposerTarget,
   NoteDraft,
@@ -35,7 +39,7 @@ import type {
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { blobToFile, compressImage } from "../../lib/imageCompress";
 import { CardEffectPicker } from "../board/CardEffectLayer";
-import { ColorField, type ColorPresetOption } from "../board/ColorField";
+import { ColorField } from "../board/ColorField";
 import { clampNoteScale } from "../board/NoteCard";
 import { PaperDialog } from "./PaperDialog";
 
@@ -52,30 +56,13 @@ interface ComposerDialogProps {
   board: CampaignBoard;
   onClose: () => void;
   onSaveQuest: (draft: QuestDraft, id?: string) => Promise<void>;
-  onSaveNote: (draft: NoteDraft, id?: string) => Promise<void>;
+  onSaveNote: (draft: NoteDraft, id?: string, fontSize?: number) => Promise<void>;
   onDelete: (target: ComposerTarget) => Promise<void>;
   onUploadPhoto: (file: File) => Promise<string>;
   onNoteLayer?: (noteId: string, direction: -1 | 1) => Promise<unknown>;
   onToggleNotePin?: (noteId: string, pinned: boolean) => Promise<unknown>;
+  onSelectNote?: (note: BoardNote, element: HTMLElement) => void;
 }
-
-const NOTE_COLOR_PRESETS: readonly ColorPresetOption[] = [
-  { value: "#f8e98e", label: "经典柠檬黄" },
-  { value: "#f4c7d0", label: "樱花粉" },
-  { value: "#c2dff8", label: "晴空蓝" },
-  { value: "#c9e8c2", label: "薄荷绿" },
-  { value: "#ead6b1", label: "陈年羊皮纸" },
-  { value: "#0b2530", label: "全息投影深青" },
-];
-
-const PIN_COLOR_PRESETS: readonly ColorPresetOption[] = [
-  { value: "#e72b3c", label: "图钉朱砂红" },
-  { value: "#2785d8", label: "图钉钴蓝" },
-  { value: "#36a467", label: "图钉松石绿" },
-  { value: "#f1c933", label: "图钉琥珀黄" },
-  { value: "#343536", label: "图钉曜石黑" },
-  { value: "#2be4dc", label: "图钉全息青" },
-];
 
 function normalizeAngle(deg: number): number {
   if (!Number.isFinite(deg)) return 0;
@@ -83,9 +70,9 @@ function normalizeAngle(deg: number): number {
 }
 
 /**
- * 便签全功能统一编辑页（点击任意便签打开）：
- * 集中承载便签内容、羊皮纸/全息投影/烈焰烧焦/AI 着色器预设、全站统一 RGB+#hex 便签与图钉取色、
- * 旋转角度、缩放倍率、叠放图层调整、GM 置顶以及删除操作。
+ * Apple HIG 便签统一中心（新建便签 / 编辑便签 / 查看全部便签）：
+ * - 已移除旧版「任务委托」分页，替换为「全部便签」目录页；
+ * - 点击任意便签列表项可直接切入该便签的统一编辑页。
  */
 export function ComposerDialog({
   state,
@@ -97,6 +84,7 @@ export function ComposerDialog({
   onUploadPhoto,
   onNoteLayer,
   onToggleNotePin,
+  onSelectNote,
 }: ComposerDialogProps) {
   const quest =
     state.target?.kind === "quest"
@@ -107,7 +95,10 @@ export function ComposerDialog({
       ? board.notes.find((item) => item.id === state.target?.id)
       : undefined;
 
-  const [kind, setKind] = useState(state.kind);
+  const kind = state.kind;
+  const [noteTab, setNoteTab] = useState<"content" | "appearance" | "all">(
+    "content",
+  );
   const [title, setTitle] = useState(quest?.title ?? note?.title ?? "");
   const [body, setBody] = useState(quest?.body ?? note?.body ?? "");
   const [assigneeName, setAssigneeName] = useState(quest?.assigneeName ?? "");
@@ -123,6 +114,9 @@ export function ComposerDialog({
     normalizeAngle(note?.rotation ?? 0),
   );
   const [scale, setScale] = useState<number>(() => clampNoteScale(note?.scale));
+  const [fontSize, setFontSize] = useState<number>(
+    () => (note ? board.settings.styleTokens.noteFontSizes?.[note.id] : undefined) ?? 15,
+  );
   const [effect, setEffect] = useState<CardVisualEffect>(() =>
     normalizeCardVisualEffect(note?.effect ?? defaultCardVisualEffect()),
   );
@@ -153,6 +147,13 @@ export function ComposerDialog({
       : board.viewer.role !== "observer" &&
         (!note || note.authorId === board.viewer.id || canManage));
 
+  const sortedNotes = [...board.notes].sort((left, right) => {
+    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
+    return (
+      new Date(right.createdAt).valueOf() - new Date(left.createdAt).valueOf()
+    );
+  });
+
   const heading = !canEdit
     ? kind === "quest"
       ? "任务委托详情"
@@ -160,10 +161,12 @@ export function ComposerDialog({
     : state.target
       ? kind === "quest"
         ? "编辑任务委托"
-        : "编辑便签与外观着色"
+        : `编辑便签${note?.title ? `「${note.title}」` : ""}`
       : kind === "quest"
         ? "发布任务委托"
-        : "填写新便签";
+        : noteTab === "all"
+          ? `全部便签（${sortedNotes.length}）`
+          : "新建便签";
 
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   useEffect(
@@ -235,7 +238,10 @@ export function ComposerDialog({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (submitting || !canEdit || !title.trim()) return;
+    if (submitting || !canEdit || !title.trim()) {
+      if (!title.trim()) setNoteTab("content");
+      return;
+    }
     if (kind === "quest" && !body.trim()) return;
     setSubmitting(true);
     setError("");
@@ -265,6 +271,7 @@ export function ComposerDialog({
             effect,
           },
           state.target?.id,
+          fontSize,
         );
         if (
           note &&
@@ -308,7 +315,7 @@ export function ComposerDialog({
   return (
     <PaperDialog
       title={heading}
-      className="composer-dialog note-studio-dialog"
+      className="composer-dialog note-studio-dialog hig-inspector-sheet"
       sourceRect={state.sourceRect}
       closing={closing}
       onClose={() => {
@@ -335,306 +342,440 @@ export function ComposerDialog({
         </div>
       ) : (
         <>
-          {!state.target && canManage && !board.settings.hiddenSections.includes("tasks") && (
-            <div className="compose-type" role="tablist" aria-label="发布类型">
+          {kind === "note" && (
+            <div
+              className="hig-inspector-segmented"
+              role="tablist"
+              aria-label="便签功能分页"
+            >
               <button
                 type="button"
                 role="tab"
-                aria-selected={kind === "note"}
-                className={kind === "note" ? "is-active" : ""}
-                onClick={() => setKind("note")}
+                aria-selected={noteTab === "content"}
+                className={noteTab === "content" ? "is-active" : ""}
+                onClick={() => setNoteTab("content")}
               >
-                <MessageSquare />
-                便签
+                <FileText aria-hidden="true" />
+                {state.target ? "内容与图层" : "新建便签"}
               </button>
               <button
                 type="button"
                 role="tab"
-                aria-selected={kind === "quest"}
-                className={kind === "quest" ? "is-active" : ""}
-                onClick={() => setKind("quest")}
+                aria-selected={noteTab === "appearance"}
+                className={noteTab === "appearance" ? "is-active" : ""}
+                onClick={() => setNoteTab("appearance")}
               >
-                <ClipboardList />
-                任务委托
+                <Palette aria-hidden="true" />
+                外观与色彩
               </button>
+              {!state.target && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={noteTab === "all"}
+                  className={noteTab === "all" ? "is-active" : ""}
+                  onClick={() => setNoteTab("all")}
+                >
+                  <List aria-hidden="true" />
+                  查看全部便签（{sortedNotes.length}）
+                </button>
+              )}
             </div>
           )}
 
-          <form onSubmit={submit} {...imeGuard}>
-            <fieldset className="editor-fields" disabled={submitting}>
-              <label className="field">
-                <span>标题</span>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  maxLength={80}
-                  required
-                />
-              </label>
-
-              <label className="field">
-                <span>内容</span>
-                <textarea
-                  aria-label="内容"
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  maxLength={1000}
-                  rows={3}
-                  required={kind === "quest" || !hasPhoto}
-                />
-              </label>
-
-              {kind === "quest" && (
-                <div className="task-fields">
-                  <label className="field">
-                    <span>负责人</span>
-                    <input
-                      value={assigneeName}
-                      onChange={(e) => setAssigneeName(e.target.value)}
-                      maxLength={40}
-                      placeholder="待认领"
-                    />
-                  </label>
-                  <label className="field">
-                    <span>完成时间</span>
-                    <input
-                      value={due}
-                      onChange={(e) => setDue(e.target.value)}
-                      type="time"
-                    />
-                  </label>
+          {kind === "note" && !state.target && noteTab === "all" ? (
+            <div className="hig-editor-sections">
+              {sortedNotes.length === 0 ? (
+                <div className="hig-empty-card">
+                  当前公告板上还没有便签，切回「新建便签」即可贴上第一条线索。
+                </div>
+              ) : (
+                <div className="hig-grouped-list hig-all-notes-list">
+                  {sortedNotes.map((item) => {
+                    const editableItem =
+                      board.campaign.status === "active" &&
+                      (board.viewer.role === "gm" ||
+                        item.authorId === board.viewer.id);
+                    const swatchBg =
+                      item.effect?.shader === "hologram"
+                        ? "#16989f"
+                        : resolveNoteColorHex(item.color);
+                    return (
+                      <button
+                        type="button"
+                        key={item.id}
+                        className="hig-all-note-row"
+                        disabled={!editableItem || !onSelectNote}
+                        onClick={(event) => {
+                          if (editableItem && onSelectNote) {
+                            onSelectNote(item, event.currentTarget);
+                          }
+                        }}
+                      >
+                        <span
+                          className="hig-note-swatch"
+                          style={{ background: swatchBg }}
+                          aria-hidden="true"
+                        />
+                        <span className="hig-all-note-copy">
+                          <span className="hig-all-note-head">
+                            <strong>{item.title}</strong>
+                            {item.pinned && (
+                              <span className="hig-status-pill is-online">
+                                <Pin aria-hidden="true" /> 置顶
+                              </span>
+                            )}
+                          </span>
+                          <span className="hig-all-note-excerpt">
+                            {item.body || "（照片便签）"}
+                          </span>
+                          <small>
+                            {item.authorName} ·{" "}
+                            <time dateTime={item.createdAt}>
+                              {formatNoteTimestamp(item.createdAt)}
+                            </time>
+                          </small>
+                        </span>
+                        {editableItem && (
+                          <ChevronRight
+                            className="hig-sidebar-chevron"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
-              {kind === "note" && (
-                <div className="note-studio-sections">
-                  <section className="hig-editor-group">
-                    <CardEffectPicker
-                      mode="note"
-                      value={effect}
-                      basePreviewHex={colorHex}
-                      disabled={submitting}
-                      onChange={setEffect}
-                      onRecommendColors={(recNote, recPin) => {
-                        setColorHex(recNote);
-                        setPinColorHex(recPin);
-                      }}
-                    />
-                  </section>
+              <footer className="composer-actions hig-sheet-footer">
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setNoteTab("content")}
+                >
+                  新建便签
+                </button>
+                <span className="action-spacer" />
+                <button
+                  type="button"
+                  className="publish-button"
+                  onClick={requestClose}
+                >
+                  完成
+                </button>
+              </footer>
+            </div>
+          ) : (
+            <form onSubmit={submit} {...imeGuard}>
+              <fieldset className="hig-editor-sections" disabled={submitting}>
+                {(kind === "quest" || noteTab === "content") && (
+                  <>
+                    <section className="hig-editor-group">
+                      <label className="field">
+                        <span>标题</span>
+                        <input
+                          aria-label="标题"
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          maxLength={80}
+                          required
+                        />
+                      </label>
 
-                  <section className="hig-editor-group note-colors-grid">
-                    <ColorField
-                      label="便签底色"
-                      accessibleLabel="便签颜色"
-                      value={colorHex}
-                      onChange={setColorHex}
-                      disabled={submitting}
-                      presets={NOTE_COLOR_PRESETS}
-                    />
-                    <ColorField
-                      label="图钉颜色"
-                      accessibleLabel="图钉颜色"
-                      value={pinColorHex}
-                      onChange={setPinColorHex}
-                      disabled={submitting}
-                      presets={PIN_COLOR_PRESETS}
-                    />
-                  </section>
+                      <label className="field">
+                        <span>内容</span>
+                        <textarea
+                          aria-label="内容"
+                          value={body}
+                          onChange={(e) => setBody(e.target.value)}
+                          maxLength={1000}
+                          rows={4}
+                          required={kind === "quest" || !hasPhoto}
+                        />
+                      </label>
 
-                  <section className="hig-editor-group note-transform-grid">
-                    <div className="note-transform-control">
-                      <div className="note-transform-head">
-                        <span>
-                          旋转角度 <strong>{rotation}°</strong>
-                        </span>
-                        <span className="note-transform-btns">
-                          <button
-                            type="button"
-                            aria-label="逆时针旋转便签 15°"
-                            onClick={() =>
-                              setRotation((r) => normalizeAngle(r - 15))
-                            }
-                          >
-                            <RotateCcw aria-hidden="true" />
-                            15°
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="便签角度归零"
-                            onClick={() => setRotation(0)}
-                          >
-                            0°
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="顺时针旋转便签 15°"
-                            onClick={() =>
-                              setRotation((r) => normalizeAngle(r + 15))
-                            }
-                          >
-                            <RotateCw aria-hidden="true" />
-                            15°
-                          </button>
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        aria-label="便签旋转角度滑杆"
-                        min={-180}
-                        max={180}
-                        step={1}
-                        value={rotation}
-                        onChange={(e) => setRotation(Number(e.target.value))}
-                      />
-                    </div>
-
-                    <div className="note-transform-control">
-                      <div className="note-transform-head">
-                        <span>
-                          缩放大小{" "}
-                          <strong>{Math.round(scale * 100)}%</strong>
-                        </span>
-                        <span className="note-transform-btns">
-                          <button
-                            type="button"
-                            aria-label="恢复便签 100% 大小"
-                            onClick={() => setScale(1)}
-                          >
-                            100%
-                          </button>
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        aria-label="便签缩放大小滑杆"
-                        min={0.6}
-                        max={2.2}
-                        step={0.05}
-                        value={scale}
-                        onChange={(e) =>
-                          setScale(clampNoteScale(Number(e.target.value)))
-                        }
-                      />
-                      <small className="note-transform-tip">
-                        也可在公告板上直接拖拽便签右下角箭头缩放
-                      </small>
-                    </div>
-                  </section>
-
-                  {note && (
-                    <section className="hig-editor-group note-order-pin-row">
-                      {onNoteLayer && (
-                        <div className="note-layer-studio">
-                          <span>叠放图层顺序（当前层 {note.layer}）</span>
-                          <div className="note-transform-btns">
-                            <button
-                              type="button"
-                              disabled={layerBusy}
-                              onClick={() => void adjustLayer(1)}
-                            >
-                              <ChevronUp aria-hidden="true" />
-                              上移一层
-                            </button>
-                            <button
-                              type="button"
-                              disabled={layerBusy}
-                              onClick={() => void adjustLayer(-1)}
-                            >
-                              <ChevronDown aria-hidden="true" />
-                              下移一层
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {canManage && (
-                        <div className="note-pin-toggle-studio">
-                          <span>
-                            <Pin aria-hidden="true" /> 置顶重要便签
-                          </span>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-label="置顶便签"
-                            aria-checked={pinned}
-                            className={
-                              pinned ? "hig-switch is-on" : "hig-switch"
-                            }
-                            onClick={() => setPinned((v) => !v)}
-                          >
-                            <span className="hig-switch-thumb" />
-                          </button>
+                      {kind === "quest" && (
+                        <div className="task-fields">
+                          <label className="field">
+                            <span>负责人</span>
+                            <input
+                              value={assigneeName}
+                              onChange={(e) => setAssigneeName(e.target.value)}
+                              maxLength={40}
+                              placeholder="待认领"
+                            />
+                          </label>
+                          <label className="field">
+                            <span>完成时间</span>
+                            <input
+                              value={due}
+                              onChange={(e) => setDue(e.target.value)}
+                              type="time"
+                            />
+                          </label>
                         </div>
                       )}
                     </section>
-                  )}
 
-                  <div className="note-photo-field">
-                    <span className="note-photo-label">线索照片（可选）</span>
-                    {previewSrc ? (
-                      <div className="note-photo-preview">
-                        <img src={previewSrc} alt="待上传的照片预览" />
-                        <button
-                          type="button"
-                          className="text-button danger-button"
-                          onClick={clearPhoto}
-                        >
-                          移除照片
-                        </button>
-                      </div>
-                    ) : (
-                      <label className="text-button file-button">
-                        <ImageIcon aria-hidden="true" />
-                        插入照片
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          onChange={(event) => void choosePhoto(event)}
-                        />
-                      </label>
+                    {kind === "note" && (
+                      <section className="hig-editor-group">
+                        <span className="hig-section-label">
+                          线索照片（可选）
+                        </span>
+                        <div className="note-photo-field">
+                          {previewSrc ? (
+                            <div className="note-photo-preview">
+                              <img src={previewSrc} alt="待上传的照片预览" />
+                              <button
+                                type="button"
+                                className="text-button danger-button"
+                                onClick={clearPhoto}
+                              >
+                                移除照片
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="hig-inline-add-btn file-button">
+                              <ImageIcon aria-hidden="true" />
+                              选择照片附件
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                onChange={(event) => void choosePhoto(event)}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      </section>
                     )}
-                  </div>
-                </div>
+
+                    {kind === "note" && note && (
+                      <section className="hig-editor-group note-order-pin-row">
+                        {onNoteLayer && (
+                          <div className="note-layer-studio">
+                            <span>叠放图层顺序（当前层 {note.layer}）</span>
+                            <div className="note-transform-btns">
+                              <button
+                                type="button"
+                                disabled={layerBusy}
+                                onClick={() => void adjustLayer(1)}
+                              >
+                                <ChevronUp aria-hidden="true" />
+                                上移一层
+                              </button>
+                              <button
+                                type="button"
+                                disabled={layerBusy}
+                                onClick={() => void adjustLayer(-1)}
+                              >
+                                <ChevronDown aria-hidden="true" />
+                                下移一层
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {canManage && (
+                          <div className="note-pin-toggle-studio">
+                            <span>
+                              <Pin aria-hidden="true" /> 置顶重要便签
+                            </span>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-label="置顶便签"
+                              aria-checked={pinned}
+                              className={
+                                pinned ? "hig-switch is-on" : "hig-switch"
+                              }
+                              onClick={() => setPinned((v) => !v)}
+                            >
+                              <span className="hig-switch-thumb" />
+                            </button>
+                          </div>
+                        )}
+                      </section>
+                    )}
+                  </>
+                )}
+
+                {kind === "note" && noteTab === "appearance" && (
+                  <>
+                    <section className="hig-editor-group">
+                      <CardEffectPicker
+                        mode="note"
+                        value={effect}
+                        basePreviewHex={colorHex}
+                        disabled={submitting}
+                        onChange={setEffect}
+                      />
+                    </section>
+
+                    <section className="hig-editor-group note-colors-grid">
+                      <ColorField
+                        label="便签底色"
+                        accessibleLabel="便签颜色"
+                        value={colorHex}
+                        onChange={setColorHex}
+                        disabled={submitting}
+                      />
+                      <ColorField
+                        label="图钉颜色"
+                        accessibleLabel="图钉颜色"
+                        value={pinColorHex}
+                        onChange={setPinColorHex}
+                        disabled={submitting}
+                      />
+                    </section>
+
+                    <section className="hig-editor-group note-transform-grid">
+                      <div className="note-transform-control">
+                        <div className="note-transform-head">
+                          <span>
+                            旋转角度 <strong>{rotation}°</strong>
+                          </span>
+                          <span className="note-transform-btns">
+                            <button
+                              type="button"
+                              aria-label="逆时针旋转便签 15°"
+                              onClick={() =>
+                                setRotation((r) => normalizeAngle(r - 15))
+                              }
+                            >
+                              <RotateCcw aria-hidden="true" />
+                              15°
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="便签角度归零"
+                              onClick={() => setRotation(0)}
+                            >
+                              0°
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="顺时针旋转便签 15°"
+                              onClick={() =>
+                                setRotation((r) => normalizeAngle(r + 15))
+                              }
+                            >
+                              <RotateCw aria-hidden="true" />
+                              15°
+                            </button>
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          aria-label="便签旋转角度滑杆"
+                          min={-180}
+                          max={180}
+                          step={1}
+                          value={rotation}
+                          onChange={(e) => setRotation(Number(e.target.value))}
+                        />
+                      </div>
+
+                      <div className="note-transform-control">
+                        <div className="note-transform-head">
+                          <span>
+                            文字字号 <strong>{fontSize}px</strong>
+                          </span>
+                          <span className="note-transform-btns">
+                            <button
+                              type="button"
+                              aria-label="恢复便签默认 15px 字号"
+                              onClick={() => setFontSize(15)}
+                            >
+                              默认
+                            </button>
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          aria-label="便签文字字号滑杆"
+                          min={12}
+                          max={28}
+                          step={1}
+                          value={fontSize}
+                          onChange={(e) => setFontSize(Number(e.target.value))}
+                        />
+                      </div>
+
+                      <div className="note-transform-control">
+                        <div className="note-transform-head">
+                          <span>
+                            缩放大小{" "}
+                            <strong>{Math.round(scale * 100)}%</strong>
+                          </span>
+                          <span className="note-transform-btns">
+                            <button
+                              type="button"
+                              aria-label="恢复便签 100% 大小"
+                              onClick={() => setScale(1)}
+                            >
+                              100%
+                            </button>
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          aria-label="便签缩放大小滑杆"
+                          min={0.6}
+                          max={2.2}
+                          step={0.05}
+                          value={scale}
+                          onChange={(e) =>
+                            setScale(clampNoteScale(Number(e.target.value)))
+                          }
+                        />
+                        <small className="note-transform-tip">
+                          也可在公告板上直接拖拽便签右下角箭头缩放
+                        </small>
+                      </div>
+                    </section>
+                  </>
+                )}
+              </fieldset>
+
+              {error && (
+                <p className="access-error" role="alert">
+                  {error}
+                </p>
               )}
-            </fieldset>
 
-            {error && (
-              <p className="access-error" role="alert">
-                {error}
-              </p>
-            )}
-
-            <footer className="composer-actions">
-              {state.target && (
+              <footer className="composer-actions hig-sheet-footer">
+                {state.target && (
+                  <button
+                    type="button"
+                    className="delete-button"
+                    onClick={() => void remove()}
+                    disabled={submitting}
+                    aria-label={confirmDelete ? "确认删除" : "删除"}
+                  >
+                    {confirmDelete ? "确认删除" : <Trash2 />}
+                  </button>
+                )}
+                <span className="action-spacer" />
                 <button
                   type="button"
-                  className="delete-button"
-                  onClick={() => void remove()}
+                  className="text-button"
                   disabled={submitting}
-                  aria-label={confirmDelete ? "确认删除" : "删除"}
+                  onClick={requestClose}
                 >
-                  {confirmDelete ? "确认删除" : <Trash2 />}
+                  取消
                 </button>
-              )}
-              <span className="action-spacer" />
-              <button
-                type="button"
-                className="text-button"
-                disabled={submitting}
-                onClick={requestClose}
-              >
-                取消
-              </button>
-              <button
-                className="publish-button"
-                type="submit"
-                disabled={submitting}
-              >
-                <Send />
-                {submitting ? "保存中" : "保存"}
-              </button>
-            </footer>
-          </form>
+                <button
+                  className="publish-button"
+                  type="submit"
+                  disabled={submitting}
+                >
+                  <Send />
+                  {submitting ? "保存中…" : "完成并保存"}
+                </button>
+              </footer>
+            </form>
+          )}
         </>
       )}
     </PaperDialog>

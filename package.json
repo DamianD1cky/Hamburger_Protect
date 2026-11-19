@@ -24,6 +24,7 @@
     "check:database": "node scripts/tests/database.mjs",
     "check:board-objects": "node scripts/tests/board-objects.mjs",
     "check:board-layout": "node --experimental-strip-types scripts/tests/board-layout.mjs",
+    "check:board-live-ui": "node --experimental-strip-types scripts/tests/board-live-ui.mjs",
     "check:harness": "node --experimental-strip-types --test scripts/tests/board-harness.mjs",
     "check:clock": "node --experimental-strip-types --test scripts/tests/campaign-clock.mjs",
     "check:help": "node --experimental-strip-types --test scripts/tests/help.mjs",

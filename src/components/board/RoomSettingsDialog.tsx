@@ -1,5 +1,21 @@
-import { Copy, Globe2, Image, Upload, Users } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from "react";
+import {
+  ChevronRight,
+  Copy,
+  Globe2,
+  Palette,
+  SlidersHorizontal,
+  Trash2,
+  Type,
+  Upload,
+  Users,
+} from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import {
   boardAppearancePresets,
   type BoardAppearance,
@@ -7,22 +23,44 @@ import {
 } from "../../features/campaign/domain/boardAppearance";
 import {
   boardStylePresetLabels,
+  type BoardFontPreset,
   type BoardStyleTokens,
 } from "../../features/campaign/domain/boardStyleTokens";
-import { AppearancePreview } from "./BoardAppearance";
+import {
+  deleteLocalFont,
+  formatFontSizeBytes,
+  importLocalFontFile,
+  useAccountLocalFonts,
+} from "../../features/fonts/localFontLibrary";
+import {
+  defaultBoardAmbientShader,
+  hasActiveAmbientShader,
+  normalizeBoardAmbientShader,
+  type AmbientShaderKind,
+} from "../../features/campaign/domain/cardEffects";
+import {
+  getShaderQualityMode,
+  setShaderQualityMode,
+  type ShaderQualityMode,
+} from "../../features/shaders/cardShaderEngine";
+import { useAccountAssets } from "../../features/assets/accountAssetLibrary";
 import type {
   CampaignBoard,
   CampaignMediaKind,
-  CampaignSettingsUpdate,
   CampaignSettingsPatch,
+  CampaignSettingsUpdate,
 } from "../../features/campaign/domain/types";
-import { applySettingsPatch, settingsUpdate } from "../../features/campaign/domain/settingsUpdate";
-import { MenuPopover } from "./MenuPopover";
+import {
+  applySettingsPatch,
+  settingsUpdate,
+} from "../../features/campaign/domain/settingsUpdate";
+import { AppearancePreview } from "./BoardAppearance";
 import { ColorField } from "./ColorField";
+import { MenuPopover } from "./MenuPopover";
 
 /**
- * 房间级配置：名称、公开参观、成员、图片。
- * 名称和外观独立保存，其他模块设置不随房间草稿写回。
+ * 房间级配置（Apple Settings Inset Grouped 风格）：
+ * 「房间」与「外观」通过顶部 Segmented Control 清晰隔离，名称和外观独立原子保存。
  */
 export function RoomSettingsDialog({
   board,
@@ -40,7 +78,11 @@ export function RoomSettingsDialog({
   board: CampaignBoard;
   onClose: () => void;
   onSave: (update: CampaignSettingsUpdate) => Promise<CampaignSettingsPatch>;
-  onSaveAppearance: (appearance: BoardAppearance, files: BoardAppearanceFiles, expected: BoardAppearance) => Promise<unknown>;
+  onSaveAppearance: (
+    appearance: BoardAppearance,
+    files: BoardAppearanceFiles,
+    expected: BoardAppearance,
+  ) => Promise<unknown>;
   onSaveStyleTokens?: (tokens: BoardStyleTokens) => Promise<unknown>;
   onUpload: (kind: CampaignMediaKind, file: File) => Promise<unknown>;
   onClearMedia: (kind: CampaignMediaKind) => Promise<unknown>;
@@ -52,15 +94,37 @@ export function RoomSettingsDialog({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
-  const [appearance, setAppearance] = useState(() => structuredClone(board.settings.appearance));
-  const [styleTokens, setStyleTokens] = useState<BoardStyleTokens>(() => structuredClone(board.settings.styleTokens));
+  const [appearance, setAppearance] = useState(() =>
+    structuredClone(board.settings.appearance),
+  );
+  const [styleTokens, setStyleTokens] = useState<BoardStyleTokens>(() =>
+    structuredClone(board.settings.styleTokens),
+  );
+  const [shaderQuality, setShaderQuality] = useState<ShaderQualityMode>(() =>
+    getShaderQualityMode(),
+  );
+  const accountAssets = useAccountAssets(board.viewer.id);
+  const localFonts = useAccountLocalFonts(board.viewer.id);
+  const [fontMessage, setFontMessage] = useState("");
+  const boardAssets = accountAssets.filter(
+    (item) => item.kind === "ambient_shader" || item.kind === "board_style",
+  );
   const [files, setFiles] = useState<BoardAppearanceFiles>({});
-  const [previews, setPreviews] = useState<Partial<Record<keyof BoardAppearanceFiles, string>>>({});
+  const [previews, setPreviews] = useState<
+    Partial<Record<keyof BoardAppearanceFiles, string>>
+  >({});
   const previewUrls = useRef<string[]>([]);
   const mounted = useRef(true);
-  const baseDraft = useRef(JSON.stringify({ name: board.campaign.name, appearance: board.settings.appearance, styleTokens: board.settings.styleTokens }));
+  const baseDraft = useRef(
+    JSON.stringify({
+      name: board.campaign.name,
+      appearance: board.settings.appearance,
+      styleTokens: board.settings.styleTokens,
+    }),
+  );
   const original = useRef(board);
   const resetOnOpen = useRef(false);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -68,32 +132,49 @@ export function RoomSettingsDialog({
       previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
     };
   }, []);
+
   useLayoutEffect(() => {
     if (!anchor) return;
-    const clean = !Object.keys(files).length &&
-      JSON.stringify({ name: campaignName, appearance, styleTokens }) === baseDraft.current;
+    const clean =
+      !Object.keys(files).length &&
+      JSON.stringify({ name: campaignName, appearance, styleTokens }) ===
+        baseDraft.current;
     if (clean || resetOnOpen.current) {
       setCampaignName(board.campaign.name);
       setAppearance(structuredClone(board.settings.appearance));
       setStyleTokens(structuredClone(board.settings.styleTokens));
-      setFiles({}); setPreviews({}); setError("");
+      setFiles({});
+      setPreviews({});
+      setError("");
       previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
       previewUrls.current = [];
-      baseDraft.current = JSON.stringify({ name: board.campaign.name, appearance: board.settings.appearance, styleTokens: board.settings.styleTokens });
+      baseDraft.current = JSON.stringify({
+        name: board.campaign.name,
+        appearance: board.settings.appearance,
+        styleTokens: board.settings.styleTokens,
+      });
       original.current = board;
       resetOnOpen.current = false;
     }
-    // Refresh clean drafts on reopening; outside dismissal preserves dirty drafts.
   }, [anchor]);
+
   const room = appearance.room;
   const updateRoom = (patch: Partial<BoardAppearance["room"]>) =>
-    setAppearance((current) => ({ ...current, room: { ...current.room, ...patch } }));
-  const chooseAppearanceImage = (kind: keyof BoardAppearanceFiles) =>
+    setAppearance((current) => ({
+      ...current,
+      room: { ...current.room, ...patch },
+    }));
+
+  const chooseAppearanceImage =
+    (kind: keyof BoardAppearanceFiles) =>
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       event.target.value = "";
       if (!file) return;
-      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 20 * 1024 * 1024) {
+      if (
+        !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+        file.size > 20 * 1024 * 1024
+      ) {
         setError("请选择不超过 20 MiB 的 JPEG、PNG 或 WebP 图片");
         return;
       }
@@ -104,13 +185,24 @@ export function RoomSettingsDialog({
         image.src = url;
         await image.decode();
         if (!image.width || !image.height) throw new Error("图片无法读取");
-        if (!mounted.current) { URL.revokeObjectURL(url); return; }
+        if (!mounted.current) {
+          URL.revokeObjectURL(url);
+          return;
+        }
         previewUrls.current.push(url);
         setFiles((current) => ({ ...current, [kind]: file }));
         setPreviews((current) => ({ ...current, [kind]: url }));
-        setAppearance((current) => kind === "background"
-          ? { ...current, room: { ...current.room, kind: "image" } }
-          : { ...current, surface: { ...current.surface, kind: "image" } });
+        setAppearance((current) =>
+          kind === "background"
+            ? { ...current, room: { ...current.room, kind: "image" } }
+            : { ...current, surface: { ...current.surface, kind: "image" } },
+        );
+        if (kind === "boardTexture") {
+          setStyleTokens((current) => ({
+            ...current,
+            surfaceShader: defaultBoardAmbientShader(),
+          }));
+        }
         setError("");
       } catch {
         URL.revokeObjectURL(url);
@@ -119,8 +211,10 @@ export function RoomSettingsDialog({
         if (mounted.current) setBusy("");
       }
     };
+
   const editable =
     board.viewer.role === "gm" && board.campaign.status === "active";
+
   const run = async (key: string, operation: () => Promise<unknown>) => {
     if (busy || !editable) return;
     setBusy(key);
@@ -137,133 +231,200 @@ export function RoomSettingsDialog({
       setBusy("");
     }
   };
+
   return (
     <MenuPopover
       anchor={anchor}
       id="room-settings-menu"
-      width={440}
+      width={460}
       title="房间配置"
-      className="room-settings-dialog"
-      onClose={() => { if (!busy) onClose(); }}
+      className="room-settings-dialog hig-popover"
+      onClose={() => {
+        if (!busy) onClose();
+      }}
     >
-      <div className="room-settings-tabs" role="tablist" aria-label="房间设置分类">
-        {([["room", "房间"], ["appearance", "外观"]] as const).map(([key, label]) =>
-          <button type="button" role="tab" key={key} id={`room-tab-${key}`}
-            aria-selected={tab === key} aria-controls={`room-panel-${key}`}
+      <div
+        className="hig-inspector-segmented"
+        role="tablist"
+        aria-label="房间设置分类"
+      >
+        {(
+          [
+            ["room", "基本与访问", SlidersHorizontal],
+            ["appearance", "外观与材质", Palette],
+          ] as const
+        ).map(([key, label, Icon]) => (
+          <button
+            type="button"
+            role="tab"
+            key={key}
+            id={`room-tab-${key}`}
+            aria-selected={tab === key}
+            aria-controls={`room-panel-${key}`}
             tabIndex={tab === key ? 0 : -1}
             onKeyDown={(event) => {
-              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              if (
+                !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+              )
+                return;
               event.preventDefault();
-              const next = event.key === "Home" ? "room" : event.key === "End" ? "appearance" :
-                tab === "room" ? "appearance" : "room";
+              const next =
+                event.key === "Home"
+                  ? "room"
+                  : event.key === "End"
+                    ? "appearance"
+                    : tab === "room"
+                      ? "appearance"
+                      : "room";
               setTab(next);
               document.getElementById(`room-tab-${next}`)?.focus();
             }}
-            onClick={() => setTab(key)}>{label}</button>)}
-      </div>
-      <div className="room-settings-grid">
-        <div role="tabpanel" id="room-panel-room" aria-labelledby="room-tab-room" hidden={tab !== "room"}>
-        <section className="campaign-name-setting">
-          <label className="field">
-            <span>战役名称</span>
-            <input
-              value={campaignName}
-              maxLength={80}
-              required
-              disabled={!editable || Boolean(busy)}
-              onChange={(event) => setCampaignName(event.target.value)}
-              aria-label="战役名称"
-            />
-          </label>
-        </section>
-        <section className="public-access-setting">
-          <div>
-            <Globe2 aria-hidden="true" />
-            <span>
-              <strong>公开参观</strong>
-              <small>
-                {board.settings.isPublic
-                  ? "所有访客可只读查看公告板并留言"
-                  : "仅房间成员可以查看公告板"}
-              </small>
-            </span>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={board.settings.isPublic}
-            className={
-              board.settings.isPublic
-                ? "public-access-toggle is-public"
-                : "public-access-toggle"
-            }
-            disabled={!editable || Boolean(busy)}
-            onClick={() =>
-              void run("public", () => onSetPublic(!board.settings.isPublic))
-            }
+            onClick={() => setTab(key)}
           >
-            {busy === "public"
-              ? "保存中…"
-              : board.settings.isPublic
-                ? "已公开"
-                : "未公开"}
+            <Icon aria-hidden="true" />
+            {label}
           </button>
-          {board.settings.isPublic && (
+        ))}
+      </div>
+
+      <div className="room-settings-grid">
+        <div
+          className="hig-editor-sections"
+          role="tabpanel"
+          id="room-panel-room"
+          aria-labelledby="room-tab-room"
+          hidden={tab !== "room"}
+        >
+          <section className="hig-editor-group">
+            <span className="hig-section-label">房间信息</span>
+            <label className="field">
+              <span>战役名称</span>
+              <input
+                value={campaignName}
+                maxLength={80}
+                required
+                disabled={!editable || Boolean(busy)}
+                onChange={(event) => setCampaignName(event.target.value)}
+                aria-label="战役名称"
+              />
+            </label>
+          </section>
+
+          <section className="hig-editor-group">
+            <span className="hig-section-label">公开参观与分享</span>
+            <div className="hig-permission-row">
+              <div className="hig-icon-row-copy">
+                <Globe2 aria-hidden="true" />
+                <div>
+                  <strong>允许访客公开参观</strong>
+                  <small>
+                    {board.settings.isPublic
+                      ? "所有持链接访客可只读查看公告板并留言"
+                      : "仅房间内成员可查看当前公告板"}
+                  </small>
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-label="公开参观"
+                aria-checked={board.settings.isPublic}
+                className={
+                  board.settings.isPublic ? "hig-switch is-on" : "hig-switch"
+                }
+                disabled={!editable || Boolean(busy)}
+                onClick={() =>
+                  void run("public", () =>
+                    onSetPublic(!board.settings.isPublic),
+                  )
+                }
+              >
+                <span className="hig-switch-thumb" />
+              </button>
+            </div>
+
+            {board.settings.isPublic && (
+              <button
+                type="button"
+                className="hig-inline-add-btn"
+                onClick={() => {
+                  const url = new URL(window.location.href);
+                  url.search = "";
+                  url.searchParams.set("visit", board.campaign.id);
+                  void navigator.clipboard
+                    .writeText(url.toString())
+                    .then(() => {
+                      setShareCopied(true);
+                      window.setTimeout(() => setShareCopied(false), 1600);
+                    });
+                }}
+              >
+                <Copy aria-hidden="true" />
+                {shareCopied ? "参观链接已复制" : "复制公开参观链接"}
+              </button>
+            )}
+          </section>
+
+          <div className="hig-grouped-list">
             <button
               type="button"
-              className="text-button public-share-button"
-              onClick={() => {
-                const url = new URL(window.location.href);
-                url.search = "";
-                url.searchParams.set("visit", board.campaign.id);
-                void navigator.clipboard.writeText(url.toString()).then(() => {
-                  setShareCopied(true);
-                  window.setTimeout(() => setShareCopied(false), 1600);
-                });
-              }}
+              className="hig-disclosure-row"
+              disabled={!!busy}
+              onClick={onOpenRoster}
             >
-              <Copy aria-hidden="true" />
-              {shareCopied ? "参观链接已复制" : "复制参观链接"}
+              <Users aria-hidden="true" />
+              <span>管理成员与角色资料</span>
+              <ChevronRight aria-hidden="true" />
             </button>
-          )}
-        </section>
-        <button
-          type="button"
-          className="room-roster-shortcut"
-          disabled={!!busy}
-          onClick={onOpenRoster}
-        >
-          <Users />
-          管理成员与角色资料
-        </button>
+          </div>
         </div>
-        <section className="room-settings-section media-settings" role="tabpanel" id="room-panel-appearance"
-          aria-labelledby="room-tab-appearance" hidden={tab !== "appearance"}>
-          <header>
-            <div>
-              <h2>公告板外观</h2>
-            </div>
-            <Image />
-          </header>
-          <AppearancePreview appearance={appearance}
-            backgroundUrl={previews.background ?? board.settings.backgroundUrl}
-            surfaceUrl={previews.boardTexture ?? board.settings.boardTextureUrl} />
-          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
-            <legend>主题预设</legend>
-            <div className="appearance-options">
+
+        <section
+          className="hig-editor-sections media-settings"
+          role="tabpanel"
+          id="room-panel-appearance"
+          aria-labelledby="room-tab-appearance"
+          hidden={tab !== "appearance"}
+        >
+          <div className="hig-editor-group hig-preview-card">
+            <AppearancePreview
+              appearance={appearance}
+              backgroundUrl={previews.background ?? board.settings.backgroundUrl}
+              surfaceUrl={
+                previews.boardTexture ?? board.settings.boardTextureUrl
+              }
+              surfaceShader={styleTokens.surfaceShader}
+              frameShader={styleTokens.frameShader}
+            />
+          </div>
+
+          <fieldset
+            className="hig-editor-group"
+            disabled={!editable || Boolean(busy)}
+          >
+            <span className="hig-section-label">主题氛围预设</span>
+            <div className="hig-chip-options">
               {boardAppearancePresets.map((preset) => {
                 const active =
+                  !hasActiveAmbientShader(styleTokens.surfaceShader) &&
+                  !hasActiveAmbientShader(styleTokens.frameShader) &&
                   appearance.frame === preset.appearance.frame &&
                   appearance.surface.kind === preset.appearance.surface.kind &&
-                  appearance.room.kind === preset.appearance.room.kind &&
-                  (preset.appearance.room.kind !== "perspective" ||
-                    appearance.room.scene === preset.appearance.room.scene);
+                  appearance.room.kind === preset.appearance.room.kind;
                 return (
                   <button
                     type="button"
                     key={preset.id}
                     aria-pressed={active}
-                    onClick={() => setAppearance(structuredClone(preset.appearance))}
+                    className={active ? "effect-chip is-active" : "effect-chip"}
+                    onClick={() => {
+                      setAppearance(structuredClone(preset.appearance));
+                      setStyleTokens((current) => ({
+                        ...current,
+                        surfaceShader: defaultBoardAmbientShader(),
+                        frameShader: defaultBoardAmbientShader(),
+                      }));
+                    }}
                   >
                     {preset.label}
                   </button>
@@ -271,71 +432,547 @@ export function RoomSettingsDialog({
               })}
             </div>
           </fieldset>
-          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
-            <legend>房间背景</legend>
-            <div className="appearance-options">
-              {([["default", "门店"], ["color", "纯色"], ["image", "图片"]] as const).map(([value, label]) =>
-                <button type="button" key={value} aria-pressed={room.kind === value}
+
+          <fieldset
+            className="hig-editor-group"
+            disabled={!editable || Boolean(busy)}
+          >
+            <span className="hig-section-label">房间背景</span>
+            <div className="hig-chip-options">
+              {(
+                [
+                  ["default", "默认"],
+                  ["color", "纯色"],
+                  ["image", "图片"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  aria-pressed={room.kind === value}
+                  className={
+                    room.kind === value
+                      ? "effect-chip is-active"
+                      : "effect-chip"
+                  }
                   disabled={value === "image" && !room.imagePath && !files.background}
-                  onClick={() => updateRoom({ kind: value })}>{label}</button>)}
-              {([["crossing", "路口"], ["station", "车站"]] as const).map(([scene, label]) =>
-                <button type="button" key={scene} aria-pressed={room.kind === "perspective" && room.scene === scene}
-                  onClick={() => updateRoom({ kind: "perspective", scene, animated: room.animated ?? true,
-                    fit: room.fit === "tile" ? "cover" : room.fit })}>{label}</button>)}
-              <label className="text-button file-button">
-                <Upload aria-hidden="true" />选择背景图片
-                <input type="file" aria-label="选择背景图片" accept="image/jpeg,image/png,image/webp"
-                  onChange={(event) => void chooseAppearanceImage("background")(event)} />
+                  onClick={() => updateRoom({ kind: value })}
+                >
+                  {label}
+                </button>
+              ))}
+              <label className="hig-inline-add-btn file-button">
+                <Upload aria-hidden="true" />
+                上传背景
+                <input
+                  type="file"
+                  aria-label="选择背景图片"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(event) =>
+                    void chooseAppearanceImage("background")(event)
+                  }
+                />
               </label>
             </div>
-            {room.kind === "perspective" && <label className="appearance-animation">
-              <input type="checkbox" aria-label="动态透视" checked={room.animated ?? true}
-                onChange={(event) => updateRoom({ animated: event.target.checked })} />动态透视
-            </label>}
-            <ColorField label="底色" accessibleLabel="房间底色" value={room.color}
-              onChange={(color) => updateRoom({ color })} disabled={!editable || !!busy} />
+
+            <ColorField
+              label="房间底色"
+              accessibleLabel="房间底色"
+              value={room.color}
+              onChange={(color) => updateRoom({ color })}
+              disabled={!editable || !!busy}
+            />
+
             {room.kind !== "color" && (
-              <div className="appearance-image-controls">
-                <label>适配方式<select aria-label="背景适配方式" value={room.fit}
-                  onChange={(event) => updateRoom({ fit: event.target.value as typeof room.fit })}>
-                  <option value="cover">铺满</option><option value="contain">完整显示</option>
-                  {room.kind !== "perspective" && <option value="tile">平铺</option>}
-                </select></label>
-                <label>水平焦点<input type="range" aria-label="背景水平焦点" min="0" max="100"
-                  value={room.positionX} onChange={(event) => updateRoom({ positionX: Number(event.target.value) })} /></label>
-                <label>垂直焦点<input type="range" aria-label="背景垂直焦点" min="0" max="100"
-                  value={room.positionY} onChange={(event) => updateRoom({ positionY: Number(event.target.value) })} /></label>
+              <div className="hig-sliders-grid">
+                <label className="field">
+                  <span>适配方式</span>
+                  <select
+                    aria-label="背景适配方式"
+                    value={room.fit}
+                    onChange={(event) =>
+                      updateRoom({
+                        fit: event.target.value as typeof room.fit,
+                      })
+                    }
+                  >
+                    <option value="cover">铺满</option>
+                    <option value="contain">完整显示</option>
+                    <option value="tile">平铺</option>
+                  </select>
+                </label>
+                <label className="hig-range-field">
+                  <span>
+                    水平焦点 <strong>{room.positionX}%</strong>
+                  </span>
+                  <input
+                    type="range"
+                    aria-label="背景水平焦点"
+                    min="0"
+                    max="100"
+                    value={room.positionX}
+                    onChange={(event) =>
+                      updateRoom({ positionX: Number(event.target.value) })
+                    }
+                  />
+                </label>
+                <label className="hig-range-field">
+                  <span>
+                    垂直焦点 <strong>{room.positionY}%</strong>
+                  </span>
+                  <input
+                    type="range"
+                    aria-label="背景垂直焦点"
+                    min="0"
+                    max="100"
+                    value={room.positionY}
+                    onChange={(event) =>
+                      updateRoom({ positionY: Number(event.target.value) })
+                    }
+                  />
+                </label>
               </div>
             )}
-            <label className="appearance-range">暗化
-              <input type="range" aria-label="背景暗化" min="0" max="80"
-                value={Math.round(room.dim * 100)} onChange={(event) => updateRoom({ dim: Number(event.target.value) / 100 })} />
+
+            <label className="hig-range-field">
+              <span>
+                背景暗化遮罩 <strong>{Math.round(room.dim * 100)}%</strong>
+              </span>
+              <input
+                type="range"
+                aria-label="背景暗化"
+                min="0"
+                max="80"
+                value={Math.round(room.dim * 100)}
+                onChange={(event) =>
+                  updateRoom({ dim: Number(event.target.value) / 100 })
+                }
+              />
             </label>
           </fieldset>
-          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
-            <legend>板面材质</legend>
-            <div className="appearance-options">
-              {([["felt", "黑板"], ["cork", "软木"], ["paper", "纸张"], ["image", "自定义"]] as const).map(([value, label]) =>
-                <button type="button" key={value} aria-pressed={appearance.surface.kind === value}
-                  disabled={value === "image" && !appearance.surface.imagePath && !files.boardTexture}
-                  onClick={() => setAppearance((current) => ({ ...current, surface: { ...current.surface, kind: value } }))}>{label}</button>)}
-              <label className="text-button file-button"><Upload aria-hidden="true" />选择板面纹理
-                <input type="file" aria-label="选择板面纹理" accept="image/jpeg,image/png,image/webp"
-                  onChange={(event) => void chooseAppearanceImage("boardTexture")(event)} />
+
+          <fieldset
+            className="hig-editor-group"
+            disabled={!editable || Boolean(busy)}
+          >
+            <span className="hig-section-label">板面材质与外框</span>
+            <div className="hig-chip-options">
+              {(
+                [
+                  ["felt", "毛毡黑板"],
+                  ["cork", "软木板"],
+                  ["paper", "纸质"],
+                  ["image", "自定义"],
+                ] as const
+              ).map(([value, label]) => {
+                const surfaceShaderActive = hasActiveAmbientShader(
+                  styleTokens.surfaceShader,
+                );
+                const isActive =
+                  !surfaceShaderActive && appearance.surface.kind === value;
+                return (
+                  <button
+                    type="button"
+                    key={value}
+                    aria-pressed={isActive}
+                    className={isActive ? "effect-chip is-active" : "effect-chip"}
+                    disabled={
+                      value === "image" &&
+                      !appearance.surface.imagePath &&
+                      !files.boardTexture
+                    }
+                    onClick={() => {
+                      setAppearance((current) => ({
+                        ...current,
+                        surface: { ...current.surface, kind: value },
+                      }));
+                      // 切换板面材质时自动清除覆盖在板面上的环境 Shader，避免新材质被遮挡
+                      setStyleTokens((current) => ({
+                        ...current,
+                        surfaceShader: defaultBoardAmbientShader(),
+                      }));
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+              <label className="hig-inline-add-btn file-button">
+                <Upload aria-hidden="true" />
+                上传板面纹理
+                <input
+                  type="file"
+                  aria-label="选择板面纹理"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(event) =>
+                    void chooseAppearanceImage("boardTexture")(event)
+                  }
+                />
+              </label>
+            </div>
+
+            <div className="hig-chip-options">
+              {(
+                [
+                  ["wood", "木框"],
+                  ["metal", "金属框"],
+                  ["burger", "主题框"],
+                  ["none", "无边框"],
+                ] as const
+              ).map(([value, label]) => {
+                const frameShaderActive = hasActiveAmbientShader(
+                  styleTokens.frameShader,
+                );
+                const isActive = !frameShaderActive && appearance.frame === value;
+                return (
+                  <button
+                    type="button"
+                    key={value}
+                    aria-pressed={isActive}
+                    className={isActive ? "effect-chip is-active" : "effect-chip"}
+                    onClick={() => {
+                      setAppearance((current) => ({ ...current, frame: value }));
+                      // 切换外框材质时自动清除外框环境 Shader，确保所选外框立即生效
+                      setStyleTokens((current) => ({
+                        ...current,
+                        frameShader: defaultBoardAmbientShader(),
+                      }));
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="hig-ambient-shader-controls">
+              <label className="field">
+                <span>板面动态 Shader 覆盖</span>
+                <select
+                  aria-label="板面动态 Shader"
+                  value={styleTokens.surfaceShader?.shader ?? "none"}
+                  onChange={(event) => {
+                    const kind = event.target.value as AmbientShaderKind;
+                    setStyleTokens((current) => ({
+                      ...current,
+                      surfaceShader:
+                        kind === "none"
+                          ? defaultBoardAmbientShader()
+                          : normalizeBoardAmbientShader({
+                              ...(current.surfaceShader ?? {}),
+                              shader: kind,
+                            }),
+                    }));
+                  }}
+                >
+                  <option value="none">关闭（显示上方板面材质）</option>
+                  <option value="ember_ash">余烬灰烬</option>
+                  <option value="hologram_grid">全息矩阵</option>
+                  <option value="ancient_vellum">古羊皮纹</option>
+                  <option value="abyssal_mist">深渊迷雾</option>
+                  {styleTokens.surfaceShader?.shader === "ai_glsl" && (
+                    <option value="ai_glsl">
+                      AI Shader：{styleTokens.surfaceShader.shaderName || "自定义"}
+                    </option>
+                  )}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>外框动态 Shader 覆盖</span>
+                <select
+                  aria-label="外框动态 Shader"
+                  value={styleTokens.frameShader?.shader ?? "none"}
+                  onChange={(event) => {
+                    const kind = event.target.value as AmbientShaderKind;
+                    setStyleTokens((current) => ({
+                      ...current,
+                      frameShader:
+                        kind === "none"
+                          ? defaultBoardAmbientShader()
+                          : normalizeBoardAmbientShader({
+                              ...(current.frameShader ?? {}),
+                              shader: kind,
+                            }),
+                    }));
+                  }}
+                >
+                  <option value="none">关闭（显示上方外框材质）</option>
+                  <option value="ember_ash">余烬焦框</option>
+                  <option value="hologram_grid">全息光框</option>
+                  <option value="ancient_vellum">鎏金卷框</option>
+                  <option value="abyssal_mist">深渊寒框</option>
+                  {styleTokens.frameShader?.shader === "ai_glsl" && (
+                    <option value="ai_glsl">
+                      AI Shader：{styleTokens.frameShader.shaderName || "自定义"}
+                    </option>
+                  )}
+                </select>
               </label>
             </div>
           </fieldset>
-          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
-            <legend>边框样式</legend>
-            <div className="appearance-options">
-              {([["burger", "汉堡店"], ["wood", "木框"], ["metal", "金属"], ["none", "无边框"]] as const).map(([value, label]) =>
-                <button type="button" key={value} aria-pressed={appearance.frame === value}
-                  onClick={() => setAppearance((current) => ({ ...current, frame: value }))}>{label}</button>)}
+
+          {boardAssets.length > 0 && (
+            <fieldset
+              className="hig-editor-group"
+              disabled={!editable || Boolean(busy)}
+            >
+              <span className="hig-section-label">我的资产库 · 快速套用</span>
+              <div className="hig-asset-quick-list">
+                {boardAssets.slice(0, 6).map((asset) => (
+                  <button
+                    type="button"
+                    key={asset.id}
+                    className="hig-asset-quick-chip"
+                    onClick={() => {
+                      if (asset.payload.kind === "ambient_shader") {
+                        const p = asset.payload;
+                        setStyleTokens((current) => ({
+                          ...current,
+                          ...(p.surfaceShader
+                            ? { surfaceShader: structuredClone(p.surfaceShader) }
+                            : {}),
+                          ...(p.frameShader
+                            ? { frameShader: structuredClone(p.frameShader) }
+                            : {}),
+                        }));
+                      } else if (asset.payload.kind === "board_style") {
+                        setStyleTokens(structuredClone(asset.payload.styleTokens));
+                      }
+                    }}
+                  >
+                    <span
+                      className="hig-asset-swatch-dot"
+                      style={{
+                        background:
+                          asset.previewColors.length >= 2
+                            ? `linear-gradient(135deg, ${asset.previewColors[0]}, ${asset.previewColors[1]})`
+                            : asset.previewColors[0] ?? "#6ab9ff",
+                      }}
+                      aria-hidden="true"
+                    />
+                    <span>{asset.name}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
+
+          <fieldset
+            className="hig-editor-group"
+            disabled={!editable || Boolean(busy)}
+          >
+            <span className="hig-section-label">Shader 渲染性能档位（本机生效）</span>
+            <div className="hig-chip-options">
+              {(
+                [
+                  ["balanced", "均衡 30fps（推荐）"],
+                  ["high", "高画质 60fps"],
+                  ["eco", "节能静态（0 持续占用）"],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  type="button"
+                  key={mode}
+                  aria-pressed={shaderQuality === mode}
+                  className={
+                    shaderQuality === mode ? "effect-chip is-active" : "effect-chip"
+                  }
+                  onClick={() => {
+                    setShaderQuality(mode);
+                    setShaderQualityMode(mode);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </fieldset>
-          <fieldset className="appearance-fields" disabled={!editable || Boolean(busy)}>
-            <legend>卡片与连线风格</legend>
-            <div className="appearance-options">
+
+          <fieldset
+            className="hig-editor-group"
+            disabled={!editable || Boolean(busy)}
+          >
+            <span className="hig-section-label">
+              <Type size={13} aria-hidden="true" /> 全局字体、字号与本地字体导入
+            </span>
+
+            <label className="hig-range-field">
+              <span>
+                全局字号缩放{" "}
+                <strong>{Math.round((styleTokens.fontSizeScale ?? 1) * 100)}%</strong>
+              </span>
+              <input
+                type="range"
+                aria-label="全局字号缩放"
+                min={0.75}
+                max={1.5}
+                step={0.05}
+                value={styleTokens.fontSizeScale ?? 1}
+                onChange={(e) =>
+                  setStyleTokens((current) => ({
+                    ...current,
+                    fontSizeScale: Number(e.target.value),
+                  }))
+                }
+              />
+            </label>
+
+            <div className="hig-chip-options">
+              {(
+                [
+                  [0.85, "小 85%"],
+                  [1, "标准 100%"],
+                  [1.15, "大 115%"],
+                  [1.3, "特大 130%"],
+                ] as const
+              ).map(([val, label]) => (
+                <button
+                  type="button"
+                  key={val}
+                  className={
+                    Math.abs((styleTokens.fontSizeScale ?? 1) - val) < 0.02
+                      ? "effect-chip is-active"
+                      : "effect-chip"
+                  }
+                  onClick={() =>
+                    setStyleTokens((current) => ({
+                      ...current,
+                      fontSizeScale: val,
+                    }))
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="hig-chip-options">
+              {(
+                [
+                  ["handwritten", "手写体"],
+                  ["serif", "古典衬线"],
+                  ["typewriter", "打字机"],
+                  ["mono", "等宽代码"],
+                ] as Array<[BoardFontPreset, string]>
+              ).map(([preset, label]) => {
+                const active =
+                  !styleTokens.customFontFamily && styleTokens.fontPreset === preset;
+                return (
+                  <button
+                    type="button"
+                    key={preset}
+                    aria-pressed={active}
+                    className={active ? "effect-chip is-active" : "effect-chip"}
+                    onClick={() =>
+                      setStyleTokens((current) => ({
+                        ...current,
+                        fontPreset: preset,
+                        customFontFamily: null,
+                      }))
+                    }
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+              <label className="hig-inline-add-btn file-button">
+                <Upload aria-hidden="true" />
+                导入本地字体
+                <input
+                  type="file"
+                  aria-label="导入本地字体文件"
+                  accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (!file) return;
+                    setError("");
+                    setFontMessage("");
+                    try {
+                      const imported = await importLocalFontFile(
+                        board.viewer.id,
+                        file,
+                      );
+                      setStyleTokens((current) => ({
+                        ...current,
+                        customFontFamily: imported.family,
+                      }));
+                      setFontMessage(
+                        `已导入并启用本地字体「${imported.name}」（保存在本机 IndexedDB，支持离线持久使用）。`,
+                      );
+                    } catch (err) {
+                      setError(
+                        err instanceof Error ? err.message : "本地字体导入失败。",
+                      );
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            {localFonts.length > 0 && (
+              <div className="hig-local-font-list">
+                {localFonts.map((font) => {
+                  const selected = styleTokens.customFontFamily === font.family;
+                  return (
+                    <div
+                      key={font.id}
+                      className={
+                        selected
+                          ? "hig-local-font-row is-selected"
+                          : "hig-local-font-row"
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="hig-local-font-pick"
+                        style={{ fontFamily: `"${font.family}", sans-serif` }}
+                        onClick={() =>
+                          setStyleTokens((current) => ({
+                            ...current,
+                            customFontFamily: selected ? null : font.family,
+                          }))
+                        }
+                      >
+                        <strong>{font.name}</strong>
+                        <small>{formatFontSizeBytes(font.sizeBytes)}</small>
+                      </button>
+                      <button
+                        type="button"
+                        className="hig-local-font-del"
+                        aria-label={`删除本地字体 ${font.name}`}
+                        onClick={() => {
+                          void deleteLocalFont(board.viewer.id, font.id);
+                          if (selected) {
+                            setStyleTokens((current) => ({
+                              ...current,
+                              customFontFamily: null,
+                            }));
+                          }
+                        }}
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {fontMessage && (
+              <p className="clock-ai-feedback" role="status">
+                {fontMessage}
+              </p>
+            )}
+          </fieldset>
+
+          <fieldset
+            className="hig-editor-group"
+            disabled={!editable || Boolean(busy)}
+          >
+            <span className="hig-section-label">全局卡片与连线风格</span>
+            <div className="hig-chip-options">
               {Object.entries(boardStylePresetLabels).map(([id, preset]) => {
                 const active =
                   styleTokens.fontPreset === preset.tokens.fontPreset &&
@@ -346,7 +983,20 @@ export function RoomSettingsDialog({
                     type="button"
                     key={id}
                     aria-pressed={active}
-                    onClick={() => setStyleTokens(structuredClone(preset.tokens))}
+                    className={active ? "effect-chip is-active" : "effect-chip"}
+                    onClick={() =>
+                      setStyleTokens((current) => ({
+                        ...structuredClone(preset.tokens),
+                        surfaceShader: current.surfaceShader,
+                        frameShader: current.frameShader,
+                        clockAppearance: current.clockAppearance,
+                        fontSizeScale: current.fontSizeScale,
+                        customFontFamily: current.customFontFamily,
+                        noteFontSizes: current.noteFontSizes,
+                        sectionFontSizes: current.sectionFontSizes,
+                        archiveEntries: current.archiveEntries,
+                      }))
+                    }
                   >
                     {preset.label}
                   </button>
@@ -356,16 +1006,22 @@ export function RoomSettingsDialog({
           </fieldset>
         </section>
       </div>
+
       {error && (
         <p className="access-error" role="alert">
           {error}
         </p>
       )}
-      <footer className="composer-actions">
+
+      <footer className="composer-actions hig-sheet-footer">
+        <span className="action-spacer" />
         <button
           type="button"
           className="text-button"
-          onClick={() => { resetOnOpen.current = true; onClose(); }}
+          onClick={() => {
+            resetOnOpen.current = true;
+            onClose();
+          }}
           disabled={Boolean(busy)}
         >
           取消
@@ -376,16 +1032,34 @@ export function RoomSettingsDialog({
           disabled={!editable || Boolean(busy) || !campaignName.trim()}
           onClick={() =>
             void run("save", async () => {
-              const saved = await onSave(settingsUpdate(original.current, { name: campaignName.trim() }));
+              const saved = await onSave(
+                settingsUpdate(original.current, { name: campaignName.trim() }),
+              );
               original.current = applySettingsPatch(original.current, saved);
               const activeFiles: BoardAppearanceFiles = {
-                ...(appearance.room.kind === "image" && files.background ? { background: files.background } : {}),
-                ...(appearance.surface.kind === "image" && files.boardTexture ? { boardTexture: files.boardTexture } : {}),
+                ...(appearance.room.kind === "image" && files.background
+                  ? { background: files.background }
+                  : {}),
+                ...(appearance.surface.kind === "image" && files.boardTexture
+                  ? { boardTexture: files.boardTexture }
+                  : {}),
               };
-              if (JSON.stringify(appearance) !== JSON.stringify(original.current.settings.appearance) || Object.keys(activeFiles).length) {
-                await onSaveAppearance(appearance, activeFiles, original.current.settings.appearance);
+              if (
+                JSON.stringify(appearance) !==
+                  JSON.stringify(board.settings.appearance) ||
+                Object.keys(activeFiles).length
+              ) {
+                await onSaveAppearance(
+                  appearance,
+                  activeFiles,
+                  board.settings.appearance,
+                );
               }
-              if (onSaveStyleTokens && JSON.stringify(styleTokens) !== JSON.stringify(original.current.settings.styleTokens)) {
+              if (
+                onSaveStyleTokens &&
+                JSON.stringify(styleTokens) !==
+                  JSON.stringify(board.settings.styleTokens)
+              ) {
                 await onSaveStyleTokens(styleTokens);
               }
               resetOnOpen.current = true;
@@ -393,7 +1067,7 @@ export function RoomSettingsDialog({
             })
           }
         >
-          {busy === "save" ? "保存中…" : "保存共享配置"}
+          {busy === "save" ? "保存中…" : "保存配置"}
         </button>
       </footer>
     </MenuPopover>

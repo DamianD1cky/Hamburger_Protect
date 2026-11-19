@@ -10,8 +10,9 @@ import { CardShaderCanvas, useCardEffect } from "./CardEffectLayer";
 
 export interface SectionActions {
   onEdit: () => void;
-  onHide: () => void;
+  onHide?: () => void;
   editLabel?: string;
+  hideLabel?: string;
 }
 
 /** Every module uses the same title, appearance editor and hide control. */
@@ -45,15 +46,17 @@ export function BoardSectionHeader({
           >
             <Pencil aria-hidden="true" />
           </button>
-          <button
-            className="sign-action"
-            type="button"
-            onClick={actions.onHide}
-            aria-label={`隐藏${title}`}
-            title="隐藏模块"
-          >
-            <EyeOff aria-hidden="true" />
-          </button>
+          {actions.onHide && (
+            <button
+              className="sign-action"
+              type="button"
+              onClick={actions.onHide}
+              aria-label={actions.hideLabel ?? `隐藏${title}`}
+              title="隐藏板块"
+            >
+              <EyeOff aria-hidden="true" />
+            </button>
+          )}
         </div>
       )}
     </header>

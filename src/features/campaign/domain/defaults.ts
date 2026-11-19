@@ -3,10 +3,11 @@ import { veilBoardAppearance } from "./boardAppearance.ts";
 import { defaultBoardStyleTokens } from "./boardStyleTokens.ts";
 import { defaultCampaignClock } from "./campaignClock.ts";
 import { DEFAULT_DECOMPOSED_SECTIONS } from "./campaignSettings.ts";
+import { createInitialCorePanels } from "./customPanels.ts";
 
 /**
- * 初始公告板仅保留三大核心板块：成员名册（shifts）、事件钟（index）、行动记录（activity）。
- * 物资、委托任务、检查清单均由原子能力（resource_list / task_board / checkbox_group 等）按需拼装。
+ * 初始桌面默认呈现「成员名册、事件钟、工作记录」三块由原子能力（member_roster / event_clock / activity_feed）
+ * 拼装而成的展示板块，点击任意板块的编辑按钮均统一进入同一套 Apple HIG 板块检查器。
  */
 export const defaultBoard: CampaignBoard = {
   campaign: {
@@ -44,11 +45,7 @@ export const defaultBoard: CampaignBoard = {
     sectionColors: {},
     resourceTitles: {},
     hiddenSections: [...DEFAULT_DECOMPOSED_SECTIONS],
-    moduleLayout: {
-      shifts: { x: 60, y: 50, w: 360, h: 290 },
-      index: { x: 450, y: 50, w: 340, h: 221 },
-      activity: { x: 60, y: 370, w: 395, h: 380 },
-    },
+    moduleLayout: {},
     isPublic: false,
     backgroundPath: null,
     noteTexturePath: null,
@@ -56,7 +53,7 @@ export const defaultBoard: CampaignBoard = {
     noteTextureUrl: null,
     appearance: veilBoardAppearance(),
     styleTokens: defaultBoardStyleTokens(),
-    customPanels: [],
+    customPanels: createInitialCorePanels(),
     boardTextureUrl: null,
     clock: defaultCampaignClock(),
   },

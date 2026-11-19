@@ -15,27 +15,19 @@ export interface CustomPanelRow {
   tone?: CustomPanelTone;
 }
 
-export interface SegmentedBlock {
+export interface ChoiceSelectorBlock {
   id: string;
-  type: "segmented";
+  type: "choice_selector";
   label: string;
   options: string[];
   value: string;
-}
-
-export interface SelectBlock {
-  id: string;
-  type: "select";
-  label: string;
-  options: string[];
-  value: string;
+  display?: "auto" | "segmented" | "dropdown";
 }
 
 export interface CheckboxItem {
   id: string;
   label: string;
   checked: boolean;
-  /** 可选分类标签（分解原「行动检查清单」的分类归属能力）。 */
   tag?: string;
 }
 
@@ -56,9 +48,9 @@ export interface ToggleBlock {
   checked: boolean;
 }
 
-export interface StepperBlock {
+export interface MeterCounterBlock {
   id: string;
-  type: "stepper";
+  type: "meter_counter";
   label: string;
   value: number;
   min: number;
@@ -66,6 +58,8 @@ export interface StepperBlock {
   step: number;
   unit?: string;
   tone?: CustomPanelTone;
+  color?: string;
+  variant?: "stepper" | "bar" | "pips" | "bipolar";
 }
 
 export type ResourceBlockStatus = "ok" | "low" | "out";
@@ -78,10 +72,6 @@ export interface ResourceBlockItem {
   status: ResourceBlockStatus;
 }
 
-/**
- * 新增原子能力：物资与库存状态积木（分解原「可用物资与设施」板块）。
- * 支持每个条目的数量步进（−/＋）、库存状态徽章流转（充足 / 紧缺 / 耗尽）以及面板内快速补录。
- */
 export interface ResourceListBlock {
   id: string;
   type: "resource_list";
@@ -91,6 +81,13 @@ export interface ResourceListBlock {
 }
 
 export type TaskBlockStatus = "open" | "in_progress" | "completed";
+export type TaskBoardVariant = "quest" | "bounty" | "wanted" | "objective";
+export const TASK_BOARD_STATUS_LABELS: Record<TaskBoardVariant, Record<TaskBlockStatus, string>> = {
+  quest: { open: "待认领", in_progress: "执行中", completed: "已完成" },
+  bounty: { open: "待揭榜", in_progress: "追讨中", completed: "已结赏" },
+  wanted: { open: "通缉在逃", in_progress: "追捕中", completed: "已缉拿" },
+  objective: { open: "未探明", in_progress: "调查中", completed: "已查明" },
+};
 
 export interface TaskBlockItem {
   id: string;
@@ -99,18 +96,91 @@ export interface TaskBlockItem {
   assignee?: string;
   due?: string;
   status: TaskBlockStatus;
+  reward?: string;
+  badge?: string;
+  imageUrl?: string | null;
 }
 
-/**
- * 新增原子能力：委托与行动流转积木（分解原「委托与行动报告」板块）。
- * 支持认领署名、三态流转（待认领 → 进行中 → 已完成）以及面板内快速发布委托。
- */
 export interface TaskBoardBlock {
   id: string;
   type: "task_board";
   label: string;
+  variant?: TaskBoardVariant;
   allowQuickAdd?: boolean;
   items: TaskBlockItem[];
+}
+
+export interface ImageMediaBlock {
+  id: string;
+  type: "image_media";
+  label: string;
+  layout: "hero" | "grid" | "polaroid";
+  images: Array<{ id: string; url: string; caption: string; aspect: "16:9" | "4:3" | "1:1" | "auto" }>;
+}
+
+export interface DiceMacroBlock {
+  id: string;
+  type: "dice_macro";
+  label: string;
+  macros: Array<{ id: string; name: string; notation: string; visibility?: "public" | "gm" | "self"; tone?: CustomPanelTone }>;
+}
+
+export interface InitiativeEntry {
+  id: string;
+  name: string;
+  initiative: number;
+  hpNote?: string;
+  isNpc?: boolean;
+  acted?: boolean;
+}
+export interface InitiativeTrackBlock {
+  id: string;
+  type: "initiative_track";
+  label: string;
+  round: number;
+  activeIndex: number;
+  entries: InitiativeEntry[];
+}
+export interface RollTableBlock {
+  id: string;
+  type: "roll_table";
+  label: string;
+  entries: Array<{ id: string; weight?: number; text: string; tag?: string }>;
+  lastRolledId: string | null;
+}
+
+/**
+ * 提炼自原内置「成员名册」板块的原子能力：实时展示房间在场成员并支持一键展开完整名册与角色管理。
+ */
+export interface MemberRosterBlock {
+  id: string;
+  type: "member_roster";
+  label: string;
+  maxItems: number;
+  showRoleBadge: boolean;
+}
+
+/**
+ * 提炼自原内置「事件钟」板块的原子能力：支持 2–24 格分段进度、统一 RGB 色号、直接加减推进及满格后果高亮。
+ */
+export interface EventClockBlock {
+  id: string;
+  type: "event_clock";
+  name: string;
+  segments: number;
+  progress: number;
+  color: string;
+  consequence: string;
+}
+
+/**
+ * 提炼自原内置「工作记录 / 行动记录」板块的原子能力：实时订阅房间最近操作流并支持展开完整历史记录。
+ */
+export interface ActivityFeedBlock {
+  id: string;
+  type: "activity_feed";
+  label: string;
+  maxItems: number;
 }
 
 export interface KvListBlock {
@@ -126,16 +196,23 @@ export interface NoteTextBlock {
   heading?: string;
   text: string;
   emphasis?: "normal" | "callout";
+  fontSize?: number;
 }
 
 export type CustomPanelBlock =
-  | SegmentedBlock
-  | SelectBlock
-  | CheckboxGroupBlock
-  | ToggleBlock
-  | StepperBlock
+  | MemberRosterBlock
+  | EventClockBlock
+  | ActivityFeedBlock
   | ResourceListBlock
   | TaskBoardBlock
+  | CheckboxGroupBlock
+  | ChoiceSelectorBlock
+  | ToggleBlock
+  | MeterCounterBlock
+  | ImageMediaBlock
+  | DiceMacroBlock
+  | InitiativeTrackBlock
+  | RollTableBlock
   | KvListBlock
   | NoteTextBlock;
 
@@ -146,12 +223,18 @@ export type CustomPanelInteraction =
   | { type: "add_checkbox_item"; label: string; tag?: string }
   | { type: "remove_checkbox_item"; itemId: string }
   | { type: "step_value"; delta: number }
+  | { type: "set_value"; value: number }
+  | { type: "sort_initiative" }
+  | { type: "next_initiative" }
+  | { type: "import_initiative_members"; entries: InitiativeEntry[] }
+  | { type: "roll_table" }
+  | { type: "step_event_clock"; delta: number }
   | { type: "step_resource_qty"; itemId: string; delta: number }
   | { type: "cycle_resource_status"; itemId: string }
   | { type: "add_resource_item"; name: string; quantity?: number; unit?: string }
   | { type: "remove_resource_item"; itemId: string }
   | { type: "advance_task_status"; itemId: string; actorName?: string }
-  | { type: "add_task_item"; title: string; detail?: string; due?: string }
+  | { type: "add_task_item"; title: string; detail?: string; due?: string; reward?: string }
   | { type: "remove_task_item"; itemId: string };
 
 export interface BoardCustomPanel {
@@ -164,6 +247,7 @@ export interface BoardCustomPanel {
   blocks: CustomPanelBlock[];
   interactiveFor: CustomPanelInteractiveRole;
   effect: CardVisualEffect;
+  fontSize?: number;
   x: number;
   y: number;
   w: number;
@@ -229,6 +313,39 @@ function normalizeRows(rawRows: unknown): CustomPanelRow[] {
     .filter((item): item is CustomPanelRow => item !== null);
 }
 
+export function normalizePanelImageUrl(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const url = raw.trim();
+  return /^(https?:\/\/|data:image\/(?:jpeg|png|webp);base64,|\/(?!\/)|[0-9a-f-]{36}\/note-)/i.test(url)
+    ? url.slice(0, url.startsWith("data:") ? 7_000_000 : 2000) : null;
+}
+
+export function createExtendedPanelBlock(type: "image_media" | "dice_macro" | "initiative_track" | "roll_table", id: string): CustomPanelBlock {
+  if (type === "image_media") return { id, type, label: "港口调查地图", layout: "hero", images: [{
+    id: `${id}-map`, caption: "港口与旧灯塔", aspect: "4:3",
+    url: `https://copilot-cn.bytedance.net/api/ide/v1/text_to_image?prompt=${encodeURIComponent("Detailed hand drawn 1920s harbor town investigation map on aged parchment, docks, warehouses, lighthouse, winding streets, top down cartographic view, sepia ink, realistic paper, no text, no labels")}&image_size=landscape_4_3`,
+  }] };
+  if (type === "dice_macro") return { id, type, label: "快捷检定", macros: [
+    { id: `${id}-spot`, name: "侦查", notation: "1d100", visibility: "public" },
+    { id: `${id}-san`, name: "理智", notation: "1d100", visibility: "self" },
+    { id: `${id}-stealth`, name: "潜行", notation: "1d20+5", visibility: "gm" },
+  ] };
+  if (type === "initiative_track") return { id, type, label: "行动顺位", round: 1, activeIndex: 0, entries: [
+    { id: `${id}-pc`, name: "调查员", initiative: 16, hpNote: "HP 12", isNpc: false },
+    { id: `${id}-npc`, name: "码头守卫", initiative: 10, hpNote: "HP 8", isNpc: true },
+  ] };
+  return { id, type, label: "酒馆传闻", lastRolledId: null, entries: [
+    { id: `${id}-1`, text: "旧灯塔昨夜亮起了蓝绿色的光。", weight: 2, tag: "灯塔" },
+    { id: `${id}-2`, text: "失踪的钟表师最后出现在北码头。", weight: 1, tag: "人物" },
+    { id: `${id}-3`, text: "四号仓库的夜班守卫突然辞职。", weight: 1, tag: "线索" },
+  ] };
+}
+
+const textField = (raw: unknown, limit = 80) => typeof raw === "string" ? raw.trim().slice(0, limit) : "";
+const finiteNumber = (raw: unknown, fallback: number) => Number.isFinite(Number(raw)) ? Number(raw) : fallback;
+const childRecords = (raw: unknown, limit: number): Record<string, unknown>[] =>
+  Array.isArray(raw) ? raw.slice(0, limit).filter((entry) => entry && typeof entry === "object") : [];
+
 export function normalizeCustomPanelBlock(
   raw: unknown,
   fallbackIndex = 0,
@@ -241,7 +358,60 @@ export function normalizeCustomPanelBlock(
       : `blk-${fallbackIndex + 1}`;
   const type = String(b.type ?? "");
 
-  if (type === "segmented" || type === "select") {
+  if (type === "member_roster") {
+    const label = String(b.label ?? "").trim().slice(0, 40) || "在场成员";
+    const maxItems = Number.isFinite(Number(b.maxItems))
+      ? clamp(Math.round(Number(b.maxItems)), 1, 12)
+      : 4;
+    return {
+      id,
+      type: "member_roster",
+      label,
+      maxItems,
+      showRoleBadge: b.showRoleBadge !== false,
+    };
+  }
+
+  if (type === "event_clock") {
+    const name = String(b.name ?? "").trim().slice(0, 60) || "局势推进事件钟";
+    const segments = Number.isFinite(Number(b.segments))
+      ? clamp(Math.round(Number(b.segments)), 2, 24)
+      : 6;
+    const progress = Number.isFinite(Number(b.progress))
+      ? clamp(Math.round(Number(b.progress)), 0, segments)
+      : 0;
+    const color =
+      typeof b.color === "string"
+        ? normalizeColor(b.color) ?? "#b24b37"
+        : "#b24b37";
+    const consequence =
+      String(b.consequence ?? "").trim().slice(0, 240) ||
+      "格数填满时触发事态升级，由主持人裁定后果。";
+    return {
+      id,
+      type: "event_clock",
+      name,
+      segments,
+      progress,
+      color,
+      consequence,
+    };
+  }
+
+  if (type === "activity_feed") {
+    const label = String(b.label ?? "").trim().slice(0, 40) || "最近工作记录";
+    const maxItems = Number.isFinite(Number(b.maxItems))
+      ? clamp(Math.round(Number(b.maxItems)), 1, 12)
+      : 5;
+    return {
+      id,
+      type: "activity_feed",
+      label,
+      maxItems,
+    };
+  }
+
+  if (type === "choice_selector" || type === "segmented" || type === "select") {
     const label = String(b.label ?? "").trim().slice(0, 40) || "状态选择";
     const rawOpts = Array.isArray(b.options)
       ? b.options
@@ -252,7 +422,9 @@ export function normalizeCustomPanelBlock(
     const options = rawOpts.length >= 2 ? rawOpts : ["常规", "警戒", "危急"];
     const candidateVal = String(b.value ?? "").trim();
     const value = options.includes(candidateVal) ? candidateVal : options[0];
-    return { id, type, label, options, value };
+    const display = type === "segmented" ? "segmented" : type === "select" ? "dropdown"
+      : b.display === "segmented" || b.display === "dropdown" ? b.display : "auto";
+    return { id, type: "choice_selector", label, options, value, display };
   }
 
   if (type === "checkbox_group") {
@@ -360,15 +532,15 @@ export function normalizeCustomPanelBlock(
           .map((entry, idx): TaskBlockItem | null => {
             if (!entry || typeof entry !== "object") return null;
             const e = entry as Record<string, unknown>;
-            const title = String(e.title ?? "").trim().slice(0, 64);
+            const title = String(e.title ?? e.name ?? "").trim().slice(0, 64);
             if (!title) return null;
             const itemId =
               typeof e.id === "string" && e.id.trim()
                 ? e.id.trim().slice(0, 48)
                 : `${id}-t${idx + 1}`;
             const detail =
-              typeof e.detail === "string" && e.detail.trim()
-                ? e.detail.trim().slice(0, 160)
+              typeof (e.detail ?? e.description) === "string"
+                ? String(e.detail ?? e.description).trim().slice(0, 160)
                 : undefined;
             const assignee =
               typeof e.assignee === "string" && e.assignee.trim()
@@ -389,6 +561,9 @@ export function normalizeCustomPanelBlock(
               ...(detail ? { detail } : {}),
               ...(assignee ? { assignee } : {}),
               ...(due ? { due } : {}),
+              ...(textField(e.reward ?? e.bounty ?? e.prize) ? { reward: textField(e.reward ?? e.bounty ?? e.prize) } : {}),
+              ...(textField(e.badge, 24) ? { badge: textField(e.badge, 24) } : {}),
+              imageUrl: normalizePanelImageUrl(e.imageUrl),
               status,
             };
           })
@@ -398,6 +573,7 @@ export function normalizeCustomPanelBlock(
       id,
       type: "task_board",
       label,
+      variant: (["quest", "bounty", "wanted", "objective"].includes(String(b.variant)) ? b.variant : "quest") as TaskBoardVariant,
       allowQuickAdd: b.allowQuickAdd !== false,
       items,
     };
@@ -418,9 +594,9 @@ export function normalizeCustomPanelBlock(
     };
   }
 
-  if (type === "stepper") {
+  if (type === "meter_counter" || type === "stepper") {
     const label = String(b.label ?? "").trim().slice(0, 40) || "数值追踪";
-    const min = Number.isFinite(Number(b.min)) ? Math.round(Number(b.min)) : 0;
+    const min = clamp(Math.round(finiteNumber(b.min, 0)), -9999, 9998);
     const maxRaw = Number.isFinite(Number(b.max)) ? Math.round(Number(b.max)) : 10;
     const max = Math.max(min + 1, Math.min(9999, maxRaw));
     const step = Math.max(
@@ -441,7 +617,7 @@ export function normalizeCustomPanelBlock(
       : undefined;
     return {
       id,
-      type: "stepper",
+      type: "meter_counter",
       label,
       value,
       min,
@@ -449,7 +625,62 @@ export function normalizeCustomPanelBlock(
       step,
       ...(unit ? { unit } : {}),
       ...(tone ? { tone } : {}),
+      color: normalizeColor(typeof b.color === "string" ? b.color : null) ?? "#b24b37",
+      variant: (["stepper", "bar", "pips", "bipolar"].includes(String(b.variant)) ? b.variant : "stepper") as MeterCounterBlock["variant"],
     };
+  }
+
+  if (type === "image_media") {
+    return {
+      id, type, label: textField(b.label, 40) || "图片与地图",
+      layout: b.layout === "grid" || b.layout === "polaroid" ? b.layout : "hero",
+      images: childRecords(b.images, 9).flatMap((entry, index) => {
+        const url = normalizePanelImageUrl(entry.url);
+        return url ? [{
+          id: textField(entry.id, 48) || `${id}-img${index + 1}`, url,
+          caption: textField(entry.caption, 120),
+          aspect: (["16:9", "4:3", "1:1"].includes(String(entry.aspect)) ? entry.aspect : "auto") as ImageMediaBlock["images"][number]["aspect"],
+        }] : [];
+      }),
+    };
+  }
+  if (type === "dice_macro") {
+    return {
+      id, type, label: textField(b.label, 40) || "快捷检定",
+      macros: childRecords(b.macros, 12).flatMap((entry, index) => {
+        const notation = textField(entry.notation, 120);
+        return notation ? [{
+          id: textField(entry.id, 48) || `${id}-d${index + 1}`,
+          name: textField(entry.name, 40) || notation, notation,
+          visibility: (entry.visibility === "gm" || entry.visibility === "self" ? entry.visibility : "public") as "public" | "gm" | "self",
+          tone: TONES.includes(entry.tone as CustomPanelTone) ? entry.tone as CustomPanelTone : "neutral",
+        }] : [];
+      }),
+    };
+  }
+  if (type === "initiative_track") {
+    const entries: InitiativeEntry[] = childRecords(b.entries, 30).flatMap((entry, index) => {
+      const name = textField(entry.name, 48);
+      return name ? [{
+        id: textField(entry.id, 48) || `${id}-a${index + 1}`, name,
+        initiative: clamp(Math.round(finiteNumber(entry.initiative, 0)), -999, 999),
+        hpNote: textField(entry.hpNote, 40), isNpc: Boolean(entry.isNpc), acted: Boolean(entry.acted),
+      }] : [];
+    });
+    return {
+      id, type, label: textField(b.label, 40) || "先攻顺位",
+      round: clamp(Math.round(finiteNumber(b.round, 1)), 1, 9999),
+      activeIndex: clamp(Math.round(finiteNumber(b.activeIndex, 0)), 0, Math.max(0, entries.length - 1)), entries,
+    };
+  }
+  if (type === "roll_table") {
+    const entries = childRecords(b.entries, 50).flatMap((entry, index) => {
+      const text = textField(entry.text, 400);
+      return text ? [{ id: textField(entry.id, 48) || `${id}-rt${index + 1}`, text,
+        weight: clamp(Math.round(finiteNumber(entry.weight, 1)), 1, 1000), tag: textField(entry.tag, 24) }] : [];
+    });
+    return { id, type, label: textField(b.label, 40) || "随机表", entries,
+      lastRolledId: entries.some((entry) => entry.id === b.lastRolledId) ? String(b.lastRolledId) : null };
   }
 
   if (type === "kv_list") {
@@ -475,6 +706,7 @@ export function normalizeCustomPanelBlock(
       ...(heading ? { heading } : {}),
       text,
       emphasis,
+      ...(b.fontSize != null ? { fontSize: clamp(Math.round(finiteNumber(b.fontSize, 15)), 12, 28) } : {}),
     };
   }
 
@@ -581,7 +813,7 @@ export function normalizeCustomPanel(
     PANEL_MAX_HEIGHT,
   );
   const x = clamp(
-    snapValue(Number.isFinite(Number(raw.x)) ? Number(raw.x) : 860),
+    snapValue(Number.isFinite(Number(raw.x)) ? Number(raw.x) : 880),
     EDGE,
     BOARD_WIDTH - w - EDGE,
   );
@@ -590,6 +822,11 @@ export function normalizeCustomPanel(
     EDGE,
     BOARD_HEIGHT - h - EDGE,
   );
+
+  const fontSizeRaw = Number(raw.fontSize);
+  const fontSize = Number.isFinite(fontSizeRaw)
+    ? Math.max(11, Math.min(24, Math.round(fontSizeRaw)))
+    : undefined;
 
   return {
     id,
@@ -601,6 +838,7 @@ export function normalizeCustomPanel(
     blocks,
     interactiveFor,
     effect,
+    ...(fontSize ? { fontSize } : {}),
     x,
     y,
     w,
@@ -623,17 +861,28 @@ export function normalizeCustomPanels(raw: unknown): BoardCustomPanel[] {
   return result;
 }
 
-/** 纯函数状态转移：支持全部 9 类原子能力积木的直接操作。 */
+/** 随机源可注入；在线模式由服务器决定抽取结果。 */
 export function applyPanelBlockInteraction(
   panel: BoardCustomPanel,
   blockId: string,
   interaction: CustomPanelInteraction,
+  random: () => number = Math.random,
 ): BoardCustomPanel {
   const blocks = panel.blocks.map((block): CustomPanelBlock => {
     if (block.id !== blockId) return block;
 
     if (
-      (block.type === "segmented" || block.type === "select") &&
+      block.type === "event_clock" &&
+      interaction.type === "step_event_clock"
+    ) {
+      return {
+        ...block,
+        progress: clamp(block.progress + interaction.delta, 0, block.segments),
+      };
+    }
+
+    if (
+      block.type === "choice_selector" &&
       interaction.type === "set_option"
     ) {
       if (!block.options.includes(interaction.value)) return block;
@@ -680,13 +929,41 @@ export function applyPanelBlockInteraction(
       }
     }
 
-    if (block.type === "stepper" && interaction.type === "step_value") {
+    if (block.type === "meter_counter" && interaction.type === "set_value") {
+      if (!Number.isFinite(interaction.value)) return block;
+      return { ...block, value: clamp(block.min + Math.round((interaction.value - block.min) / block.step) * block.step, block.min, block.max) };
+    }
+    if (block.type === "meter_counter" && interaction.type === "step_value") {
       const nextVal = clamp(
         block.value + interaction.delta * block.step,
         block.min,
         block.max,
       );
       return { ...block, value: nextVal };
+    }
+
+    if (block.type === "initiative_track") {
+      if (interaction.type === "sort_initiative") {
+        const activeId = block.entries[block.activeIndex]?.id;
+        const entries = [...block.entries].sort((a, b) => b.initiative - a.initiative);
+        return { ...block, entries, activeIndex: Math.max(0, entries.findIndex((entry) => entry.id === activeId)) };
+      }
+      if (interaction.type === "next_initiative" && block.entries.length) {
+        const nextIndex = (block.activeIndex + 1) % block.entries.length;
+        return { ...block, activeIndex: nextIndex, round: nextIndex === 0 ? Math.min(9999, block.round + 1) : block.round,
+          entries: block.entries.map((entry, index) => ({ ...entry, acted: nextIndex === 0 ? false : index <= block.activeIndex ? true : Boolean(entry.acted) })) };
+      }
+      if (interaction.type === "import_initiative_members") {
+        const existing = new Set(block.entries.map((entry) => entry.id));
+        const imported = interaction.entries.filter((entry) => !existing.has(entry.id));
+        return normalizeCustomPanelBlock({ ...block, entries: [...block.entries, ...imported] }) ?? block;
+      }
+    }
+    if (block.type === "roll_table" && interaction.type === "roll_table" && block.entries.length) {
+      const total = block.entries.reduce((sum, entry) => sum + (entry.weight ?? 1), 0);
+      let target = clamp(random(), 0, 1 - Number.EPSILON) * total;
+      const winner = block.entries.find((entry) => { target -= entry.weight ?? 1; return target < 0; });
+      return { ...block, lastRolledId: (winner ?? block.entries[block.entries.length - 1]).id };
     }
 
     if (block.type === "resource_list") {
@@ -775,6 +1052,7 @@ export function applyPanelBlockInteraction(
         if (!title || block.items.length >= 20) return block;
         const detail = interaction.detail?.trim().slice(0, 160);
         const due = interaction.due?.trim().slice(0, 24);
+        const reward = interaction.reward?.trim().slice(0, 80);
         return {
           ...block,
           items: [
@@ -784,6 +1062,7 @@ export function applyPanelBlockInteraction(
               title,
               ...(detail ? { detail } : {}),
               ...(due ? { due } : {}),
+              ...(reward ? { reward } : {}),
               status: "open",
             },
           ],
@@ -804,15 +1083,163 @@ export function applyPanelBlockInteraction(
 }
 
 /**
- * 原内置「物资与设施 / 任务委托 / 行动检查清单」三大板块的纯原子能力拼装模板。
- * 用户或 AI 编排官可一键实例化，也可与其他原子能力（选项块、步进条、开关等）自由混搭。
+ * 初始桌面默认搭载的三大核心原子展板（成员名册、事件钟、工作记录）：
+ * 全部由对应原子能力积木组成，统一复用同一套展板编辑器与 Shader 体系。
  */
+export function createInitialCorePanels(): BoardCustomPanel[] {
+  return [
+    normalizeCustomPanel({
+      id: "core-panel-roster",
+      kind: "interactive",
+      title: "成员名册",
+      color: "#254e70",
+      interactiveFor: "gm",
+      x: 50,
+      y: 50,
+      w: 380,
+      h: 300,
+      blocks: [
+        {
+          id: "core-blk-roster",
+          type: "member_roster",
+          label: "在场成员",
+          maxItems: 4,
+          showRoleBadge: true,
+        },
+      ],
+    }),
+    normalizeCustomPanel({
+      id: "core-panel-clock",
+      kind: "interactive",
+      title: "事件钟",
+      color: "#8c4a27",
+      interactiveFor: "gm",
+      x: 460,
+      y: 50,
+      w: 380,
+      h: 280,
+      blocks: [
+        {
+          id: "core-blk-clock",
+          type: "event_clock",
+          name: "调查局势推进",
+          segments: 6,
+          progress: 0,
+          color: "#b24b37",
+          consequence: "进度填满时触发关键局势变化，由主持人裁定后果。",
+        },
+      ],
+    }),
+    normalizeCustomPanel({
+      id: "core-panel-activity",
+      kind: "interactive",
+      title: "工作记录",
+      color: "#b8862b",
+      interactiveFor: "gm",
+      x: 50,
+      y: 380,
+      w: 380,
+      h: 380,
+      blocks: [
+        {
+          id: "core-blk-activity",
+          type: "activity_feed",
+          label: "最近操作动态",
+          maxItems: 5,
+        },
+      ],
+    }),
+  ];
+}
+
 export const ATOMIC_PANEL_TEMPLATES: ReadonlyArray<{
-  id: "atomic_inventory" | "atomic_tasks" | "atomic_checklist";
+  id:
+    | "atomic_roster"
+    | "atomic_clock"
+    | "atomic_activity"
+    | "atomic_inventory"
+    | "atomic_tasks"
+    | "atomic_checklist";
   label: string;
   description: string;
   create: (coords?: { x: number; y: number }) => BoardCustomPanel;
 }> = [
+  {
+    id: "atomic_roster",
+    label: "成员名册（原子拼装）",
+    description: "由「成员名册积木 member_roster」组成，实时展示在场成员并可追加状态块",
+    create: (coords) =>
+      normalizeCustomPanel({
+        kind: "interactive",
+        title: "成员名册",
+        color: "#254e70",
+        interactiveFor: "gm",
+        x: coords?.x ?? 50,
+        y: coords?.y ?? 50,
+        w: 380,
+        h: 300,
+        blocks: [
+          {
+            id: "tpl-roster",
+            type: "member_roster",
+            label: "在场成员",
+            maxItems: 4,
+            showRoleBadge: true,
+          },
+        ],
+      }),
+  },
+  {
+    id: "atomic_clock",
+    label: "事件钟（原子拼装）",
+    description: "由「事件钟积木 event_clock」组成，支持多格推进与后果高亮",
+    create: (coords) =>
+      normalizeCustomPanel({
+        kind: "interactive",
+        title: "事件钟",
+        color: "#8c4a27",
+        interactiveFor: "gm",
+        x: coords?.x ?? 460,
+        y: coords?.y ?? 50,
+        w: 380,
+        h: 280,
+        blocks: [
+          {
+            id: "tpl-clock",
+            type: "event_clock",
+            name: "局势推进事件钟",
+            segments: 6,
+            progress: 0,
+            color: "#b24b37",
+            consequence: "进度填满时触发关键局势变化，由主持人裁定后果。",
+          },
+        ],
+      }),
+  },
+  {
+    id: "atomic_activity",
+    label: "工作记录（原子拼装）",
+    description: "由「工作记录流积木 activity_feed」组成，实时追踪房间动态",
+    create: (coords) =>
+      normalizeCustomPanel({
+        kind: "interactive",
+        title: "工作记录",
+        color: "#b8862b",
+        interactiveFor: "gm",
+        x: coords?.x ?? 50,
+        y: coords?.y ?? 380,
+        w: 380,
+        h: 380,
+        blocks: [
+          {
+            id: "tpl-activity",
+            type: "activity_feed",
+            label: "最近操作动态",
+            maxItems: 5,
+          },
+        ],
+      }),
+  },
   {
     id: "atomic_inventory",
     label: "可用物资与设施（原子拼装）",
@@ -823,7 +1250,7 @@ export const ATOMIC_PANEL_TEMPLATES: ReadonlyArray<{
         title: "可用物资与设施",
         color: "#8f2929",
         interactiveFor: "members",
-        x: coords?.x ?? 490,
+        x: coords?.x ?? 870,
         y: coords?.y ?? 50,
         w: 440,
         h: 580,
@@ -869,14 +1296,14 @@ export const ATOMIC_PANEL_TEMPLATES: ReadonlyArray<{
         title: "委托与行动报告",
         color: "#9e3329",
         interactiveFor: "members",
-        x: coords?.x ?? 950,
+        x: coords?.x ?? 870,
         y: coords?.y ?? 50,
         w: 470,
         h: 520,
         blocks: [
           {
             id: "task-priority",
-            type: "segmented",
+            type: "choice_selector",
             label: "小队当前重心",
             options: ["外围调查", "潜入取证", "正面对抗"],
             value: "外围调查",
@@ -916,10 +1343,10 @@ export const ATOMIC_PANEL_TEMPLATES: ReadonlyArray<{
         title: "行动检查清单",
         color: "#2e6b47",
         interactiveFor: "members",
-        x: coords?.x ?? 490,
-        y: coords?.y ?? 650,
+        x: coords?.x ?? 460,
+        y: coords?.y ?? 360,
         w: 440,
-        h: 460,
+        h: 440,
         blocks: [
           {
             id: "chk-ops",

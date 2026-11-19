@@ -1,15 +1,27 @@
 import { Settings } from "lucide-react";
 import {
   useEffect,
+  useRef,
   useState,
-  type CSSProperties,
 } from "react";
+import type { BoardAppearance } from "../../features/campaign/domain/boardAppearance";
+import type { BoardStyleTokens } from "../../features/campaign/domain/boardStyleTokens";
 import {
   campaignClockValue,
   campaignClockYear,
   formatClockDuration,
   type CampaignClockConfig,
 } from "../../features/campaign/domain/campaignClock";
+import {
+  clockVisualCssVars,
+  resolveClockVisual,
+  type BoardClockAppearance,
+  type ClockThemeVisual,
+} from "../../features/campaign/domain/clockAppearance";
+import {
+  blitPalaceQuartzToCanvas,
+  subscribeCardShaderClock,
+} from "../../features/shaders/cardShaderEngine";
 import { NixieDisplay } from "./NixieDisplay";
 
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -45,13 +57,28 @@ function clockDisplay(config: CampaignClockConfig, now: number) {
   };
 }
 
+/**
+ * 古代宫廷鎏金珐琅石英表盘（WebGL2 Shader 实时渲染）：
+ * 24 瓣巴洛克莲纹金框、36 颗珍珠镶边、景泰蓝十二芒星天文内芯、
+ * 象牙玑镂太阳纹刻度环、红宝石四向时标、宝玑镂空金针与弧面表镜高光。
+ */
 function QuartzDial({
   value,
   mode,
+  visual,
+  running,
+  preview,
 }: {
   value: number;
   mode: CampaignClockConfig["mode"];
+  visual: ClockThemeVisual;
+  running: boolean;
+  preview: boolean;
 }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const visibleRef = useRef(true);
+  const anglesRef = useRef({ hourRad: 0, minuteRad: 0, secondRad: 0 });
+
   const date = new Date(value);
   const seconds =
     mode === "clock" ? date.getSeconds() : date.getUTCSeconds();
@@ -61,34 +88,126 @@ function QuartzDial({
   const hours =
     ((mode === "clock" ? date.getHours() : date.getUTCHours()) % 12) +
     minutes / 60;
-  const style = {
-    "--clock-hour": `${hours * 30}deg`,
-    "--clock-minute": `${minutes * 6}deg`,
-    "--clock-second": `${seconds * 6}deg`,
-  } as CSSProperties;
+
+  const degToRad = Math.PI / 180;
+  anglesRef.current = {
+    hourRad: hours * 30 * degToRad,
+    minuteRad: minutes * 6 * degToRad,
+    secondRad: seconds * 6 * degToRad,
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const size = preview ? 160 : 144;
+    const draw = (t: number) => {
+      if (!canvasRef.current) return;
+      blitPalaceQuartzToCanvas(
+        canvasRef.current,
+        {
+          size,
+          hourRad: anglesRef.current.hourRad,
+          minuteRad: anglesRef.current.minuteRad,
+          secondRad: anglesRef.current.secondRad,
+          surfaceColorHex: visual.surfaceColor,
+          borderColorHex: visual.borderColor,
+          accentColorHex: visual.accentColor,
+          running,
+        },
+        t,
+      );
+    };
+
+    draw(performance.now() * 0.001);
+
+    let observer: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver(
+        (entries) => {
+          visibleRef.current = entries.some((entry) => entry.isIntersecting);
+        },
+        { threshold: 0.01 },
+      );
+      observer.observe(canvas);
+    }
+
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      return () => observer?.disconnect();
+    }
+
+    const unsub = subscribeCardShaderClock((elapsed) => {
+      if (visibleRef.current) draw(elapsed);
+    });
+    return () => {
+      unsub();
+      observer?.disconnect();
+    };
+  }, [
+    preview,
+    running,
+    visual.surfaceColor,
+    visual.borderColor,
+    visual.accentColor,
+  ]);
+
+  // Also redraw immediately on each 1-second tick even when global shader mode is "eco"
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    blitPalaceQuartzToCanvas(
+      canvas,
+      {
+        size: preview ? 160 : 144,
+        hourRad: anglesRef.current.hourRad,
+        minuteRad: anglesRef.current.minuteRad,
+        secondRad: anglesRef.current.secondRad,
+        surfaceColorHex: visual.surfaceColor,
+        borderColorHex: visual.borderColor,
+        accentColorHex: visual.accentColor,
+        running,
+      },
+      performance.now() * 0.001,
+    );
+  }, [
+    value,
+    mode,
+    preview,
+    running,
+    visual.surfaceColor,
+    visual.borderColor,
+    visual.accentColor,
+  ]);
+
   return (
-    <span className="quartz-dial" style={style} aria-hidden="true">
-      {Array.from({ length: 12 }, (_, index) => (
-        <i
-          key={index}
-          style={{ transform: `rotate(${index * 30}deg)` }}
-        />
-      ))}
-      <b className="quartz-hand is-hour" />
-      <b className="quartz-hand is-minute" />
-      <b className="quartz-hand is-second" />
-      <em />
+    <span className="quartz-dial is-palace-shader" aria-hidden="true">
+      <canvas
+        ref={canvasRef}
+        className="quartz-dial-canvas"
+        width={preview ? 160 : 144}
+        height={preview ? 160 : 144}
+      />
     </span>
   );
 }
 
 export function BoardClock({
   config,
+  clockAppearance,
+  boardAppearance,
+  styleTokens,
   canManage = false,
+  preview = false,
   onOpenSettings,
 }: {
   config: CampaignClockConfig;
+  clockAppearance?: BoardClockAppearance | null;
+  boardAppearance?: BoardAppearance | null;
+  styleTokens?: BoardStyleTokens | null;
   canManage?: boolean;
+  preview?: boolean;
   onOpenSettings?: () => void;
 }) {
   const [now, setNow] = useState(Date.now);
@@ -105,9 +224,7 @@ export function BoardClock({
   }, []);
 
   const display = clockDisplay(config, now);
-  const ended =
-    config.mode === "countdown" &&
-    display.value === 0;
+  const ended = config.mode === "countdown" && display.value === 0;
   const running = config.running && !ended;
   const era = `${config.era}.${String(campaignClockYear(config, now)).padStart(4, "0")}`;
   const ariaLabel = [
@@ -118,33 +235,56 @@ export function BoardClock({
     running ? "运行中" : ended ? "已结束" : "已暂停",
   ].join("，");
 
+  const visual = resolveClockVisual(
+    clockAppearance ?? styleTokens?.clockAppearance,
+    boardAppearance,
+    {
+      cardStyle: styleTokens?.cardStyle,
+      surfaceShader: styleTokens?.surfaceShader?.shader,
+    },
+  );
+
   return (
     <section
-      className="board-clock"
+      className={preview ? "board-clock is-preview" : "board-clock"}
       data-clock-style={config.style}
+      data-clock-theme={visual.id}
+      data-clock-frame={visual.frameStyle}
+      data-clock-scanlines={visual.scanlines ? "true" : undefined}
       data-clock-mode={config.mode}
       data-clock-running={running ? "true" : "false"}
+      style={clockVisualCssVars(visual)}
       aria-label={ariaLabel}
     >
-      <span className="clock-status" aria-hidden="true" />
-      {config.style === "quartz" && (
-        <QuartzDial value={display.value} mode={config.mode} />
-      )}
-      <time
-        className="clock-time"
-        dateTime={display.dateTime}
-        aria-label={display.text}
-      >
-        {config.style === "nixie" ? (
-          <NixieDisplay text={display.text} />
-        ) : (
-          display.text
+      <div className="clock-primary">
+        <span className="clock-status" aria-hidden="true" />
+        {config.style === "quartz" && (
+          <QuartzDial
+            value={display.value}
+            mode={config.mode}
+            visual={visual}
+            running={running}
+            preview={preview}
+          />
         )}
-      </time>
+        <time
+          className="clock-time"
+          dateTime={display.dateTime}
+          aria-label={display.text}
+        >
+          {config.style === "nixie" ? (
+            <NixieDisplay text={display.text} />
+          ) : (
+            display.text
+          )}
+        </time>
+      </div>
       <span className="clock-divider" aria-hidden="true" />
-      <span className="clock-calendar">{display.calendar}</span>
-      <span className="clock-zone">{era}</span>
-      {canManage && onOpenSettings && (
+      <div className="clock-meta">
+        <span className="clock-zone">{era}</span>
+        <span className="clock-calendar">{display.calendar}</span>
+      </div>
+      {!preview && canManage && onOpenSettings && (
         <button
           type="button"
           className="clock-settings-button"

@@ -5,10 +5,21 @@ import { getDieShape, faceCorrection, readDieFace } from "../../src/features/dic
 import { createModelLibrary, disposeModel } from "../../src/features/dice/trayModels.ts";
 import { createProceduralTray } from "../../src/features/dice/proceduralTray.ts";
 import { trayEdges } from "../../src/features/dice/trayPlacement.ts";
+import { buildThrow } from "../../src/features/dice/trayPhysics.ts";
+import {
+  CUSTOM_DICE_GLSL_TEMPLATES,
+  DICE_MATERIAL_PRESETS,
+  configForPreset,
+  isAnimatedDiceConfig,
+  sanitizeDiceMaterialConfig,
+  validateCustomDiceGlslSyntax,
+} from "../../src/features/dice/diceMaterialConfig.ts";
 
 const materials = new Map();
-const surfaces = { material(slot, skin, labels) {
-  const key = `${slot}:${skin}:${labels}`;
+const opaqueCalls = [];
+const surfaces = { material(slot, skin, labels, options) {
+  if (options?.opaque) opaqueCalls.push(`${slot}:${skin}`);
+  const key = `${slot}:${skin}:${labels}:${Boolean(options?.opaque)}`;
   if (!materials.has(key)) materials.set(key, new MeshStandardMaterial());
   return materials.get(key);
 } };
@@ -94,4 +105,26 @@ assert.equal(trayEdges.length, 6);
 library.dispose();
 assert.equal(disposed, true, "the owning library releases geometry at tray close");
 disposeModel(tray); materials.forEach((material) => material.dispose());
-console.log(`${checked} procedural face mappings passed; UVs, smooth normals, resource sharing, hidden models and geometry budgets passed.`);
+
+// Material & Shader Studio config, secret-die opacity guard & physics impact telemetry
+assert.ok(opaqueCalls.length >= 2, "secret dice explicitly request opaque body materials so blind rolls never leak");
+assert.ok(DICE_MATERIAL_PRESETS.length >= 10, "expanded built-in dice material presets");
+for (const preset of DICE_MATERIAL_PRESETS) {
+  const sanitized = sanitizeDiceMaterialConfig(preset.config);
+  assert.equal(sanitized.presetId, preset.id);
+  assert.ok(sanitized.transmission <= 0.92 && sanitized.roughness >= 0.04);
+}
+assert.equal(isAnimatedDiceConfig(configForPreset("jade")), false, "static PBR presets stay on-demand without idle GPU loop");
+assert.equal(isAnimatedDiceConfig(configForPreset("molten_ember")), true, "shader presets request live animation loop");
+for (const tpl of CUSTOM_DICE_GLSL_TEMPLATES) {
+  assert.equal(validateCustomDiceGlslSyntax(tpl.code).ok, true, `template ${tpl.id} passes GLSL syntax guard`);
+}
+assert.equal(validateCustomDiceGlslSyntax("while(true){}").ok, false, "while loops are rejected");
+assert.equal(validateCustomDiceGlslSyntax("#version 300 es\n").ok, false, "preprocessor directives are rejected");
+assert.equal(validateCustomDiceGlslSyntax("if (true) {").ok, false, "unbalanced braces are rejected");
+const impactShape = getDieShape(20);
+const [impactTrack] = buildThrow([{ id: "imp", sides: 20, value: 17, kept: true }], [impactShape]);
+assert.ok(Array.isArray(impactTrack.impacts) && impactTrack.impacts.length > 0, "physics simulation records bounce impacts for audio foley");
+assert.ok(impactTrack.impacts.every((imp) => imp.frame >= impactTrack.preparationFrames && imp.intensity > 0 && imp.intensity <= 1));
+
+console.log(`${checked} procedural face mappings passed; UVs, smooth normals, resource sharing, hidden models, material presets, GLSL guards and physics impact telemetry passed.`);

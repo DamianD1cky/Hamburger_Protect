@@ -6,7 +6,11 @@ import {
   type CardShaderTopology,
   type CardVisualEffect,
 } from "../campaign/domain/cardEffects.ts";
-import { ATOMIC_PANEL_TEMPLATES } from "../campaign/domain/customPanels.ts";
+import {
+  normalizeBoardClockAppearance,
+  synthesizeClockStyleFromPrompt,
+} from "../campaign/domain/clockAppearance.ts";
+import { ATOMIC_PANEL_TEMPLATES, createExtendedPanelBlock } from "../campaign/domain/customPanels.ts";
 import type { CampaignBoard } from "../campaign/domain/types.ts";
 import type { BoardHarnessBlueprint } from "./schema.ts";
 
@@ -76,17 +80,70 @@ export const HARNESS_STARTER_RECIPES: readonly HarnessStarterRecipe[] = [
           primaryColor: "#0c222d",
           secondaryColor: "#2be4dc",
         }),
+        clockAppearance: normalizeBoardClockAppearance({
+          preset: "cyber_terminal",
+          label: "赛博终端",
+        }),
       },
+      clock: { style: "digital" },
       modules: [
         { key: "inventory", visible: false },
         { key: "tasks", visible: false },
         { key: "safety", visible: false },
-        { key: "shifts", visible: true, title: "在线探员", color: "#123b4a", x: 50, y: 50, w: 350, h: 280 },
-        { key: "index", visible: true, title: "追踪倒计时", color: "#0f4c5c", x: 50, y: 350, w: 340, h: 221 },
-        { key: "activity", visible: true, title: "终端操作流", color: "#163844", x: 50, y: 600, w: 360, h: 360 },
+        { key: "shifts", visible: false },
+        { key: "index", visible: false },
+        { key: "activity", visible: false },
       ],
       customPanelsMode: "replace",
       customPanels: [
+        {
+          id: "holo-core-team",
+          kind: "interactive",
+          title: "在线探员与追踪钟",
+          color: "#123b4a",
+          interactiveFor: "gm",
+          blocks: [
+            {
+              id: "hc-roster",
+              type: "member_roster",
+              label: "在线探员名册",
+              maxItems: 4,
+              showRoleBadge: true,
+            },
+            {
+              id: "hc-clock",
+              type: "event_clock",
+              name: "信标信号衰减",
+              segments: 6,
+              progress: 2,
+              color: "#2be4dc",
+              consequence: "信号彻底归零，空间站进入盲区。",
+            },
+          ],
+          x: 40,
+          y: 40,
+          w: 380,
+          h: 490,
+        },
+        {
+          id: "holo-core-log",
+          kind: "interactive",
+          title: "终端工作记录",
+          color: "#163844",
+          interactiveFor: "gm",
+          blocks: [
+            {
+              id: "hc-feed",
+              type: "activity_feed",
+              label: "最近操作流",
+              maxItems: 5,
+            },
+          ],
+          x: 40,
+          y: 560,
+          w: 380,
+          h: 360,
+        },
         {
           id: "holo-ops-panel",
           kind: "interactive",
@@ -96,7 +153,8 @@ export const HARNESS_STARTER_RECIPES: readonly HarnessStarterRecipe[] = [
           blocks: [
             {
               id: "ho-seg",
-              type: "segmented",
+              type: "choice_selector",
+              display: "segmented",
               label: "全息信道频段",
               options: ["静默接收", "加密中继", "超载广播"],
               value: "加密中继",
@@ -204,25 +262,18 @@ export const HARNESS_STARTER_RECIPES: readonly HarnessStarterRecipe[] = [
         { key: "inventory", visible: false },
         { key: "tasks", visible: false },
         { key: "safety", visible: false },
+        { key: "shifts", visible: false },
+        { key: "index", visible: false },
+        { key: "activity", visible: false },
+      ],
+      customPanelsMode: "replace",
+      customPanels: [
         {
-          key: "shifts",
-          visible: true,
-          title: "在场救援小队",
-          color: "#4a251d",
-          x: 40,
-          y: 40,
-          w: 350,
-          h: 280,
-        },
-        {
-          key: "index",
-          visible: true,
-          title: "熔炉失控事件钟",
-          color: "#8f2419",
-          x: 40,
-          y: 340,
-          w: 340,
-          h: 221,
+          id: "furnace-core-command",
+          kind: "interactive",
+          title: "在场小队与熔炉事件钟",
+          color: "#6b2219",
+          interactiveFor: "gm",
           effect: {
             shader: "burnt",
             topology: "corner",
@@ -233,20 +284,48 @@ export const HARNESS_STARTER_RECIPES: readonly HarnessStarterRecipe[] = [
             noiseAmount: 0.45,
             seed: 9,
           },
+          blocks: [
+            {
+              id: "fc-roster",
+              type: "member_roster",
+              label: "在场救援小队",
+              maxItems: 3,
+              showRoleBadge: true,
+            },
+            {
+              id: "fc-clock",
+              type: "event_clock",
+              name: "主熔炉压力过载",
+              segments: 6,
+              progress: 3,
+              color: "#d9481c",
+              consequence: "核心安全阀崩裂，下层通道被高温蒸汽吞没。",
+            },
+          ],
+          x: 40,
+          y: 40,
+          w: 380,
+          h: 500,
         },
         {
-          key: "activity",
-          visible: true,
-          title: "现场抢险记录",
+          id: "furnace-core-log",
+          kind: "interactive",
+          title: "现场工作记录",
           color: "#6e381d",
+          interactiveFor: "gm",
+          blocks: [
+            {
+              id: "fc-feed",
+              type: "activity_feed",
+              label: "抢险操作动态",
+              maxItems: 5,
+            },
+          ],
           x: 40,
-          y: 590,
-          w: 360,
+          y: 570,
+          w: 380,
           h: 360,
         },
-      ],
-      customPanelsMode: "replace",
-      customPanels: [
         {
           id: "furnace-atomic-tasks",
           kind: "interactive",
@@ -334,15 +413,6 @@ export const HARNESS_STARTER_RECIPES: readonly HarnessStarterRecipe[] = [
       noteLinks: [
         { from: "burn_n1", to: "burn_n2", label: "起火原因追查" },
       ],
-      eventClocks: [
-        {
-          name: "主熔炉压力过载",
-          segments: 6,
-          progress: 3,
-          consequence: "核心安全阀崩裂，下层通道被高温蒸汽吞没。",
-          color: "#d9481c",
-        },
-      ],
     }),
   },
   {
@@ -352,23 +422,26 @@ export const HARNESS_STARTER_RECIPES: readonly HarnessStarterRecipe[] = [
     promptHint:
       "保留成员名册、事件钟和行动记录，并用原子积木拼装出物资清单面板、委托任务看板与带分类标签的检查清单面板",
     build: () => {
-      const inv = ATOMIC_PANEL_TEMPLATES[0].create({ x: 470, y: 40 });
-      const tasks = ATOMIC_PANEL_TEMPLATES[1].create({ x: 940, y: 40 });
-      const chk = ATOMIC_PANEL_TEMPLATES[2].create({ x: 940, y: 590 });
+      const roster = ATOMIC_PANEL_TEMPLATES[0].create({ x: 40, y: 40 });
+      const clock = ATOMIC_PANEL_TEMPLATES[1].create({ x: 40, y: 370 });
+      const activity = ATOMIC_PANEL_TEMPLATES[2].create({ x: 40, y: 680 });
+      const inv = ATOMIC_PANEL_TEMPLATES[3].create({ x: 450, y: 40 });
+      const tasks = ATOMIC_PANEL_TEMPLATES[4].create({ x: 920, y: 40 });
+      const chk = ATOMIC_PANEL_TEMPLATES[5].create({ x: 920, y: 590 });
       return {
-        summary: "原子能力拼装套件（物资 + 委托 + 检查清单）",
+        summary: "12 大原子能力全套展示板（名册+事件钟+记录+物资+委托+检查单）",
         assistantReply:
-          "已保留初始三大核心板块（成员名册、事件钟、行动记录），并由新增原子能力 `resource_list`、`task_board` 与带分类标签 `checkbox_group` 拼装出三块可直接点击操作的业务展板。",
+          "已由 12 类原子能力积木（`member_roster`、`event_clock`、`activity_feed`、`resource_list`、`task_board`、`checkbox_group` 等）拼装出全套展示板块，点击任意板块的编辑按钮均进入同一套 Apple HIG 编辑检查器。",
         modules: [
           { key: "inventory", visible: false },
           { key: "tasks", visible: false },
           { key: "safety", visible: false },
-          { key: "shifts", visible: true, x: 50, y: 40, w: 380, h: 290 },
-          { key: "index", visible: true, x: 50, y: 350, w: 340, h: 221 },
-          { key: "activity", visible: true, x: 50, y: 600, w: 390, h: 380 },
+          { key: "shifts", visible: false },
+          { key: "index", visible: false },
+          { key: "activity", visible: false },
         ],
         customPanelsMode: "replace",
-        customPanels: [inv, tasks, chk],
+        customPanels: [roster, clock, activity, inv, tasks, chk],
       };
     },
   },
@@ -377,22 +450,28 @@ export const HARNESS_STARTER_RECIPES: readonly HarnessStarterRecipe[] = [
     label: "一键规整防重叠排版",
     tagline: "保持三大核心板块与所有原子展板零碰撞对齐",
     promptHint: "帮我把当前可见的核心板块和所有原子展板重新整齐排列，消除重叠",
-    build: (board) => {
-      const hidden = new Set(board.settings.hiddenSections);
+    build: () => {
       return {
-        summary: "规整核心板块与原子展板布局",
+        summary: "规整所有原子展示板块布局",
         assistantReply:
-          "已将可见的核心板块（成员名册、事件钟、行动记录）与原子展板按栅格重新对齐，确保零重叠。",
+          "已将桌面上所有展示板块按栅格重新对齐，确保零重叠。",
         modules: [
           { key: "inventory", visible: false },
           { key: "tasks", visible: false },
           { key: "safety", visible: false },
-          { key: "shifts", visible: !hidden.has("shifts"), x: 50, y: 50, w: 360, h: 290 },
-          { key: "index", visible: !hidden.has("index"), x: 440, y: 50, w: 340, h: 221 },
-          { key: "activity", visible: !hidden.has("activity"), x: 50, y: 370, w: 395, h: 380 },
+          { key: "shifts", visible: false },
+          { key: "index", visible: false },
+          { key: "activity", visible: false },
         ],
       };
     },
+  },
+  {
+    id: "tavern-wanted",
+    label: "酒馆通缉悬赏与调查板",
+    tagline: "通缉、检定、声望与传闻",
+    promptHint: "创建酒馆通缉悬赏调查板，带肖像、快捷检定、势力声望和随机传闻表",
+    build: (board) => synthesizeOfflineBlueprint("创建酒馆通缉悬赏调查板，带肖像、快捷检定、势力声望和随机传闻表", board),
   },
 ];
 
@@ -516,6 +595,8 @@ export function synthesizeOfflineBlueprint(
   const targetsSurface = /背景|板面|底板|桌面|surface/i.test(text);
   const targetsFrame = /边框|外框|木框|画框|frame|border/i.test(text);
 
+  const wantsClockStyle =
+    /(?:时钟|表盘|计时器|辉光管|怀表|钟表)/.test(text) && !/事件钟/.test(text);
   const detectedCardOrNoteEffect = inferRequestedCardOrNoteEffect(
     text,
     targetsNote,
@@ -523,30 +604,45 @@ export function synthesizeOfflineBlueprint(
   const detectedAmbient =
     targetsSurface || targetsFrame ? inferRequestedAmbientShader(text) : null;
 
-  const targetCoreModules: Array<"shifts" | "index" | "activity"> = [];
-  if (/成员|名册|调查员|小队/.test(text)) targetCoreModules.push("shifts");
-  if (/事件钟|倒计时|进度钟/.test(text)) targetCoreModules.push("index");
-  if (/记录|日志/.test(text)) targetCoreModules.push("activity");
-
+  const wantsRosterBlock = /成员|名册|调查员|小队/.test(text);
+  const wantsClockBlock = /事件钟|倒计时|进度钟/.test(text);
+  const wantsActivityBlock = /工作记录|行动记录|日志/.test(text);
   const wantsResourceBlock = /物资|装备|背包|道具|补给|库存/.test(text);
-  const wantsTaskBlock = /任务|委托|悬赏|行动报告/.test(text);
+  const wantsTaskBlock = /任务|委托|悬赏|通缉|赏金|告示|雇佣|抓捕|追捕|讨伐|目标|支线|主线|契约|行动报告/.test(text);
+  const wantsWanted = /通缉|抓捕|追捕/.test(text);
+  const wantsBounty = /赏金|悬赏|雇佣|契约|揭榜/.test(text);
+  const wantsImage = /地图|平面图|图片|照片|立绘|肖像|头像/.test(text);
+  const wantsDice = /检定|骰子宏|骰子公式|快捷.*骰|侦查.*按钮/.test(text);
+  const wantsInitiative = /先攻|顺位|战斗顺序|轮次|回合轨/.test(text);
+  const wantsRollTable = /随机表|遭遇表|传闻|疯狂症状/.test(text);
+  const wantsMeter = /血条|\bhp\b|\bsan\b|生命|理智|压力格|法术位|声望|好感度|警报等级|计数/.test(text);
   const wantsChecklistBlock = /检查|核对|清单|勾选/.test(text);
   const wantsControlBlock =
     /选项块|分段|下拉框|下拉|开关|计数器|步进|交互面板|控制台|控制面板|(?:新建|新增|创建|添加|加一[块个张]|做一[块个张]).*(?:面板|展板|板块)/.test(
       text,
     );
   const wantsAnyAtomicPanel =
+    wantsImage || wantsDice || wantsInitiative || wantsRollTable || wantsMeter ||
     wantsResourceBlock ||
     wantsTaskBlock ||
     wantsChecklistBlock ||
-    wantsControlBlock;
+    wantsControlBlock ||
+    (wantsControlBlock && (wantsRosterBlock || wantsClockBlock || wantsActivityBlock));
+
+  const targetedExistingPanels = board.settings.customPanels.filter((p) => {
+    if (wantsRosterBlock && p.blocks.some((b) => b.type === "member_roster")) return true;
+    if (wantsClockBlock && p.blocks.some((b) => b.type === "event_clock")) return true;
+    if (wantsActivityBlock && p.blocks.some((b) => b.type === "activity_feed")) return true;
+    return false;
+  });
 
   if (
     !wantsAnyAtomicPanel &&
     !detectedCardOrNoteEffect &&
     !detectedAmbient &&
     !targetsNote &&
-    !targetCoreModules.length
+    !wantsClockStyle &&
+    !targetedExistingPanels.length
   ) {
     if (/全息|赛博/.test(text)) {
       return HARNESS_STARTER_RECIPES[0].build(board);
@@ -571,17 +667,29 @@ export function synthesizeOfflineBlueprint(
     }
   }
 
+  const clockResult = wantsClockStyle
+    ? synthesizeClockStyleFromPrompt(text)
+    : null;
+  if (clockResult) {
+    nextTokens.clockAppearance = clockResult.appearance;
+    touchedTokens = true;
+  }
+
   const blueprint: BoardHarnessBlueprint = {
     summary:
-      targetsSurface || targetsFrame
+      clockResult
+        ? `AI 定制时钟样式：${clockResult.appearance.label || "定制时钟"}`
+        : targetsSurface || targetsFrame
         ? "AI 修改公告板背景/边框与便签着色器"
         : targetsNote
           ? "AI 修改便签材质与 WebGL2 着色器"
           : detectedCardOrNoteEffect
             ? "应用 WebGL2 卡片燃烧着色器"
             : "由原子能力拼装交互展板",
-    assistantReply:
-      "已按你的指令生成 WebGL2 着色器与样式预览，确认应用后将同步写入房间。",
+    assistantReply: clockResult
+      ? `${clockResult.reply} 确认应用后将同步给房间内所有成员，并已自动收入你的个人资产库。`
+      : "已按你的指令生成 WebGL2 着色器与样式预览，确认应用后将同步写入房间。",
+    ...(clockResult ? { clock: { style: clockResult.recommendedDial } } : {}),
   };
 
   if (targetsNote && detectedCardOrNoteEffect) {
@@ -627,10 +735,9 @@ export function synthesizeOfflineBlueprint(
       ];
     }
   } else if (detectedCardOrNoteEffect && !targetsSurface && !targetsFrame) {
-    if (targetCoreModules.length > 0) {
-      blueprint.modules = targetCoreModules.map((key) => ({
-        key,
-        visible: true,
+    if (targetedExistingPanels.length > 0) {
+      blueprint.customPanels = targetedExistingPanels.map((p) => ({
+        ...p,
         effect: detectedCardOrNoteEffect,
       }));
     } else if (!wantsAnyAtomicPanel) {
@@ -648,25 +755,28 @@ export function synthesizeOfflineBlueprint(
       NonNullable<BoardHarnessBlueprint["customPanels"]>[number]["blocks"]
     > = [];
 
-    if (wantsControlBlock) {
+    if (wantsControlBlock && (/选项块|分段|下拉|控制台|控制面板/.test(text) || (!wantsTaskBlock && !wantsImage && !wantsDice && !wantsInitiative && !wantsRollTable && !wantsMeter))) {
       assembledBlocks.push(
         {
           id: "ctrl-seg",
-          type: "segmented",
+          type: "choice_selector",
+          display: "segmented",
           label: "行动阶段选项",
           options: ["筹备侦查", "潜入执行", "正面交锋", "紧急撤离"],
           value: "潜入执行",
         },
         {
           id: "ctrl-sel",
-          type: "select",
+          type: "choice_selector",
+          display: "dropdown",
           label: "当前场景环境",
           options: ["标准能见度", "浓雾受限", "暴雨干扰", "高危封锁区"],
           value: "标准能见度",
         },
         {
           id: "ctrl-step",
-          type: "stepper",
+          type: "meter_counter",
+          variant: "stepper",
           label: "团队应急资源池",
           value: 5,
           min: 0,
@@ -678,20 +788,41 @@ export function synthesizeOfflineBlueprint(
       );
     }
 
+    if (wantsImage) assembledBlocks.push(createExtendedPanelBlock("image_media", "atom-media"));
+    if (wantsDice) assembledBlocks.push(createExtendedPanelBlock("dice_macro", "atom-dice"));
+    if (wantsInitiative) assembledBlocks.push(createExtendedPanelBlock("initiative_track", "atom-initiative"));
+    if (wantsRollTable) assembledBlocks.push(createExtendedPanelBlock("roll_table", "atom-random"));
+    if (wantsMeter) {
+      const variant = /声望|好感度/.test(text) ? "bipolar" : /压力格|法术位/.test(text) ? "pips" : /血条|生命|理智|\bhp\b|\bsan\b/.test(text) ? "bar" : "stepper";
+      const labels = /生命/.test(text) && /理智/.test(text) ? ["生命", "理智"] : [variant === "bipolar" ? "势力声望" : /理智|\bsan\b/.test(text) ? "理智" : /压力/.test(text) ? "压力" : "生命"];
+      labels.forEach((label, index) => assembledBlocks.push({
+        id: `atom-meter-${index}`, type: "meter_counter", label, variant,
+        value: variant === "bipolar" ? 0 : label === "理智" ? 50 : 6,
+        min: variant === "bipolar" ? -3 : 0, max: variant === "bipolar" ? 3 : label === "理智" ? 80 : 12,
+        step: 1, color: label === "理智" ? "#326e87" : "#b24b37",
+      }));
+    }
+    if (wantsRosterBlock && !wantsMeter) assembledBlocks.push({ id: "atom-roster", type: "member_roster", label: "在场成员", maxItems: 4, showRoleBadge: true });
+    if (wantsClockBlock) assembledBlocks.push({ id: "atom-clock", type: "event_clock", name: "警戒推进", segments: 6, progress: 0, color: "#b24b37", consequence: "守卫封锁现场" });
+    if (wantsActivityBlock) assembledBlocks.push({ id: "atom-activity", type: "activity_feed", label: "行动记录", maxItems: 5 });
     if (wantsTaskBlock) {
       assembledBlocks.push({
         id: "atom-tasks",
         type: "task_board",
-        label: "委托与行动任务",
+        label: wantsWanted ? "港口通缉令" : wantsBounty ? "酒馆悬赏榜" : "委托与行动任务",
+        variant: wantsWanted ? "wanted" : wantsBounty ? "bounty" : /调查目标/.test(text) ? "objective" : "quest",
         allowQuickAdd: true,
         items: [
           {
             id: "at-1",
-            title: "查明现场异常源头并带回物证",
-            detail: "完成后点击左侧按钮流转状态。",
+            title: wantsWanted ? "黑帆走私头目" : "查明现场异常源头并带回物证",
+            detail: wantsWanted ? "最后出现在北码头四号仓库，要求活捉。" : "走访夜班守卫并核对进港记录。",
+            reward: "500 金币",
+            badge: wantsWanted ? "活捉" : "主线",
             due: "优先委托",
             status: "open",
           },
+          { id: "at-2", title: "寻找失踪的钟表师", detail: "收集旧灯塔附近的目击线索。", reward: "200 金币", badge: "秘密", status: "open" },
         ],
       });
     }
@@ -727,7 +858,7 @@ export function synthesizeOfflineBlueprint(
       {
         kind: "interactive",
         title: wantsTaskBlock && !wantsResourceBlock
-          ? "委托与行动看板"
+          ? wantsWanted ? "港口通缉悬赏榜" : "委托与行动看板"
           : wantsResourceBlock && !wantsTaskBlock
             ? "可用物资与补给"
             : "战术原子组合展板",

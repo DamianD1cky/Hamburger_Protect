@@ -141,6 +141,7 @@ export interface BoardActivity {
     job_title?: string;
     character_name?: string;
     actor_name?: string;
+    text?: string;
   };
   createdAt: string;
 }
@@ -249,6 +250,12 @@ export interface NoteDraft {
   rotation?: number;
   scale?: number;
   effect?: CardVisualEffect | null;
+  x?: number;
+  y?: number;
+  fontSize?: number;
+  pinned?: boolean;
+  /** 编辑开始时的原始可编辑字段，用于同便签并发检查。 */
+  expected?: Record<string, unknown>;
 }
 
 export type ComposerTarget =

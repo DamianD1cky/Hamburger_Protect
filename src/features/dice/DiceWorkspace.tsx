@@ -1,4 +1,4 @@
-import { Dice5, RotateCcw, BookmarkPlus, Users, Trash2, Volume2, X, Plus, History, SlidersHorizontal, Eye, Ellipsis, ListChecks, Check } from "lucide-react";
+import { Dice5, RotateCcw, BookmarkPlus, Users, Trash2, Volume2, X, Plus, History, SlidersHorizontal, Eye, Ellipsis, ListChecks, Check, Sparkles } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { CampaignBoard } from "../campaign/domain/types";
 import { backend } from "../../lib/backend";
@@ -7,6 +7,15 @@ import { DiceFanMenu, type DiceFanAction } from "./DiceFanMenu";
 import { DicePopover, dicePopoverAnchor, type DicePopoverAnchor } from "./DicePopover";
 import { DiceResult } from "./DiceResult";
 import { DiceMembers } from "./DiceMembers";
+import { DiceMaterialStudio } from "./DiceMaterialStudio";
+import { Dock3DIcon } from "../../components/board/Dock3DIcon";
+import {
+  DICE_MATERIAL_PRESETS,
+  configForPreset,
+  sanitizeDiceMaterialConfig,
+  type DiceMaterialConfig,
+} from "./diceMaterialConfig";
+import { playDiceReleaseCue } from "./diceAudio";
 import { useDiceSocial } from "./useDiceSocial";
 import type { TrayDie } from "./trayModels";
 import type { DiceSelection, DiceSceneHandle } from "./DiceScene";
@@ -20,6 +29,7 @@ import {
   revealDice, saveDicePreset,
 } from "./repository";
 import { diceVisibilityLabels, type DiceRoll, type DiceVisibility, type RollInput } from "./types";
+import { BOARD_DICE_MACRO_EVENT, type BoardDiceMacroRequest } from "./boardMacro";
 const DiceScene = lazy(() => import("./DiceScene").then((m) => ({ default: m.DiceScene })));
 const errorMessage = (error: unknown) => {
   const text = error instanceof Error ? error.message : "操作失败，请重试。";
@@ -32,21 +42,13 @@ const errorMessage = (error: unknown) => {
   };
   return messages[text] ?? text;
 };
-function playSound() {
-  try {
-    const audio = new AudioContext();
-    const oscillator = audio.createOscillator();
-    const gain = audio.createGain();
-    oscillator.type = "triangle"; oscillator.frequency.setValueAtTime(350, audio.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(120, audio.currentTime + 0.09);
-    gain.gain.setValueAtTime(0.07, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.12);
-    oscillator.connect(gain); gain.connect(audio.destination);
-    oscillator.start(); oscillator.stop(audio.currentTime + 0.14);
-    oscillator.onended = () => void audio.close();
-  } catch { /* Audio is optional; never block a result. */ }
-}
 const preferenceKey = "hp-dice-presentation";
+interface DicePresentationPreferences {
+  three?: boolean;
+  sound?: boolean;
+  skin?: string;
+  material?: DiceMaterialConfig;
+}
 export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"roll" | "checks">("roll");
@@ -61,7 +63,8 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   const [reserved, setReserved] = useState(false);
   const rollInFlight = useRef(false);
   const [rolling, setRolling] = useState(false);
-  const [panel, setPanel] = useState<"settings" | "history" | "checks" | null>(null);
+  const [panel, setPanel] = useState<"settings" | "history" | "checks" | "material" | null>(null);
+  const [shaderStatus, setShaderStatus] = useState<{ ok: boolean; error?: string }>({ ok: true });
   const [panelAnchor, setPanelAnchor] = useState<DicePopoverAnchor | null>(null);
   const [panelFromSelection, setPanelFromSelection] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -89,10 +92,24 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   const [checkTitle, setCheckTitle] = useState("");
   const [targets, setTargets] = useState<string[]>(() =>
     board.members.filter((m) => m.active && m.role === "player").map((m) => m.userId));
-  const [preferences, setPreferences] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(preferenceKey) ?? "{}") as { three?: boolean; sound?: boolean; skin?: string }; }
+  const [preferences, setPreferences] = useState<DicePresentationPreferences>(() => {
+    try { return JSON.parse(localStorage.getItem(preferenceKey) ?? "{}") as DicePresentationPreferences; }
     catch { return {}; }
   });
+  const materialConfig = sanitizeDiceMaterialConfig(preferences.material, preferences.skin ?? "jade");
+  const updateMaterial = (next: DiceMaterialConfig) => {
+    setPreferences((current) => ({ ...current, skin: next.presetId, material: next }));
+  };
+  useEffect(() => {
+    const onExternalApply = () => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(preferenceKey) ?? "{}") as DicePresentationPreferences;
+        setPreferences(parsed);
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("vb:dice-material-applied", onExternalApply);
+    return () => window.removeEventListener("vb:dice-material-applied", onExternalApply);
+  }, []);
   const pending = useRef<PreparedRoll | null>(null);
   const pendingLaunch = useRef<ThrowLaunch | undefined>(undefined);
   const noticeTimer = useRef(0);
@@ -107,11 +124,11 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
     setNotice(roll);
     clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setNotice(null), 4500);
-    if (preferences.sound && roll.result) playSound();
+    if (preferences.sound && roll.result) playDiceReleaseCue(materialConfig.acousticProfile);
   });
   function showRoll(roll: DiceRoll, replacing?: string[], launch?: ThrowLaunch) {
     setLast(roll);
-    if (preferences.sound && roll.result) playSound();
+    if (preferences.sound && roll.result && reducedMotion) playDiceReleaseCue(materialConfig.acousticProfile);
     setThrowLaunch(launch ?? null);
     setWaitingIds(replacing ?? []);
     setTrayDice((current) => replaceTrayDice(current, replacing,
@@ -199,6 +216,21 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   };
   const castTray = (selected?: TrayDie[], launch?: ThrowLaunch) =>
     submitRoll(trayInput(selected), (selected ?? trayDice).map((die) => die.id), launch);
+  useEffect(() => {
+    const onMacro = (event: Event) => {
+      const request = (event as CustomEvent<BoardDiceMacroRequest>).detail;
+      if (!request || request.campaignId !== board.campaign.id || !active) return;
+      setOpen(true);
+      if (busy || rolling || reserved || rollInFlight.current) {
+        setError("请先完成当前投掷。"); return;
+      }
+      setNotation(request.macro.notation); setLabel(request.macro.name);
+      setVisibility(request.macro.visibility ?? "public");
+      void submitRoll({ notation: request.macro.notation, label: request.macro.name, visibility: request.macro.visibility ?? "public" });
+    };
+    window.addEventListener(BOARD_DICE_MACRO_EVENT, onMacro);
+    return () => window.removeEventListener(BOARD_DICE_MACRO_EVENT, onMacro);
+  });
   const prepareTray = async (ids: string[]): Promise<TrayDie[] | null> => {
     if (!active) return null;
     const selected = trayDice.filter((die) => ids.includes(die.id));
@@ -332,9 +364,11 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
   ] : [];
 
   return <>
-    <button type="button" className="board-tool-button dice-launcher" aria-label={awaiting ? `打开骰盘，${awaiting} 项待检定` : "打开骰盘"}
-      title="骰盘" onClick={() => setOpen(true)}>
-      <Dice5 aria-hidden="true" />{awaiting > 0 && <span className="board-tool-badge">{awaiting}</span>}
+    <button type="button" className="board-tool-button dice-launcher macos-dock-item is-dice" aria-label={awaiting ? `打开骰盘，${awaiting} 项待检定` : "打开骰盘"}
+      title="3D 骰盘" onClick={() => setOpen(true)}>
+      <Dock3DIcon kind="dice" fallback={<Dice5 />} />
+      <span className="macos-dock-label">骰盘</span>
+      {awaiting > 0 && <span className="macos-dock-badge is-alert">{awaiting}</span>}
     </button>
     {!open && notice && <button className="dice-notice" type="button" onClick={() => setOpen(true)} aria-live="polite">
       <Dice5 aria-hidden="true" />
@@ -350,6 +384,8 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
             disabled={busy || rolling || reserved} onClick={() => {
               setSelectionMode(!selectionMode); setPanel(null); setAddOpen(false); setToolsAnchor(null);
             }}>{selectionMode ? <Check /> : <ListChecks />}<b>{selectionMode ? "完成" : "多选"}</b></button>
+          <button type="button" aria-label="材质与 Shader 工坊" title="材质与 Shader" aria-pressed={panel === "material"}
+            onClick={(event) => changePanel("material", false, event.currentTarget)}><Sparkles /></button>
           <button type="button" aria-label="骰盘更多操作" title="更多" aria-expanded={!!toolsAnchor} onClick={(event) => {
             setToolsAnchor(toolsAnchor ? null : dicePopoverAnchor(event.currentTarget)); setPanel(null); setAddOpen(false);
           }}><Ellipsis />{awaiting > 0 && <span>{awaiting}</span>}</button>
@@ -360,6 +396,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
       {toolsAnchor && <DicePopover anchor={toolsAnchor} title="骰盘" label="骰盘更多操作" compact onClose={() => setToolsAnchor(null)}>
         <div className="dice-tools-menu">
           <button type="button" disabled={busy || rolling || reserved || !active} onClick={(event) => openAdd(event.currentTarget, false)}><Plus size={18} />添加骰子</button>
+          <button type="button" onClick={(event) => changePanel("material", false, event.currentTarget)}><Sparkles size={18} />材质与 Shader</button>
           <button type="button" disabled={reserved} onClick={(event) => changePanel("settings", false, event.currentTarget)}><SlidersHorizontal size={18} />公式与预设</button>
           <button type="button" onClick={(event) => changePanel("history", false, event.currentTarget)}><History size={18} />投掷记录</button>
           <button type="button" onClick={(event) => changePanel("checks", false, event.currentTarget)}><Users size={18} />全员检定</button>
@@ -375,14 +412,16 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
       </DicePopover>}
       <div className="dice-stage" data-panel-open={panel !== null} data-selection-mode={selectionMode}>
         <Suspense fallback={<p className="dice-stage-loading">正在展开骰盘…</p>}>
-          <DiceScene ref={scene} dice={trayDice} skin={preferences.skin ?? "jade"}
+          <DiceScene ref={scene} dice={trayDice} skin={materialConfig.presetId}
+            materialConfig={materialConfig} soundEnabled={!!preferences.sound}
             throwId={throwId} throwLaunch={throwLaunch} selection={selection} selectionMode={selectionMode}
             disabled={busy || panel !== null || addOpen || !!toolsAnchor}
             canThrow={active && !selectedLocked && (!pending.current || !!pending.current.ids?.length)} reducedMotion={reducedMotion}
             waiting={casting} waitingIds={waitingIds}
             onPrepare={prepareTray}
             onThrow={(ids, launch) => castTray(trayDice.filter((die) => ids.includes(die.id)), launch)}
-            onSelect={selectDice} onRolling={setRolling} />
+            onSelect={selectDice} onRolling={setRolling}
+            onShaderStatus={setShaderStatus} />
         </Suspense>
         {selectedDice.length > 0 && selection && !selectionMode && !selection.dragging && !casting && !rolling && !panel && !addOpen && !toolsAnchor && <DiceFanMenu key={selection.ids.join("|")}
           selection={selection} label={selectedDie ? `d${selectedDie.sides}` : `${selectedDice.length} 颗`} actions={fanActions}
@@ -408,9 +447,19 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
       </footer>
       {!panel && !addOpen && error && <p className="dice-stage-error dice-error" role="alert">{error}</p>}
       {panel && panelAnchor && <DicePopover key={`${panel}:${panelFromSelection}`} anchor={panelAnchor}
-        title={selectionPanel ? `选中 ${selectedDice.length} 颗` : panel === "history" ? "投掷记录" : panel === "checks" ? "全员检定" : "公式与预设"}
-        label={selectionPanel ? "选中骰子设置面板" : panel === "history" ? "投掷记录面板" : panel === "checks" ? "检定面板" : "公式设置面板"}
+        title={selectionPanel ? `选中 ${selectedDice.length} 颗` : panel === "material" ? "材质与 Shader 工坊" : panel === "history" ? "投掷记录" : panel === "checks" ? "全员检定" : "公式与预设"}
+        label={selectionPanel ? "选中骰子设置面板" : panel === "material" ? "骰子材质与 Shader 工坊" : panel === "history" ? "投掷记录面板" : panel === "checks" ? "检定面板" : "公式设置面板"}
         onClose={() => setPanel(null)} onBack={panelFromSelection ? () => setPanel(null) : undefined}>
+      {panel === "material" ? (
+        <DiceMaterialStudio
+          config={materialConfig}
+          ownerId={board.viewer.id}
+          soundEnabled={!!preferences.sound}
+          shaderStatus={shaderStatus}
+          onChange={updateMaterial}
+          onToggleSound={(sound) => setPreferences((current) => ({ ...current, sound }))}
+        />
+      ) : (
       <div className="dice-layout" data-popover-panel={panel}>
         <section className="dice-controls">
           {selectionPanel ? <form className="dice-selection-settings" onSubmit={(event) => {
@@ -522,9 +571,10 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
           {!active && <p className="dice-empty">战役已归档，投掷记录只读</p>}
           <div className="dice-preferences">
             <label><input type="checkbox" checked={!!preferences.sound} onChange={(e) => setPreferences({ ...preferences, sound: e.target.checked })} /><Volume2 size={14} />声音</label>
-            <select aria-label="骰子皮肤" value={preferences.skin ?? "jade"} onChange={(e) => setPreferences({ ...preferences, skin: e.target.value })}>
-              <option value="jade">青玉</option>
-              <option value="ivory">象牙</option><option value="obsidian">黑曜石</option><option value="neon">霓虹</option>
+            <select aria-label="骰子皮肤" value={materialConfig.presetId} onChange={(e) => updateMaterial(configForPreset(e.target.value))}>
+              {DICE_MATERIAL_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.name}</option>
+              ))}
             </select>
           </div>
           {backend === "local" && <p className="dice-empty">本地演示 · 结果仅保存在此浏览器</p>}
@@ -565,6 +615,7 @@ export function DiceWorkspace({ board }: { board: CampaignBoard }) {
           })}>更早记录</button>}
         </section>
       </div>
+      )}
       </DicePopover>}
     </DiceLayer>}
   </>;

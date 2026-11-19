@@ -7,6 +7,10 @@ import { createSurfaceLibrary } from "./surfaceMaterials";
 import { createProceduralTray } from "./proceduralTray";
 import { createPhysicsClient } from "./physicsClient";
 import type { ReplayTrack } from "./physicsProtocol";
+import {
+  diceMaterialSignature, isAnimatedDiceConfig, type DiceMaterialConfig,
+} from "./diceMaterialConfig";
+import { playDiceImpactSound } from "./diceAudio";
 import { expandDiceSelection, matchThrowDice } from "./traySelection";
 import { createSelectionGlow } from "./selectionGlow";
 import { HeldReplay, type HeldCandidate } from "./heldReplay";
@@ -19,6 +23,8 @@ interface Props {
   ref?: Ref<DiceSceneHandle>;
   dice: TrayDie[];
   skin: string;
+  materialConfig?: DiceMaterialConfig;
+  soundEnabled?: boolean;
   throwId: string | null;
   throwLaunch: ThrowLaunch | null;
   selection: DiceSelection | null;
@@ -32,6 +38,7 @@ interface Props {
   onRolling: (rolling: boolean) => void;
   onThrow: (ids: string[], launch: ThrowLaunch) => Promise<boolean>;
   onPrepare: (ids: string[]) => Promise<TrayDie[] | null>;
+  onShaderStatus?: (status: { ok: boolean; error?: string }) => void;
 }
 interface SceneController extends DiceSceneHandle {
   update: (props: Props) => void;
@@ -80,7 +87,11 @@ export function DiceScene(props: Props) {
     scene.add(light, new T.HemisphereLight(0xdce7ef, 0x40372b, 2));
     const rimLight = new T.DirectionalLight(0xb1cbe7, 1.7);
     rimLight.position.set(4, 5, -4); scene.add(rimLight);
-    const surfaces = createSurfaceLibrary();
+    const surfaces = createSurfaceLibrary(renderer.getContext());
+    if (latest.current.materialConfig) {
+      const status = surfaces.setConfig(latest.current.materialConfig);
+      latest.current.onShaderStatus?.(status);
+    }
     const modelLibrary = createModelLibrary(surfaces);
     const tray = createProceduralTray(surfaces, latest.current.skin);
     playfield.add(tray);
@@ -89,8 +100,12 @@ export function DiceScene(props: Props) {
     const models = new Map<string, ReturnType<typeof modelLibrary.create>>();
     let currentDice: TrayDie[] = [];
     let currentSkin = "";
+    let currentMaterialSig = "";
     let previousThrow: string | null = null;
     let tracks: ReplayTrack[] = [];
+    let impactCursors: number[] = [];
+    const scratchPos = new T.Vector3();
+    const scratchQuat = new T.Quaternion();
     const physics = createPhysicsClient();
     let simulationRevision = 0;
     let preparing = false;
@@ -191,9 +206,12 @@ export function DiceScene(props: Props) {
       const selected = latest.current.selection;
       if (selected && !gesture?.dragging && !awaitingThrow && !waiting && !preparing && !rolling) latest.current.onSelect(projectSelection(selected.ids));
     };
+    const shouldAnimateShader = () =>
+      Boolean(latest.current.materialConfig && isAnimatedDiceConfig(latest.current.materialConfig) && !latest.current.reducedMotion && !document.hidden);
     const render = (now = performance.now()) => {
       if (stopped) return;
       container.dataset.frameTime = String(now);
+      surfaces.setTime(now * 0.001);
       if (hand?.preparation.candidate) {
         let ready = hand.preparation.candidate !== null && hand.targets.size === hand.ids.length;
         const delta = Math.min(.05, Math.max(0, (now - hand.lastFrame) / 1000));
@@ -218,16 +236,31 @@ export function DiceScene(props: Props) {
       if (rolling) {
         const index = latest.current.reducedMotion ? Infinity : replayOffset + Math.max(0, (now - startTime) / 1000 * 120);
         let done = true;
-        for (const track of tracks) {
+        for (let trackIdx = 0; trackIdx < tracks.length; trackIdx++) {
+          const track = tracks[trackIdx];
           const model = models.get(track.die.id);
           if (!model) continue;
           const last = track.samples.length / 7 - 1;
           const sample = Math.min(index, last), a = Math.floor(sample) * 7, b = Math.min(Math.floor(sample) + 1, last) * 7;
           const alpha = sample - Math.floor(sample);
           model.group.position.fromArray(track.samples, a)
-            .lerp(new T.Vector3().fromArray(track.samples, b), alpha);
+            .lerp(scratchPos.fromArray(track.samples, b), alpha);
           model.group.quaternion.fromArray(track.samples, a + 3)
-            .slerp(new T.Quaternion().fromArray(track.samples, b + 3), alpha).normalize();
+            .slerp(scratchQuat.fromArray(track.samples, b + 3), alpha).normalize();
+          // Trigger physics-synced material impact foley as replay crosses bounce frames
+          if (latest.current.soundEnabled && !latest.current.reducedMotion && track.impacts?.length) {
+            let cursor = impactCursors[trackIdx] ?? 0;
+            while (cursor < track.impacts.length && track.impacts[cursor].frame <= sample) {
+              const impact = track.impacts[cursor];
+              playDiceImpactSound(
+                impact.kind,
+                impact.intensity,
+                latest.current.materialConfig?.acousticProfile ?? "stone",
+              );
+              cursor++;
+            }
+            impactCursors[trackIdx] = cursor;
+          }
           if (index < last) done = false;
         }
         container.dataset.phase = tracks.some((track) => index < track.preparationFrames) ? "preparing" : "replay";
@@ -239,13 +272,16 @@ export function DiceScene(props: Props) {
           rolling = false;
           container.dataset.rolling = "false"; container.dataset.phase = "idle";
           tracks = [];
+          impactCursors = [];
           syncTargets(); latest.current.onRolling(false);
         }
       }
       if (rolling) syncTargets();
       if (!rolling && !waiting && !preparing && selectedBodies.length) glow?.render();
       else renderer.render(scene, camera);
-      if (rolling || (hand?.preparation.candidate && !hand.ready && !hand.error)) frame = requestAnimationFrame(render);
+      if (rolling || (hand?.preparation.candidate && !hand.ready && !hand.error) || shouldAnimateShader()) {
+        frame = requestAnimationFrame(render);
+      }
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(render); };
     const discardHand = () => {
@@ -271,6 +307,12 @@ export function DiceScene(props: Props) {
         discardHand();
         tracks = result; preparing = false; rolling = true;
         replayOffset = skipPreparation ? result[0]?.preparationFrames ?? 0 : 0;
+        impactCursors = result.map((track) => {
+          if (!track.impacts?.length) return 0;
+          let cursor = 0;
+          while (cursor < track.impacts.length && track.impacts[cursor].frame < replayOffset) cursor++;
+          return cursor;
+        });
         startTime = performance.now();
         container.dataset.rolling = "true";
         schedule();
@@ -310,6 +352,7 @@ export function DiceScene(props: Props) {
       if (!width || !height) return;
       const ratio = Math.min(devicePixelRatio, width < 600 ? 1.5 : 2);
       renderer.setSize(Math.round(width * ratio), Math.round(height * ratio), false);
+      renderer.transmissionResolutionScale = width < 680 ? 0.5 : 0.75;
       renderer.domElement.style.width = `${width}px`; renderer.domElement.style.height = `${height}px`;
       glow?.resize(renderer.domElement.width, renderer.domElement.height);
       camera.aspect = width / height;
@@ -610,10 +653,17 @@ export function DiceScene(props: Props) {
             models.delete(oldId); models.set(die.id, model); model.group.userData.dieId = die.id;
           }
         }
-        const changed = currentDice !== next.dice || currentSkin !== next.skin;
+        const nextMaterialSig = next.materialConfig ? diceMaterialSignature(next.materialConfig) : "";
+        const materialChanged = currentMaterialSig !== nextMaterialSig;
+        if (materialChanged) {
+          currentMaterialSig = nextMaterialSig;
+          const status = surfaces.setConfig(next.materialConfig ?? null);
+          next.onShaderStatus?.(status);
+        }
+        const changed = currentDice !== next.dice || currentSkin !== next.skin || materialChanged;
         if (changed) {
           const previousPoses = new Map([...models].map(([id, model]) => [id, poseOf(model)]));
-          const skinChanged = currentSkin !== next.skin;
+          const skinChanged = currentSkin !== next.skin || materialChanged;
           currentDice = next.dice; currentSkin = next.skin;
           for (const [id, model] of models) {
             if (!currentDice.some((die) => die.id === id)) {
@@ -691,6 +741,7 @@ export function DiceScene(props: Props) {
         renderer.domElement.removeEventListener("lostpointercapture", onPointerCancel);
         window.removeEventListener("keydown", onKeyDown, true);
         window.removeEventListener("blur", onPointerCancel);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
         observer.disconnect(); clearModels(); disposeModel(tray);
         modelLibrary.dispose(); surfaces.dispose();
         glow?.dispose();
@@ -704,8 +755,12 @@ export function DiceScene(props: Props) {
     renderer.domElement.addEventListener("pointerup", onPointerUp);
     renderer.domElement.addEventListener("pointercancel", onPointerCancel);
     renderer.domElement.addEventListener("lostpointercapture", onPointerCancel);
+    const onVisibilityChange = () => {
+      if (!document.hidden && shouldAnimateShader()) schedule();
+    };
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("blur", onPointerCancel);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     const observer = new ResizeObserver(resize);
     observer.observe(container);
     resize();
@@ -717,7 +772,7 @@ export function DiceScene(props: Props) {
   // Synchronize newly mounted pick targets before paint, including when
   // reduced motion lets the next interaction happen without an animation.
   useLayoutEffect(() => { controller.current?.update(props); }, [
-    props.dice, props.skin, props.throwId, props.selection?.ids, props.reducedMotion,
+    props.dice, props.skin, props.materialConfig, props.soundEnabled, props.throwId, props.selection?.ids, props.reducedMotion,
     props.throwLaunch, props.waiting, props.waitingIds, props.selectionMode,
   ]);
   return <div className="dice-scene dice-tray-scene" ref={host} aria-label="3D 骰盘">

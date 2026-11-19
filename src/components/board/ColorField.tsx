@@ -5,14 +5,10 @@ import {
   rgbToHex,
 } from "../../features/campaign/domain/campaignSettings";
 
-export interface ColorPresetOption {
-  value: string;
-  label: string;
-}
-
 /**
- * 全站统一取色控件（模块标题、事件钟、自由展板、便签纸张底色、图钉颜色共用）：
- * 支持原生取色盘、#rrggbb / rgb(r,g,b) 文本输入、R/G/B 0-255 数值微调以及可选预设快捷色点。
+ * 全站统一取色控件（模块标题、事件钟、自由展板、房间底色、便签底色、图钉颜色共用）：
+ * - 原生圆形取色盘 + #rrggbb / rgb() 输入框 + R / G / B 三通道纯文本数字输入（无上下微调箭头）；
+ * - 遵循 Apple HIG 清晰与一致性原则，全站所有颜色入口外观与交互完全统一。
  */
 export function ColorField({
   label,
@@ -20,125 +16,125 @@ export function ColorField({
   onChange,
   disabled,
   accessibleLabel = label,
-  presets,
 }: {
   label: string;
   value: string;
   onChange: (color: string) => void;
   disabled?: boolean;
   accessibleLabel?: string;
-  presets?: readonly ColorPresetOption[];
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const hex = normalizeColor(value) ?? "#e8d786";
-  const [r, g, b] = hexToRgb(hex);
+  const [hexDraft, setHexDraft] = useState<string | null>(null);
+  const [rgbDraft, setRgbDraft] = useState<{
+    index: 0 | 1 | 2;
+    text: string;
+  } | null>(null);
 
-  const updateChannel = (index: 0 | 1 | 2, rawVal: string) => {
-    const n = Math.max(0, Math.min(255, Math.round(Number(rawVal) || 0)));
-    const next: [number, number, number] = [r, g, b];
-    next[index] = n;
-    setDraft(null);
+  const hex = normalizeColor(value) ?? "#e8d786";
+  const rgb = hexToRgb(hex);
+
+  const handleChannelChange = (index: 0 | 1 | 2, raw: string) => {
+    const digitsOnly = raw.replace(/\D/g, "").slice(0, 3);
+    setRgbDraft({ index, text: digitsOnly });
+    if (digitsOnly === "") return;
+    const clamped = Math.max(0, Math.min(255, Number.parseInt(digitsOnly, 10)));
+    const next: [number, number, number] = [rgb[0], rgb[1], rgb[2]];
+    next[index] = clamped;
+    setHexDraft(null);
     onChange(rgbToHex(next[0], next[1], next[2]));
   };
+
+  const commitChannelBlur = (index: 0 | 1 | 2) => {
+    if (rgbDraft && rgbDraft.index === index && rgbDraft.text === "") {
+      const next: [number, number, number] = [rgb[0], rgb[1], rgb[2]];
+      next[index] = 0;
+      onChange(rgbToHex(next[0], next[1], next[2]));
+    }
+    setRgbDraft(null);
+  };
+
+  const channelValue = (index: 0 | 1 | 2) =>
+    rgbDraft?.index === index ? rgbDraft.text : String(rgb[index]);
 
   return (
     <div className="module-color-field unified-color-field">
       <div className="unified-color-head">
         <span>{label}</span>
-        {presets && presets.length > 0 && (
-          <span className="unified-color-presets" role="group" aria-label={`${accessibleLabel}快捷预设`}>
-            {presets.map((p) => {
-              const pHex = normalizeColor(p.value) ?? p.value;
-              const isCurrent = pHex.toLowerCase() === hex.toLowerCase();
-              return (
-                <button
-                  type="button"
-                  key={p.value}
-                  disabled={disabled}
-                  title={`${p.label} (${pHex})`}
-                  aria-label={`设为${p.label}`}
-                  aria-pressed={isCurrent}
-                  className={isCurrent ? "color-preset-dot is-active" : "color-preset-dot"}
-                  style={{ background: pHex }}
-                  onClick={() => {
-                    setDraft(null);
-                    onChange(pHex);
-                  }}
-                />
-              );
-            })}
-          </span>
-        )}
       </div>
 
-      <span className="color-inputs unified-color-inputs">
-        <input
-          type="color"
-          className="sign-color-input"
-          value={hex}
-          disabled={disabled}
-          aria-label={`${accessibleLabel}的取色器`}
-          onChange={(event) => {
-            onChange(event.target.value.toLowerCase());
-            setDraft(null);
-          }}
-        />
+      <div className="color-inputs unified-color-inputs">
+        <label className="color-well-wrap" title={`选择${accessibleLabel}`}>
+          <input
+            type="color"
+            className="sign-color-input"
+            value={hex}
+            disabled={disabled}
+            aria-label={`${accessibleLabel}的取色器`}
+            onChange={(event) => {
+              onChange(event.target.value.toLowerCase());
+              setHexDraft(null);
+              setRgbDraft(null);
+            }}
+          />
+          <span
+            className="color-well-swatch"
+            style={{ background: hex }}
+            aria-hidden="true"
+          />
+        </label>
+
         <input
           type="text"
           className="color-hex-input"
-          value={draft ?? hex}
+          value={hexDraft ?? hex}
           maxLength={22}
           spellCheck={false}
           autoComplete="off"
           disabled={disabled}
-          placeholder="#rrggbb 或 rgb()"
+          placeholder="#rrggbb"
           aria-label={`${accessibleLabel}的十六进制色号`}
           onChange={(event) => {
-            setDraft(event.target.value);
+            setHexDraft(event.target.value);
             const normalized = normalizeColor(event.target.value);
-            if (normalized) onChange(normalized);
+            if (normalized) {
+              setRgbDraft(null);
+              onChange(normalized);
+            }
           }}
-          onBlur={() => setDraft(null)}
+          onBlur={() => setHexDraft(null)}
         />
-        <span className="color-rgb-triplet" aria-label={`${accessibleLabel} RGB 数值`}>
-          <label title="Red (0-255)">
-            <i>R</i>
-            <input
-              type="number"
-              min={0}
-              max={255}
-              disabled={disabled}
-              aria-label={`${accessibleLabel} R`}
-              value={r}
-              onChange={(e) => updateChannel(0, e.target.value)}
-            />
-          </label>
-          <label title="Green (0-255)">
-            <i>G</i>
-            <input
-              type="number"
-              min={0}
-              max={255}
-              disabled={disabled}
-              aria-label={`${accessibleLabel} G`}
-              value={g}
-              onChange={(e) => updateChannel(1, e.target.value)}
-            />
-          </label>
-          <label title="Blue (0-255)">
-            <i>B</i>
-            <input
-              type="number"
-              min={0}
-              max={255}
-              disabled={disabled}
-              aria-label={`${accessibleLabel} B`}
-              value={b}
-              onChange={(e) => updateChannel(2, e.target.value)}
-            />
-          </label>
-        </span>
-      </span>
+
+        <div
+          className="color-rgb-triplet"
+          role="group"
+          aria-label={`${accessibleLabel} RGB 数值`}
+        >
+          {(
+            [
+              [0, "R", "Red (0-255)"],
+              [1, "G", "Green (0-255)"],
+              [2, "B", "Blue (0-255)"],
+            ] as const
+          ).map(([idx, tag, title]) => (
+            <label key={tag} title={title}>
+              <i>{tag}</i>
+              <input
+                type="text"
+                className="rgb-channel-input"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={3}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={disabled}
+                aria-label={`${accessibleLabel} ${tag}`}
+                value={channelValue(idx)}
+                onChange={(e) => handleChannelChange(idx, e.target.value)}
+                onBlur={() => commitChannelBlur(idx)}
+              />
+            </label>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
