@@ -289,7 +289,7 @@ export function CardEffectPicker({
       </div>
 
       {active && (
-        <div className="shader-lab-panel">
+        <div className="shader-lab-panel" data-preview={showPreview ? "true" : "false"}>
           {showPreview && <div className="shader-lab-preview-stage">
             <div className="shader-lab-card-wrap">
               <canvas
