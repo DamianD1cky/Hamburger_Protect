@@ -28,7 +28,6 @@ import {
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { PaperDialog } from "../composer/PaperDialog";
 import { BoardSectionHeader } from "./BoardSectionPrimitives";
-import { CardEffectPicker } from "./CardEffectLayer";
 import { ColorField } from "./ColorField";
 
 /**
@@ -237,15 +236,6 @@ export function SectionSettingsDialog({
               )}
             </section>
 
-            {isBoardModule && onSaveModuleEffect && (
-              <section className="hig-editor-group">
-                <CardEffectPicker
-                  value={cardEffect}
-                  disabled={!editable || busy || contentBusy}
-                  onChange={setCardEffect}
-                />
-              </section>
-            )}
           </fieldset>
 
           {error && (

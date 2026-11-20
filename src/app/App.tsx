@@ -846,9 +846,33 @@ function CampaignBoardWorkspace({
       const { receipt } = await campaign.applyBoardBlueprint(
         stagedBlueprint.commitPayload,
       );
+      let previousDiceMaterial: BoardUndoSnapshot["previousDiceMaterial"] = null;
+      if (stagedBlueprint.diceMaterial) {
+        try {
+          const diceKey = "hp-dice-presentation";
+          const current = JSON.parse(localStorage.getItem(diceKey) ?? "{}") as {
+            skin?: string;
+            sound?: boolean;
+            material?: BoardUndoSnapshot["previousDiceMaterial"];
+          };
+          previousDiceMaterial = current.material ?? null;
+          localStorage.setItem(
+            diceKey,
+            JSON.stringify({
+              ...current,
+              skin: stagedBlueprint.diceMaterial.presetId,
+              material: stagedBlueprint.diceMaterial,
+            }),
+          );
+          window.dispatchEvent(new CustomEvent("vb:dice-material-applied"));
+        } catch {
+          // Ignore local storage errors gracefully.
+        }
+      }
       setLastUndo({
         summary: stagedBlueprint.summary,
         settings: stagedBlueprint.preApplySettings,
+        previousDiceMaterial,
         ...receipt,
       });
       setStagedBlueprint(null);
@@ -867,6 +891,23 @@ function CampaignBoardWorkspace({
     setApplyingBlueprint(true);
     try {
       await campaign.rollbackBoardBlueprint(lastUndo);
+      if (lastUndo.previousDiceMaterial) {
+        try {
+          const diceKey = "hp-dice-presentation";
+          const current = JSON.parse(localStorage.getItem(diceKey) ?? "{}");
+          localStorage.setItem(
+            diceKey,
+            JSON.stringify({
+              ...current,
+              skin: lastUndo.previousDiceMaterial.presetId,
+              material: lastUndo.previousDiceMaterial,
+            }),
+          );
+          window.dispatchEvent(new CustomEvent("vb:dice-material-applied"));
+        } catch {
+          // ignore
+        }
+      }
       setLastUndo(null);
       showToast("已撤销上一次 AI 编排");
     } catch (error) {

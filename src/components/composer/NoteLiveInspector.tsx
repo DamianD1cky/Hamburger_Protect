@@ -2,12 +2,10 @@ import { ArrowDown, ArrowUp, Image as ImageIcon, List, Palette, Pin, RotateCcw, 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { resolveNoteColorHex, resolvePinColorVisual } from "../../features/campaign/domain/campaignSettings";
-import { defaultCardVisualEffect } from "../../features/campaign/domain/cardEffects";
 import type { BoardNote, CampaignBoard } from "../../features/campaign/domain/types";
 import type { useLiveNoteEditor } from "../../hooks/useLiveNoteEditor";
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { blobToFile, compressImage } from "../../lib/imageCompress";
-import { CardEffectPicker } from "../board/CardEffectLayer";
 import { ColorField } from "../board/ColorField";
 
 export function NoteLiveInspector({ editor, board, onLayer }: {
@@ -119,8 +117,6 @@ export function NoteLiveInspector({ editor, board, onLayer }: {
           <div className="note-inspector-presets">{[-15, 0, 15].map((rotation) => <button type="button" key={rotation} onClick={() => patch({ rotation })}>{rotation > 0 ? "+" : ""}{rotation}°</button>)}</div>
           <label className="field"><span>缩放 <button type="button" onClick={() => patch({ scale: 1 })}>{Math.round((note.scale ?? 1) * 100)}%</button></span>
             <input type="range" aria-label="便签缩放" min={60} max={220} step={5} value={Math.round((note.scale ?? 1) * 100)} onChange={(event) => patch({ scale: Number(event.target.value) / 100 })} /></label>
-          <CardEffectPicker mode="note" showPreview={false} value={note.effect ?? defaultCardVisualEffect()} basePreviewHex={resolveNoteColorHex(note.color)}
-            onChange={(effect) => patch({ effect })} onRecommendColors={(color, pinColor) => patch({ color, pinColor })} />
         </>}
         {tab === "all" && <div className="note-inspector-directory">{board.notes.filter((entry) => entry.id !== "__draft_new__").map((entry) =>
           <button type="button" key={entry.id} disabled={!isGm && entry.authorId !== board.viewer.id} aria-current={entry.id === note.id ? "true" : undefined}

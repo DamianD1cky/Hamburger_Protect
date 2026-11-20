@@ -11,8 +11,16 @@ import {
   synthesizeClockStyleFromPrompt,
 } from "../campaign/domain/clockAppearance.ts";
 import { ATOMIC_PANEL_TEMPLATES, createExtendedPanelBlock } from "../campaign/domain/customPanels.ts";
+import {
+  configForPreset,
+  type DiceMaterialConfig,
+} from "../dice/diceMaterialConfig.ts";
 import type { CampaignBoard } from "../campaign/domain/types.ts";
-import type { BoardHarnessBlueprint } from "./schema.ts";
+import type {
+  AccountAssetContextItem,
+  BoardHarnessBlueprint,
+  HarnessArchiveEntrySpec,
+} from "./schema.ts";
 
 export interface HarnessStarterRecipe {
   id: string;
@@ -585,9 +593,89 @@ function inferRequestedAmbientShader(text: string): BoardAmbientShader | null {
   return null;
 }
 
+function inferRequestedDiceMaterial(text: string): Partial<DiceMaterialConfig> | null {
+  if (!/(?:骰子|骰盘|水晶骰|熔岩骰|星云骰|液态骰|全息骰|奥术骰|金属骰|锻铜骰|黑曜石骰|青玉骰|象牙骰|霓虹骰)/.test(text)) {
+    return null;
+  }
+  if (/检定|骰子宏|快捷.*骰/.test(text) && !/材质|皮肤|shader|着色|水晶|熔岩|星云|液态|全息|奥术|金属|锻铜|颜色|外观/.test(text)) {
+    return null;
+  }
+  const hexMatch = text.match(/#[0-9a-f]{6}/i)?.[0];
+  let presetId = "jade";
+  if (/熔岩|余烬|火焰|火山/.test(text)) presetId = "molten_ember";
+  else if (/星云|星空|流沙|银河|宇宙/.test(text)) presetId = "nebula_core";
+  else if (/水晶|玻璃|透明|折射|冰晶/.test(text)) presetId = "crystal";
+  else if (/液态|秘境|星核|漩涡/.test(text)) presetId = "liquid_core";
+  else if (/极光|全息|虹彩|棱镜/.test(text)) presetId = "holo_prism";
+  else if (/奥术|符文|魔法/.test(text)) presetId = "arcane_rune";
+  else if (/鎏金|锻铜|金属|黄金|青铜/.test(text)) presetId = "gilded_metal";
+  else if (/黑曜|暗黑/.test(text)) presetId = "obsidian";
+  else if (/霓虹|赛博/.test(text)) presetId = "neon";
+  else if (/象牙|骨/.test(text)) presetId = "ivory";
+
+  const base = configForPreset(presetId);
+  return {
+    ...base,
+    ...(hexMatch ? { accentColor: hexMatch.toLowerCase() } : {}),
+  };
+}
+
+function inferRequestedArchiveEntries(prompt: string, text: string): HarnessArchiveEntrySpec[] {
+  if (!/(?:档案盒|归档|卷宗|剪报|报纸新闻|人物档案|物证档案|机密档案)/.test(text)) {
+    return [];
+  }
+  const isSecret = /机密|仅\s*gm|kp\s*备忘|真相|幕后|暗线|未公开/i.test(text);
+  const visibility = isSecret ? "gm_only" : "public";
+  const category = /新闻|剪报|报纸/.test(text)
+    ? "news"
+    : /人物|npc|角色档案|嫌疑人|目击者/.test(text)
+      ? "character"
+      : /物证|证据|化验|证物/.test(text)
+        ? "evidence"
+        : "clue";
+  const shortTitle = prompt
+    .replace(/^(?:请|帮我|给我|把|在)?(?:档案盒|卷宗)?(?:里|中)?(?:新增|新建|添加|加入|写入|归档|生成)?(?:一份|一条|一篇)?/, "")
+    .trim()
+    .slice(0, 32);
+  const title =
+    shortTitle.length >= 3
+      ? shortTitle
+      : category === "news"
+        ? "《灰雾港晚报》号外剪报"
+        : category === "character"
+          ? "新归档关键人物档案"
+          : category === "evidence"
+            ? "新封存现场物证档案"
+            : "新归档调查线索笔录";
+
+  return [
+    {
+      category,
+      title,
+      subtitle:
+        category === "news"
+          ? "《灰雾港晚报》 · 特别报道"
+          : category === "character"
+            ? "关键 NPC · 身份待核实"
+            : category === "evidence"
+              ? "证物编号 #E-NEW · 已封存"
+              : "线索笔录 · 现场归档",
+      dateLabel: "当前调查日",
+      summary: isSecret
+        ? "【仅 GM 可见】此卷宗含幕后线索，请由主持人按剧情节奏决定公开时机。"
+        : "由 AI 帷幕编排官按你的指令整理归档，可在档案盒中继续细化或翻页阅览。",
+      body: `根据指令「${prompt.trim().slice(0, 120)}」生成的归档卷宗正文。\n\n你可以在档案盒内直接编辑详细笔录、补充图片或调整阅读字号。`,
+      tags: [category === "news" ? "剪报" : category === "character" ? "人物" : category === "evidence" ? "物证" : "线索", ...(isSecret ? ["机密"] : [])],
+      visibility,
+      pinned: false,
+    },
+  ];
+}
+
 export function synthesizeOfflineBlueprint(
   prompt: string,
   board: CampaignBoard,
+  options?: { accountAssets?: readonly AccountAssetContextItem[] },
 ): BoardHarnessBlueprint {
   const text = prompt.trim().toLowerCase();
 
@@ -597,6 +685,20 @@ export function synthesizeOfflineBlueprint(
 
   const wantsClockStyle =
     /(?:时钟|表盘|计时器|辉光管|怀表|钟表)/.test(text) && !/事件钟/.test(text);
+  const requestedDiceMaterial = inferRequestedDiceMaterial(text);
+  const requestedArchiveEntries = inferRequestedArchiveEntries(prompt, text);
+  const recalledAssets =
+    options?.accountAssets?.filter((asset) => {
+      const name = asset.name.toLowerCase();
+      return (
+        (/资产库|复用|套用|上次保存|之前保存/.test(text) &&
+          (text.includes(name) ||
+            (asset.kind === "clock_style" && /时钟/.test(text)) ||
+            (asset.kind === "dice_material" && /骰子/.test(text)) ||
+            (asset.kind === "ambient_shader" && /背景|板面|边框/.test(text)))) ||
+        (name.length >= 3 && text.includes(name))
+      );
+    }) ?? [];
   const detectedCardOrNoteEffect = inferRequestedCardOrNoteEffect(
     text,
     targetsNote,
@@ -608,11 +710,13 @@ export function synthesizeOfflineBlueprint(
   const wantsClockBlock = /事件钟|倒计时|进度钟/.test(text);
   const wantsActivityBlock = /工作记录|行动记录|日志/.test(text);
   const wantsResourceBlock = /物资|装备|背包|道具|补给|库存/.test(text);
-  const wantsTaskBlock = /任务|委托|悬赏|通缉|赏金|告示|雇佣|抓捕|追捕|讨伐|目标|支线|主线|契约|行动报告/.test(text);
+  const wantsTaskBlock =
+    !requestedArchiveEntries.length &&
+    /任务|委托|悬赏|通缉|赏金|告示|雇佣|抓捕|追捕|讨伐|目标|支线|主线|契约|行动报告/.test(text);
   const wantsWanted = /通缉|抓捕|追捕/.test(text);
   const wantsBounty = /赏金|悬赏|雇佣|契约|揭榜/.test(text);
-  const wantsImage = /地图|平面图|图片|照片|立绘|肖像|头像/.test(text);
-  const wantsDice = /检定|骰子宏|骰子公式|快捷.*骰|侦查.*按钮/.test(text);
+  const wantsImage = !requestedArchiveEntries.length && /地图|平面图|图片|照片|立绘|肖像|头像/.test(text);
+  const wantsDice = !requestedDiceMaterial && /检定|骰子宏|骰子公式|快捷.*骰|侦查.*按钮/.test(text);
   const wantsInitiative = /先攻|顺位|战斗顺序|轮次|回合轨/.test(text);
   const wantsRollTable = /随机表|遭遇表|传闻|疯狂症状/.test(text);
   const wantsMeter = /血条|\bhp\b|\bsan\b|生命|理智|压力格|法术位|声望|好感度|警报等级|计数/.test(text);
@@ -642,6 +746,9 @@ export function synthesizeOfflineBlueprint(
     !detectedAmbient &&
     !targetsNote &&
     !wantsClockStyle &&
+    !requestedDiceMaterial &&
+    !requestedArchiveEntries.length &&
+    !recalledAssets.length &&
     !targetedExistingPanels.length
   ) {
     if (/全息|赛博/.test(text)) {
@@ -677,19 +784,39 @@ export function synthesizeOfflineBlueprint(
 
   const blueprint: BoardHarnessBlueprint = {
     summary:
-      clockResult
-        ? `AI 定制时钟样式：${clockResult.appearance.label || "定制时钟"}`
-        : targetsSurface || targetsFrame
-        ? "AI 修改公告板背景/边框与便签着色器"
-        : targetsNote
-          ? "AI 修改便签材质与 WebGL2 着色器"
-          : detectedCardOrNoteEffect
-            ? "应用 WebGL2 卡片燃烧着色器"
-            : "由原子能力拼装交互展板",
-    assistantReply: clockResult
-      ? `${clockResult.reply} 确认应用后将同步给房间内所有成员，并已自动收入你的个人资产库。`
-      : "已按你的指令生成 WebGL2 着色器与样式预览，确认应用后将同步写入房间。",
+      recalledAssets.length > 0
+        ? `召回个人资产：${recalledAssets.map((a) => a.name).join("、")}`
+        : requestedArchiveEntries.length > 0
+          ? `AI 归档档案盒卷宗：${requestedArchiveEntries[0].title}`
+          : requestedDiceMaterial
+            ? `AI 定制 3D 骰子材质（${requestedDiceMaterial.presetId}）`
+            : clockResult
+              ? `AI 定制时钟样式：${clockResult.appearance.label || "定制时钟"}`
+              : targetsSurface || targetsFrame
+                ? "AI 修改公告板背景/边框与便签着色器"
+                : targetsNote
+                  ? "AI 修改便签材质与 WebGL2 着色器"
+                  : detectedCardOrNoteEffect
+                    ? "应用 WebGL2 卡片燃烧着色器"
+                    : "由原子能力拼装交互展板",
+    assistantReply:
+      recalledAssets.length > 0
+        ? `已从你的个人资产库召回「${recalledAssets.map((a) => a.name).join("、")}」并生成实时预览。`
+        : requestedArchiveEntries.length > 0
+          ? `已生成「${requestedArchiveEntries[0].title}」归档卷宗（${requestedArchiveEntries[0].visibility === "gm_only" ? "仅 GM 机密" : "对玩家公开"}），确认应用后可在底部档案盒中翻页查看。`
+          : requestedDiceMaterial
+            ? `已为你配制 3D 骰子材质与着色器方案（${requestedDiceMaterial.presetId}），确认应用后打开骰盘即生效并自动收入个人资产库。`
+            : clockResult
+              ? `${clockResult.reply} 确认应用后将同步给房间内所有成员，并已自动收入你的个人资产库。`
+              : "已按你的指令生成 WebGL2 着色器与样式预览，确认应用后将同步写入房间。",
     ...(clockResult ? { clock: { style: clockResult.recommendedDial } } : {}),
+    ...(requestedArchiveEntries.length > 0
+      ? { archiveEntriesMode: "merge" as const, archiveEntries: requestedArchiveEntries }
+      : {}),
+    ...(requestedDiceMaterial ? { diceMaterial: requestedDiceMaterial } : {}),
+    ...(recalledAssets.length > 0
+      ? { recallAssetIds: recalledAssets.slice(0, 4).map((a) => a.id) }
+      : {}),
   };
 
   if (targetsNote && detectedCardOrNoteEffect) {

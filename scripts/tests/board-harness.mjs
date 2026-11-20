@@ -680,3 +680,83 @@ test("PostgreSQL apply_board_blueprint, module resize preservation and surgical 
     await db.close();
   }
 });
+
+test("Harness L2 verification, lean context, TRPG spoiler guardrails, archive, dice material and asset recall", () => {
+  const board = cloneDefaultBoard();
+  board.settings.styleTokens.archiveEntries = [
+    {
+      id: "arch-existing",
+      category: "clue",
+      title: "旧灯塔日志",
+      subtitle: "编号 #C-01",
+      dateLabel: "1926-11-10",
+      summary: "摘要",
+      body: "超长档案正文".repeat(200),
+      tags: ["灯塔"],
+      imageUrl: null,
+      fontSize: 15,
+      visibility: "public",
+      pinned: false,
+      createdAt: "2026-11-19T00:00:00.000Z",
+      updatedAt: "2026-11-19T00:00:00.000Z",
+    },
+  ];
+  const mockAssets = [
+    {
+      id: "asset-clock-1",
+      ownerId: "gm-1",
+      kind: "clock_style",
+      name: "赛博紫霓虹钟",
+      description: "测试资产",
+      source: "ai",
+      previewColors: ["#140b24", "#e879f9"],
+      payload: {
+        kind: "clock_style",
+        clockStyle: "digital",
+        clockAppearance: { preset: "custom", label: "赛博紫霓虹钟", surfaceColor: "#140b24", accentColor: "#e879f9", scanlines: true },
+      },
+      favorite: true,
+      fingerprint: "fp-1",
+      createdAt: "2026-11-19T00:00:00.000Z",
+      updatedAt: "2026-11-19T00:00:00.000Z",
+    },
+  ];
+
+  // 1. Lean Map-not-Manual context never dumps full archive bodies
+  const ctx = captureBoardContext(board, { accountAssets: mockAssets, currentDiceMaterial: { presetId: "crystal", shaderPreset: "none" } });
+  assert.ok(!JSON.stringify(ctx).includes("超长档案正文"), "captureBoardContext strips long archive bodies");
+  assert.equal(ctx.archiveIndex.length, 1);
+  assert.equal(ctx.accountAssets.length, 1);
+  assert.equal(ctx.currentDiceMaterial?.presetId, "crystal");
+
+  // 2. Archive Box + TRPG Spoiler Guardrail
+  const secretPrompt = "在档案盒里归档一份幕后黑手真相机密人物档案";
+  const secretRaw = synthesizeOfflineBlueprint(secretPrompt, board);
+  const secretCompiled = compileHarnessBlueprint(board, secretRaw, secretPrompt);
+  const added = secretCompiled.commitPayload.styleTokens.archiveEntries.find((e) => e.id !== "arch-existing");
+  assert.ok(added, "offline harness synthesizes archive entry");
+  assert.equal(added.visibility, "gm_only", "TRPG spoiler guardrail protects secret archive as gm_only");
+
+  // 3. 3D Dice Material & Shader + L2 GLSL Gate
+  const dicePrompt = "把3D骰子改成熔岩余烬材质";
+  const diceRaw = synthesizeOfflineBlueprint(dicePrompt, board);
+  const diceCompiled = compileHarnessBlueprint(board, diceRaw, dicePrompt);
+  assert.equal(diceCompiled.diceMaterial?.presetId, "molten_ember");
+  assert.equal(diceCompiled.diceMaterial?.shaderPreset, "molten");
+
+  const badGlslCompiled = compileHarnessBlueprint(
+    board,
+    { summary: "bad", diceMaterial: { presetId: "jade", shaderPreset: "custom", customGlsl: "while(true){}" } },
+    "给骰子写个自定义shader",
+  );
+  assert.ok(
+    badGlslCompiled.verificationIssues?.some((i) => i.gate === "glsl" && i.severity === "error"),
+    "L2 gate flags invalid dice GLSL for bounded self-repair",
+  );
+
+  // 4. Personal Asset Library recall
+  const recallPrompt = "套用我资产库里的赛博紫霓虹钟";
+  const recallRaw = synthesizeOfflineBlueprint(recallPrompt, board, { accountAssets: mockAssets });
+  const recallCompiled = compileHarnessBlueprint(board, recallRaw, recallPrompt, { accountAssets: mockAssets });
+  assert.equal(recallCompiled.commitPayload.styleTokens.clockAppearance?.label, "赛博紫霓虹钟");
+});

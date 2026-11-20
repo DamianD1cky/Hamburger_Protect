@@ -1,7 +1,6 @@
 import {
   useEffect,
   useRef,
-  useState,
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
@@ -12,16 +11,12 @@ import {
   resolveNoteColorHex,
   resolvePinColorVisual,
 } from "../../features/campaign/domain/campaignSettings";
-import {
-  hasActiveCardEffect,
-  type CardVisualEffect,
-} from "../../features/campaign/domain/cardEffects";
+import type { CardVisualEffect } from "../../features/campaign/domain/cardEffects";
 import type { BoardNote } from "../../features/campaign/domain/types";
 import {
   BOARD_HEIGHT,
   BOARD_WIDTH,
 } from "../../features/campaign/domain/boardGeometry";
-import { CardShaderCanvas } from "./CardEffectLayer";
 
 export const BASE_NOTE_WIDTH = 276;
 export const BASE_NOTE_MIN_HEIGHT = 196;
@@ -61,7 +56,7 @@ interface NoteCardProps {
 
 export function NoteCard({
   note,
-  defaultEffect,
+  defaultEffect: _defaultEffect,
   fontSize,
   viewScaleRef,
   canEdit,
@@ -79,27 +74,13 @@ export function NoteCard({
   const baseZ = 100 + note.layer;
   const dragZ = 1300;
   const elementRef = useRef<HTMLElement>(null);
-  const [shaderHost, setShaderHost] = useState<HTMLElement | null>(null);
-  const [contentMaskUrl, setContentMaskUrl] = useState<string | null>(null);
 
   const noteScale = clampNoteScale(note.scale);
   const noteWidth = Math.round(BASE_NOTE_WIDTH * noteScale);
   const noteMinHeight = Math.round(BASE_NOTE_MIN_HEIGHT * noteScale);
 
-  const resolvedEffect = note.effect != null
-    ? hasActiveCardEffect(note.effect) ? note.effect : null
-    : hasActiveCardEffect(defaultEffect)
-      ? defaultEffect!
-        : null;
-  const shaderActive = Boolean(resolvedEffect);
-
   const noteBgHex = resolveNoteColorHex(note.color);
-  const noteInk =
-    resolvedEffect?.shader === "hologram"
-      ? "#d9feff"
-      : resolvedEffect?.shader === "parchment"
-        ? "#2c1d0f"
-        : readableTextColor(noteBgHex);
+  const noteInk = readableTextColor(noteBgHex);
   const pinVisual = resolvePinColorVisual(note.pinColor);
 
   const dragRef = useRef({
@@ -340,31 +321,15 @@ export function NoteCard({
     if (elementRef.current) onEdit(note, elementRef.current);
   };
 
-  const contentMaskStyle: CSSProperties | undefined =
-    shaderActive && contentMaskUrl
-      ? ({
-          WebkitMaskImage: `url("${contentMaskUrl}")`,
-          maskImage: `url("${contentMaskUrl}")`,
-          WebkitMaskSize: "100% 100%",
-          maskSize: "100% 100%",
-          WebkitMaskRepeat: "no-repeat",
-          maskRepeat: "no-repeat",
-        } as CSSProperties)
-      : undefined;
-
   return (
     <article
-      ref={(el) => {
-        elementRef.current = el;
-        setShaderHost(el);
-      }}
+      ref={elementRef}
       className="user-note"
       data-note-id={note.id}
       data-selected={selected ? "true" : undefined}
       data-color={note.color}
       data-pinned={note.pinned}
       data-pin-color={note.pinColor}
-      data-note-shader={shaderActive ? resolvedEffect!.shader : undefined}
       data-photo={note.imageUrl || note.imagePath ? "true" : undefined}
       data-linking={linkingFrom ? "true" : undefined}
       role={canEdit ? "button" : undefined}
@@ -387,10 +352,7 @@ export function NoteCard({
           "--pin-custom-fill": pinVisual.fill,
           "--pin-custom-stroke": pinVisual.stroke,
           "--pin-custom-hi": pinVisual.highlight,
-          backgroundImage:
-            !shaderActive && noteTextureUrl
-              ? `url(${noteTextureUrl})`
-              : undefined,
+          backgroundImage: noteTextureUrl ? `url(${noteTextureUrl})` : undefined,
         } as CSSProperties
       }
       onPointerDown={handlePointerDown}
@@ -399,15 +361,6 @@ export function NoteCard({
       onPointerCancel={() => cancelDrag()}
       onKeyDown={handleKeyDown}
     >
-      {shaderActive && resolvedEffect && (
-        <CardShaderCanvas
-          hostElement={shaderHost}
-          effect={resolvedEffect}
-          baseColorOverride={noteBgHex}
-          onContentMaskChange={setContentMaskUrl}
-        />
-      )}
-
       {canLink && (
         <button
           className={linkingFrom ? "note-pin is-arming" : "note-pin"}
@@ -426,7 +379,7 @@ export function NoteCard({
         />
       )}
 
-      <div className="user-note-content" style={contentMaskStyle}>
+      <div className="user-note-content">
         {note.imageUrl || note.imagePath ? (
           <figure className="note-photo">
             <img

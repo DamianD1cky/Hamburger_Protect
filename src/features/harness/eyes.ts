@@ -8,10 +8,21 @@ import {
 import { sectionColor, sectionTitle } from "../campaign/domain/campaignSettings.ts";
 import { eventClockRects } from "../campaign/domain/eventClockLayout.ts";
 import type { CampaignBoard } from "../campaign/domain/types.ts";
+import type { DiceMaterialConfig } from "../dice/diceMaterialConfig.ts";
+import type { AccountAssetContextItem } from "./schema.ts";
 import { lintBoardLayout } from "./linter.ts";
 
-export function captureBoardContext(board: CampaignBoard) {
+export interface CaptureBoardContextOptions {
+  accountAssets?: readonly AccountAssetContextItem[];
+  currentDiceMaterial?: Partial<DiceMaterialConfig> | null;
+}
+
+export function captureBoardContext(
+  board: CampaignBoard,
+  options?: CaptureBoardContextOptions,
+) {
   const hidden = new Set(board.settings.hiddenSections);
+  const hiddenPanels = new Set(board.settings.styleTokens?.hiddenPanelIds ?? []);
   const defaultEffect = board.settings.styleTokens?.defaultCardEffect;
   const clockRectMap = eventClockRects(
     board.eventClocks,
@@ -32,10 +43,18 @@ export function captureBoardContext(board: CampaignBoard) {
       title: sectionTitle(key, board.settings.sectionTitles),
       color: sectionColor(key, board.settings.sectionColors),
       rect,
-      effect: effect.shader !== "none" ? effect : null,
+      effect:
+        effect.shader !== "none"
+          ? { shader: effect.shader, shaderName: effect.shaderName ?? null, progress: effect.progress }
+          : null,
     };
   });
 
+  const tokens = board.settings.styleTokens;
+  const archiveEntries = tokens?.archiveEntries ?? [];
+
+  // Map-not-Manual context: omit raw customGlsl strings & full archive bodies so
+  // the payload stays compact well below Edge Function size caps.
   return {
     canvas: {
       width: BOARD_WIDTH,
@@ -50,7 +69,22 @@ export function captureBoardContext(board: CampaignBoard) {
       surfaceKind: board.settings.appearance.surface.kind,
       frame: board.settings.appearance.frame,
     },
-    styleTokens: board.settings.styleTokens,
+    styleSummary: {
+      fontPreset: tokens.fontPreset,
+      cardStyle: tokens.cardStyle,
+      cardBackground: tokens.cardBackground,
+      radiusPreset: tokens.radiusPreset,
+      linkStyle: tokens.linkStyle,
+      fontSizeScale: tokens.fontSizeScale ?? 1,
+      clockPreset: tokens.clockAppearance?.preset ?? "auto",
+      clockDial: board.settings.clock.style,
+      activeShaders: {
+        card: tokens.defaultCardEffect?.shader ?? "none",
+        note: tokens.defaultNoteEffect?.shader ?? "none",
+        surface: tokens.surfaceShader?.shader ?? "none",
+        frame: tokens.frameShader?.shader ?? "none",
+      },
+    },
     coreModules: modules,
     independentEventClocks: board.eventClocks.map((c) => ({
       id: c.id,
@@ -78,14 +112,43 @@ export function captureBoardContext(board: CampaignBoard) {
       id: p.id,
       title: p.title,
       color: p.color,
+      hidden: hiddenPanels.has(p.id),
       interactiveFor: p.interactiveFor,
-      effect: p.effect.shader !== "none" ? p.effect : null,
+      effect:
+        p.effect.shader !== "none"
+          ? { shader: p.effect.shader, shaderName: p.effect.shaderName ?? null }
+          : null,
       blockTypes: p.blocks.map(
         (b) =>
           `${b.type}:${"label" in b ? (b.label ?? "") : "heading" in b ? (b.heading ?? "") : ""}`,
       ),
       rect: { x: p.x, y: p.y, w: p.w, h: p.h },
     })),
+    archiveIndex: archiveEntries.slice(0, 32).map((entry) => ({
+      id: entry.id,
+      category: entry.category,
+      title: entry.title,
+      visibility: entry.visibility,
+      tags: entry.tags,
+      pinned: entry.pinned,
+    })),
+    accountAssets: (options?.accountAssets ?? []).slice(0, 24).map((asset) => ({
+      id: asset.id,
+      kind: asset.kind,
+      name: asset.name,
+      source: asset.source,
+      favorite: asset.favorite,
+      previewColors: asset.previewColors,
+    })),
+    currentDiceMaterial: options?.currentDiceMaterial
+      ? {
+          presetId: options.currentDiceMaterial.presetId ?? "jade",
+          shaderPreset: options.currentDiceMaterial.shaderPreset ?? "none",
+          bodyColor: options.currentDiceMaterial.bodyColor ?? "#8fb9a5",
+          accentColor: options.currentDiceMaterial.accentColor ?? "#b8eed4",
+          acousticProfile: options.currentDiceMaterial.acousticProfile ?? "stone",
+        }
+      : null,
     legacyHiddenKeys: boardModuleKeys.filter((k) => hidden.has(k)),
     spatialLintIssues: lintBoardLayout(board),
   };
@@ -123,6 +186,21 @@ export const HARNESS_SYSTEM_PROMPT = `你是 VeilBoard（帷幕告示板）的�
    - 便签还支持 rotation (-180..180) 与 scale (0.6..2.2)。
 4. 公告板背景（styleTokens.surfaceShader）与边框（styleTokens.frameShader）AI 着色器：
    - shader 可选："none" | "ember_ash"（熔火余烬背景 / 炭化余烬焦木边框） | "hologram_grid"（全息战术矩阵网格背景 / 霓虹能量流光边框） | "ancient_vellum"（古旧羊皮航海星图背景 / 鎏金符文古框） | "abyssal_mist"（深渊迷雾背景与冷焰边框） | "ai_glsl"（你在 customGlsl 编写 GLSL ES 3.00 函数体 \`vec4 evaluateAmbient(vec2 uv)\` 内容，可使用 uRole [0=背景,1=边框], uTime, uResolution, uIntensity, uSpeed, uPrimaryColor, uSecondaryColor, hash/vnoise/fbm/ridge，并以 \`return vec4(col, 1.0);\` 结尾）。
+5. 档案盒（archiveEntries[]，长期卷宗库，GM 可编辑、PL 只读）：
+   - 适用于归档线索（category:"clue"）、物证档案（category:"evidence"）、NPC 人物档案（category:"character"，title=姓名、subtitle=职业/身份、body=详细信息）、报纸新闻剪报（category:"news"，subtitle=报刊刊头与版面）。
+   - 默认 archiveEntriesMode:"merge"（追加/按 id 更新），切勿覆盖既有卷宗。
+6. 3D 骰子材质与自定义 Shader（diceMaterial）：
+   - 预设 presetId 可选：jade / ivory / obsidian / neon / gilded_metal / crystal / nebula_core / molten_ember / holo_prism / liquid_core / arcane_rune；
+   - shaderPreset 可选：none / nebula / molten / holo / liquid / arcane / custom（custom 时在 customGlsl 编写 Three.js 片元注入代码，可读写 diffuseColor.rgb 与 totalEmissiveRadiance，可用 uTime / uAccentColor / uIntensity / vDicePos / hpFbm3 / hpVoronoi3，严禁 #version 或 while 循环）；
+   - 可配置 bodyColor、marksColor、accentColor、liningColor、roughness、metalness、clearcoat、iridescence、transmission、texturePattern 与 acousticProfile。
+7. 个人资产库上下文召回（recallAssetIds[]）：
+   - 上下文中的 accountAssets[] 列出了当前 GM 账号已保存的 Shader、时钟样式、骰子材质与视觉配方。当 GM 要求「用我资产库里的 xxx」「套用上次保存的 Shader/时钟/骰子」时，直接填入对应 id 到 recallAssetIds[]，无需重写长段 GLSL。
+
+【跑团专属约束（TRPG Guardrails，务必遵守）】
+- 防剧透铁律：凡涉及「幕后黑手、真相、未公开秘密、KP/GM 备忘、陷阱触发条件」的 archiveEntries，必须设 visibility:"gm_only"；暗骰检定 dice_macro 必须设 visibility:"gm" 或 "self"。
+- 非破坏性延续：除非 GM 明确说「清空 / 重置 / 开新团」，必须保持 customPanelsMode:"merge" 与 archiveEntriesMode:"merge"，绝不抹除玩家已推进的事件钟、物资与线索便签。
+- 规则系统自适应：CoC/克苏鲁优先用 1d100（侦查/聆听/理智 SAN 血条）；D&D/PF 优先用 1d20/优劣势 2d20kh1/先攻与法术位 pips；暗夜刀锋/PbtA 优先用 2d6/4-8 格事件钟/压力 pips/势力声望 bipolar；规则怪谈优先用高亮规则说明卡与倒计时危机钟。
+- 桌面可读性节制：单屏活跃展板保持精炼（一般 ≤ 6 块）；燃烧着色器 progress 建议 ≤ 0.42 以免烧毁正文导致线索不可读。
 
 请始终调用 compose_board_blueprint 工具输出结构化蓝图。`;
 
@@ -445,6 +523,71 @@ export const COMPOSE_BOARD_TOOL_SCHEMA = {
             color: { type: "string" },
           },
         },
+      },
+      archiveEntriesMode: { type: "string", enum: ["merge", "replace"] },
+      archiveEntries: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["title"],
+          properties: {
+            id: { type: "string" },
+            category: { type: "string", enum: ["clue", "evidence", "character", "news"] },
+            title: { type: "string" },
+            subtitle: { type: "string" },
+            dateLabel: { type: "string" },
+            summary: { type: "string" },
+            body: { type: "string" },
+            tags: { type: "array", items: { type: "string" } },
+            imageUrl: { type: ["string", "null"] },
+            fontSize: { type: "integer" },
+            visibility: { type: "string", enum: ["public", "gm_only"] },
+            pinned: { type: "boolean" },
+          },
+        },
+      },
+      diceMaterial: {
+        type: ["object", "null"],
+        properties: {
+          presetId: {
+            type: "string",
+            enum: [
+              "jade", "ivory", "obsidian", "neon", "gilded_metal", "crystal",
+              "nebula_core", "molten_ember", "holo_prism", "liquid_core", "arcane_rune",
+            ],
+          },
+          bodyColor: { type: "string" },
+          marksColor: { type: "string" },
+          accentColor: { type: "string" },
+          liningColor: { type: "string" },
+          roughness: { type: "number" },
+          metalness: { type: "number" },
+          clearcoat: { type: "number" },
+          iridescence: { type: "number" },
+          transmission: { type: "number" },
+          ior: { type: "number" },
+          emissiveIntensity: { type: "number" },
+          texturePattern: {
+            type: "string",
+            enum: ["stone", "marble", "brushed", "hammered", "wood", "smooth"],
+          },
+          shaderPreset: {
+            type: "string",
+            enum: ["none", "nebula", "molten", "holo", "liquid", "arcane", "custom"],
+          },
+          shaderSpeed: { type: "number" },
+          shaderIntensity: { type: "number" },
+          customGlsl: { type: "string" },
+          acousticProfile: {
+            type: "string",
+            enum: ["stone", "resin", "metal", "crystal", "wood"],
+          },
+        },
+      },
+      recallAssetIds: {
+        type: "array",
+        items: { type: "string" },
+        description: "从上下文 accountAssets[] 中按 id 召回并套用已保存的个人资产",
       },
     },
   },

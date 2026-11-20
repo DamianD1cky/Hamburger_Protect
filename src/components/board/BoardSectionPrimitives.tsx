@@ -1,12 +1,6 @@
 import { EyeOff, Pencil } from "lucide-react";
-import {
-  useState,
-  type CSSProperties,
-  type MouseEventHandler,
-  type ReactNode,
-} from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 import { titleColorStyle } from "../../features/campaign/domain/campaignSettings";
-import { CardShaderCanvas, useCardEffect } from "./CardEffectLayer";
 
 export interface SectionActions {
   onEdit: () => void;
@@ -25,13 +19,9 @@ export function BoardSectionHeader({
   color: string;
   actions?: SectionActions;
 }) {
-  const effect = useCardEffect();
   return (
     <header
       className="sign board-section-heading"
-      data-header-shader={
-        effect?.shader && effect.shader !== "none" ? "burnt" : undefined
-      }
       style={titleColorStyle(color)}
     >
       <span className="board-section-title">{title}</span>
@@ -63,14 +53,7 @@ export function BoardSectionHeader({
   );
 }
 
-/**
- * Shared paper surface:
- * 当启用火焰燃烧着色器（burnt / ai_glsl）时，采用双层真实纸张焚毁架构：
- * 1. 底层兄弟节点 CardShaderCanvas 渲染纸张纤维、焦黄烟熏、闪烁橙红余烬、炭黑龟裂与 discard 穿孔透底；
- * 2. 上层内容节点 .board-content-card 挂载「文本生存遮罩（contentSurvivalMask）」——
- *    凡是已被火焰烧过的位置（余烬火线 + 黑炭裂纹区 + 灰化镂空区）全部裁掉前景文字与线条，
- *    真实还原纸张烧焦碳化后字迹彻底消失的物理效果，同时未烧区域保持 100% 原生清晰 DOM 与点击交互。
- */
+/** Shared physical paper surface for board modules and panels. */
 export function BoardContentCard({
   children,
   className = "",
@@ -84,82 +67,25 @@ export function BoardContentCard({
   disabled?: boolean;
   label?: string;
 }) {
-  const effect = useCardEffect();
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  const [contentMaskUrl, setContentMaskUrl] = useState<string | null>(null);
-
-  const shaderActive = Boolean(
-    effect && effect.shader !== "none" && effect.progress > 0,
-  );
   const classes = `board-content-card ${className}`.trim();
-  const contentSurvivalStyle: CSSProperties | undefined =
-    shaderActive && contentMaskUrl
-      ? ({
-          WebkitMaskImage: `url("${contentMaskUrl}")`,
-          maskImage: `url("${contentMaskUrl}")`,
-          WebkitMaskSize: "100% 100%",
-          maskSize: "100% 100%",
-          WebkitMaskRepeat: "no-repeat",
-          maskRepeat: "no-repeat",
-        } as CSSProperties)
-      : undefined;
 
-  if (!shaderActive) {
-    if (onClick) {
-      return (
-        <button
-          type="button"
-          className={classes}
-          onClick={onClick}
-          disabled={disabled}
-          aria-label={label}
-          aria-haspopup="dialog"
-        >
-          {children}
-        </button>
-      );
-    }
+  if (onClick) {
     return (
-      <article className={classes} aria-label={label}>
+      <button
+        type="button"
+        className={classes}
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        aria-haspopup="dialog"
+      >
         {children}
-      </article>
+      </button>
     );
   }
-
   return (
-    <div className="board-card-shader-stage">
-      {effect && (
-        <CardShaderCanvas
-          hostElement={host}
-          effect={effect}
-          onContentMaskChange={setContentMaskUrl}
-        />
-      )}
-      {onClick ? (
-        <button
-          ref={setHost}
-          type="button"
-          className={classes}
-          data-shader={effect!.shader}
-          style={contentSurvivalStyle}
-          onClick={onClick}
-          disabled={disabled}
-          aria-label={label}
-          aria-haspopup="dialog"
-        >
-          {children}
-        </button>
-      ) : (
-        <article
-          ref={setHost}
-          className={classes}
-          data-shader={effect!.shader}
-          style={contentSurvivalStyle}
-          aria-label={label}
-        >
-          {children}
-        </article>
-      )}
-    </div>
+    <article className={classes} aria-label={label}>
+      {children}
+    </article>
   );
 }

@@ -19,19 +19,15 @@ import {
   type ModulePlacementContext,
 } from "../../features/campaign/domain/boardModules";
 
-import {
-  hasActiveCardEffect,
-  type CardVisualEffect,
-} from "../../features/campaign/domain/cardEffects";
-import { CardEffectProvider } from "./CardEffectLayer";
+import type { CardVisualEffect } from "../../features/campaign/domain/cardEffects";
 
 /**
- * 包住一个公告板区块，支持 GM 拖动位置、右下角缩放宽高以及渲染卡片边缘装饰。
+ * 包住一个公告板区块，支持 GM 拖动位置、右下角缩放宽高。
  */
 export function BoardModuleFrame({
   moduleKey,
   rect,
-  effect,
+  effect: _effect,
   layout,
   canDrag,
   viewScaleRef,
@@ -330,14 +326,11 @@ export function BoardModuleFrame({
     };
   };
 
-  const shaderActive = Boolean(effect && hasActiveCardEffect(effect));
-
   return (
     <div
       ref={elementRef}
       className={canDrag ? "board-module is-draggable" : "board-module"}
       data-module={instanceId ?? moduleKey}
-      data-shader-active={shaderActive ? effect!.shader : undefined}
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
       onPointerDown={handlePointerDown}
       onClickCapture={(event) => {
@@ -347,7 +340,7 @@ export function BoardModuleFrame({
         event.preventDefault();
       }}
     >
-      <CardEffectProvider effect={effect}>{children}</CardEffectProvider>
+      {children}
       {canDrag && onResize && (
         <div
           className="board-module-resize-handle"

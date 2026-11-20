@@ -32,17 +32,7 @@ import {
   importLocalFontFile,
   useAccountLocalFonts,
 } from "../../features/fonts/localFontLibrary";
-import {
-  defaultBoardAmbientShader,
-  hasActiveAmbientShader,
-  normalizeBoardAmbientShader,
-  type AmbientShaderKind,
-} from "../../features/campaign/domain/cardEffects";
-import {
-  getShaderQualityMode,
-  setShaderQualityMode,
-  type ShaderQualityMode,
-} from "../../features/shaders/cardShaderEngine";
+import { defaultBoardAmbientShader } from "../../features/campaign/domain/cardEffects";
 import { useAccountAssets } from "../../features/assets/accountAssetLibrary";
 import type {
   CampaignBoard,
@@ -100,14 +90,11 @@ export function RoomSettingsDialog({
   const [styleTokens, setStyleTokens] = useState<BoardStyleTokens>(() =>
     structuredClone(board.settings.styleTokens),
   );
-  const [shaderQuality, setShaderQuality] = useState<ShaderQualityMode>(() =>
-    getShaderQualityMode(),
-  );
   const accountAssets = useAccountAssets(board.viewer.id);
   const localFonts = useAccountLocalFonts(board.viewer.id);
   const [fontMessage, setFontMessage] = useState("");
   const boardAssets = accountAssets.filter(
-    (item) => item.kind === "ambient_shader" || item.kind === "board_style",
+    (item) => item.kind === "board_style",
   );
   const [files, setFiles] = useState<BoardAppearanceFiles>({});
   const [previews, setPreviews] = useState<
@@ -393,8 +380,6 @@ export function RoomSettingsDialog({
               surfaceUrl={
                 previews.boardTexture ?? board.settings.boardTextureUrl
               }
-              surfaceShader={styleTokens.surfaceShader}
-              frameShader={styleTokens.frameShader}
             />
           </div>
 
@@ -406,8 +391,6 @@ export function RoomSettingsDialog({
             <div className="hig-chip-options">
               {boardAppearancePresets.map((preset) => {
                 const active =
-                  !hasActiveAmbientShader(styleTokens.surfaceShader) &&
-                  !hasActiveAmbientShader(styleTokens.frameShader) &&
                   appearance.frame === preset.appearance.frame &&
                   appearance.surface.kind === preset.appearance.surface.kind &&
                   appearance.room.kind === preset.appearance.room.kind;
@@ -565,11 +548,7 @@ export function RoomSettingsDialog({
                   ["image", "自定义"],
                 ] as const
               ).map(([value, label]) => {
-                const surfaceShaderActive = hasActiveAmbientShader(
-                  styleTokens.surfaceShader,
-                );
-                const isActive =
-                  !surfaceShaderActive && appearance.surface.kind === value;
+                const isActive = appearance.surface.kind === value;
                 return (
                   <button
                     type="button"
@@ -586,7 +565,6 @@ export function RoomSettingsDialog({
                         ...current,
                         surface: { ...current.surface, kind: value },
                       }));
-                      // 切换板面材质时自动清除覆盖在板面上的环境 Shader，避免新材质被遮挡
                       setStyleTokens((current) => ({
                         ...current,
                         surfaceShader: defaultBoardAmbientShader(),
@@ -620,10 +598,7 @@ export function RoomSettingsDialog({
                   ["none", "无边框"],
                 ] as const
               ).map(([value, label]) => {
-                const frameShaderActive = hasActiveAmbientShader(
-                  styleTokens.frameShader,
-                );
-                const isActive = !frameShaderActive && appearance.frame === value;
+                const isActive = appearance.frame === value;
                 return (
                   <button
                     type="button"
@@ -632,7 +607,6 @@ export function RoomSettingsDialog({
                     className={isActive ? "effect-chip is-active" : "effect-chip"}
                     onClick={() => {
                       setAppearance((current) => ({ ...current, frame: value }));
-                      // 切换外框材质时自动清除外框环境 Shader，确保所选外框立即生效
                       setStyleTokens((current) => ({
                         ...current,
                         frameShader: defaultBoardAmbientShader(),
@@ -643,72 +617,6 @@ export function RoomSettingsDialog({
                   </button>
                 );
               })}
-            </div>
-
-            <div className="hig-ambient-shader-controls">
-              <label className="field">
-                <span>板面动态 Shader 覆盖</span>
-                <select
-                  aria-label="板面动态 Shader"
-                  value={styleTokens.surfaceShader?.shader ?? "none"}
-                  onChange={(event) => {
-                    const kind = event.target.value as AmbientShaderKind;
-                    setStyleTokens((current) => ({
-                      ...current,
-                      surfaceShader:
-                        kind === "none"
-                          ? defaultBoardAmbientShader()
-                          : normalizeBoardAmbientShader({
-                              ...(current.surfaceShader ?? {}),
-                              shader: kind,
-                            }),
-                    }));
-                  }}
-                >
-                  <option value="none">关闭（显示上方板面材质）</option>
-                  <option value="ember_ash">余烬灰烬</option>
-                  <option value="hologram_grid">全息矩阵</option>
-                  <option value="ancient_vellum">古羊皮纹</option>
-                  <option value="abyssal_mist">深渊迷雾</option>
-                  {styleTokens.surfaceShader?.shader === "ai_glsl" && (
-                    <option value="ai_glsl">
-                      AI Shader：{styleTokens.surfaceShader.shaderName || "自定义"}
-                    </option>
-                  )}
-                </select>
-              </label>
-
-              <label className="field">
-                <span>外框动态 Shader 覆盖</span>
-                <select
-                  aria-label="外框动态 Shader"
-                  value={styleTokens.frameShader?.shader ?? "none"}
-                  onChange={(event) => {
-                    const kind = event.target.value as AmbientShaderKind;
-                    setStyleTokens((current) => ({
-                      ...current,
-                      frameShader:
-                        kind === "none"
-                          ? defaultBoardAmbientShader()
-                          : normalizeBoardAmbientShader({
-                              ...(current.frameShader ?? {}),
-                              shader: kind,
-                            }),
-                    }));
-                  }}
-                >
-                  <option value="none">关闭（显示上方外框材质）</option>
-                  <option value="ember_ash">余烬焦框</option>
-                  <option value="hologram_grid">全息光框</option>
-                  <option value="ancient_vellum">鎏金卷框</option>
-                  <option value="abyssal_mist">深渊寒框</option>
-                  {styleTokens.frameShader?.shader === "ai_glsl" && (
-                    <option value="ai_glsl">
-                      AI Shader：{styleTokens.frameShader.shaderName || "自定义"}
-                    </option>
-                  )}
-                </select>
-              </label>
             </div>
           </fieldset>
 
@@ -725,19 +633,12 @@ export function RoomSettingsDialog({
                     key={asset.id}
                     className="hig-asset-quick-chip"
                     onClick={() => {
-                      if (asset.payload.kind === "ambient_shader") {
-                        const p = asset.payload;
-                        setStyleTokens((current) => ({
-                          ...current,
-                          ...(p.surfaceShader
-                            ? { surfaceShader: structuredClone(p.surfaceShader) }
-                            : {}),
-                          ...(p.frameShader
-                            ? { frameShader: structuredClone(p.frameShader) }
-                            : {}),
-                        }));
-                      } else if (asset.payload.kind === "board_style") {
-                        setStyleTokens(structuredClone(asset.payload.styleTokens));
+                      if (asset.payload.kind === "board_style") {
+                        setStyleTokens({
+                          ...structuredClone(asset.payload.styleTokens),
+                          surfaceShader: defaultBoardAmbientShader(),
+                          frameShader: defaultBoardAmbientShader(),
+                        });
                       }
                     }}
                   >
@@ -757,37 +658,6 @@ export function RoomSettingsDialog({
               </div>
             </fieldset>
           )}
-
-          <fieldset
-            className="hig-editor-group"
-            disabled={!editable || Boolean(busy)}
-          >
-            <span className="hig-section-label">Shader 渲染性能档位（本机生效）</span>
-            <div className="hig-chip-options">
-              {(
-                [
-                  ["balanced", "均衡 30fps（推荐）"],
-                  ["high", "高画质 60fps"],
-                  ["eco", "节能静态（0 持续占用）"],
-                ] as const
-              ).map(([mode, label]) => (
-                <button
-                  type="button"
-                  key={mode}
-                  aria-pressed={shaderQuality === mode}
-                  className={
-                    shaderQuality === mode ? "effect-chip is-active" : "effect-chip"
-                  }
-                  onClick={() => {
-                    setShaderQuality(mode);
-                    setShaderQualityMode(mode);
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
 
           <fieldset
             className="hig-editor-group"

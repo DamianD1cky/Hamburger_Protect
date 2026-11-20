@@ -383,6 +383,26 @@ export function captureBlueprintAssetsToAccount(
     saved.push(asset);
   }
 
+  // 5. 3D 骰子材质与 Shader
+  if (compiled.diceMaterial) {
+    const dm = compiled.diceMaterial;
+    const { asset } = saveAccountAsset(ownerId, {
+      name:
+        dm.shaderPreset === "custom"
+          ? `${labelBase} · 骰子 GLSL`
+          : `${labelBase} · 3D 骰子材质`,
+      description: `预设 ${dm.presetId} · 着色器 ${dm.shaderPreset} · 音色 ${dm.acousticProfile}`,
+      source: "ai",
+      prompt,
+      previewColors: [dm.bodyColor, dm.accentColor, dm.marksColor],
+      payload: {
+        kind: "dice_material",
+        config: dm,
+      },
+    });
+    saved.push(asset);
+  }
+
   return saved;
 }
 

@@ -1,4 +1,5 @@
 import type { BoardAppearance } from "../campaign/domain/boardAppearance.ts";
+import type { ArchiveCategory, ArchiveVisibility } from "../campaign/domain/archiveBox.ts";
 import type { CardVisualEffect } from "../campaign/domain/cardEffects.ts";
 import type {
   BoardModuleKey,
@@ -6,6 +7,7 @@ import type {
 } from "../campaign/domain/boardModules.ts";
 import type { BoardStyleTokens } from "../campaign/domain/boardStyleTokens.ts";
 import type { CampaignClockConfig } from "../campaign/domain/campaignClock.ts";
+import type { DiceMaterialConfig } from "../dice/diceMaterialConfig.ts";
 import type {
   BoardCustomPanel,
   CustomPanelBlock,
@@ -86,6 +88,36 @@ export interface HarnessChecklistSpec {
   categoryName?: string | null;
 }
 
+export interface HarnessArchiveEntrySpec {
+  id?: string;
+  category?: ArchiveCategory;
+  title: string;
+  subtitle?: string;
+  dateLabel?: string;
+  summary?: string;
+  body?: string;
+  tags?: string[];
+  imageUrl?: string | null;
+  fontSize?: number;
+  visibility?: ArchiveVisibility;
+  pinned?: boolean;
+}
+
+export interface AccountAssetContextItem {
+  id: string;
+  kind: string;
+  name: string;
+  source: "ai" | "custom";
+  favorite: boolean;
+  previewColors: string[];
+}
+
+export interface HarnessVerificationIssue {
+  gate: "glsl" | "intent" | "schema" | "trpg_guardrail";
+  severity: "error" | "warn";
+  message: string;
+}
+
 export interface BoardHarnessBlueprint {
   summary: string;
   assistantReply?: string;
@@ -112,6 +144,13 @@ export interface BoardHarnessBlueprint {
   eventClocks?: EventClockDraft[];
   checklist?: HarnessChecklistSpec[];
   clock?: Partial<CampaignClockConfig>;
+  /** 新增或更新「档案盒」卷宗条目（线索 / 证据 / 人物 / 新闻）。 */
+  archiveEntriesMode?: "merge" | "replace";
+  archiveEntries?: HarnessArchiveEntrySpec[];
+  /** 直接修改 3D 骰子材质与自定义 Shader。 */
+  diceMaterial?: Partial<DiceMaterialConfig> | null;
+  /** 从当前账号的个人资产库中按 ID 召回并套用已保存的 Shader / 样式 / 时钟 / 骰子资产。 */
+  recallAssetIds?: string[];
 }
 
 export interface CompiledSettingsPayload {
@@ -192,6 +231,7 @@ export interface BoardUndoSnapshot {
   createdClockIds: string[];
   createdChecklistIds: string[];
   updatedNotesBefore?: NoteRollbackEntry[];
+  previousDiceMaterial?: DiceMaterialConfig | null;
 }
 
 export interface CompiledBoardBlueprint {
@@ -200,8 +240,11 @@ export interface CompiledBoardBlueprint {
   previewBoard: CampaignBoard;
   commitPayload: CompiledCommitPayload;
   preApplySettings: CompiledSettingsPayload;
+  diceMaterial?: DiceMaterialConfig | null;
   lintNotes: string[];
   changeBadges: string[];
+  verificationIssues?: HarnessVerificationIssue[];
+  repairRounds?: number;
 }
 
 export type HarnessExecutionMode = "auto" | "byok" | "offline";

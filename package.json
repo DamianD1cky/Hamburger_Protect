@@ -17,6 +17,7 @@
     "supabase:push:dry": "node scripts/supabase-push-management.mjs --dry-run",
     "supabase:push:direct": "supabase db push",
     "check:access-ui": "node scripts/tests/access-ui.mjs",
+    "check:style": "node scripts/check-style-ratchet.mjs",
     "check:site-admin": "node scripts/tests/site-admin.mjs",
     "check:site-admin-ui": "node scripts/tests/site-admin-ui.mjs",
     "check:motion-ui": "node scripts/tests/motion-ui.mjs",
@@ -49,8 +50,8 @@
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.187.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "playwright-core": "^1.64.1",
     "pg": "^8.23.1",
+    "playwright-core": "^1.64.1",
     "supabase": "^2.122.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"

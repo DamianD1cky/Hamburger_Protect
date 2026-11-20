@@ -37,11 +37,11 @@ begin
       or coalesce(b->>'display','auto') not in ('auto','segmented','dropdown') then raise exception 'INVALID_CUSTOM_PANELS'; end if;
     if not (b->'options' ? coalesce(b->>'value','')) then b := jsonb_set(b,'{value}',b->'options'->0); end if;
   elsif kind = 'meter_counter' then
-    lo := greatest(-9999,least(9998,coalesce((b->>'min')::integer,0)));
-    hi := greatest(lo+1,least(9999,coalesce((b->>'max')::integer,10)));
-    n := greatest(lo,least(hi,coalesce((b->>'value')::integer,lo)));
+    lo := greatest(-9999,least(9998,coalesce(round((b->>'min')::numeric)::integer,0)));
+    hi := greatest(lo+1,least(9999,coalesce(round((b->>'max')::numeric)::integer,10)));
+    n := greatest(lo,least(hi,coalesce(round((b->>'value')::numeric)::integer,lo)));
     if coalesce(b->>'variant','stepper') not in ('stepper','bar','pips','bipolar') then raise exception 'INVALID_CUSTOM_PANELS'; end if;
-    b := b || jsonb_build_object('min',lo,'max',hi,'value',n,'step',greatest(1,least(100,coalesce((b->>'step')::integer,1))));
+    b := b || jsonb_build_object('min',lo,'max',hi,'value',n,'step',greatest(1,least(100,coalesce(round((b->>'step')::numeric)::integer,1))));
   elsif kind in ('image_media','dice_macro','initiative_track','roll_table','task_board') then
     if kind = 'image_media' then child_id := 'images'; n := 9;
     elsif kind = 'dice_macro' then child_id := 'macros'; n := 12;
@@ -112,7 +112,9 @@ begin
     end if;
     checked := private.validate_custom_panels_base(jsonb_build_array(panel || jsonb_build_object('blocks',compatible)))->0;
     checked := checked || jsonb_build_object('blocks',blocks);
-    if panel ? 'fontSize' then checked := checked || jsonb_build_object('fontSize',greatest(11,least(24,(panel->>'fontSize')::integer))); end if;
+    if panel ? 'fontSize' and jsonb_typeof(panel->'fontSize') = 'number' then
+      checked := checked || jsonb_build_object('fontSize',greatest(11,least(24,round((panel->>'fontSize')::numeric)::integer)));
+    end if;
     result := result || jsonb_build_array(checked);
   end loop;
   -- Preserve the base validator's cross-panel duplicate-ID check.

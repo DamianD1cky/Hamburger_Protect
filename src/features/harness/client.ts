@@ -5,10 +5,15 @@ import {
   COMPOSE_BOARD_TOOL_SCHEMA,
   HARNESS_SYSTEM_PROMPT,
   captureBoardContext,
+  type CaptureBoardContextOptions,
 } from "./eyes";
+import { compileHarnessBlueprint } from "./linter";
 import { synthesizeOfflineBlueprint } from "./recipes";
+import type { AccountDesignAsset } from "../assets/accountAssetLibrary";
+import type { DiceMaterialConfig } from "../dice/diceMaterialConfig";
 import type {
   BoardHarnessBlueprint,
+  CompiledBoardBlueprint,
   HarnessApiConfig,
 } from "./schema";
 
@@ -120,9 +125,10 @@ async function callDirectByokInLocalMode(
   board: CampaignBoard,
   config: HarnessApiConfig,
   history: ReadonlyArray<{ role: "user" | "assistant"; content: string }>,
+  contextOptions?: CaptureBoardContextOptions,
 ): Promise<BoardHarnessBlueprint> {
   const baseUrl = config.baseUrl.replace(/\/+$/, "");
-  const contextJson = JSON.stringify(captureBoardContext(board));
+  const contextJson = JSON.stringify(captureBoardContext(board, contextOptions));
   const userContent = `当前公告板状态快照（JSON）：\n${contextJson}\n\nGM 编排需求：\n${prompt}`;
 
   if (config.provider === "anthropic") {
@@ -211,25 +217,35 @@ async function callDirectByokInLocalMode(
   throw new Error("模型响应未包含可解析的排版蓝图 JSON。");
 }
 
-/**
- * 发起一次公告板 Harness 编排请求：
- * - 离线模式（或本地演示且未填 Key）：运行内置零延迟智能蓝图引擎
- * - Supabase 云端模式：经由同源许可的 Edge Function `board-harness` 安全代理（同时兼容站长托管 Key 与 GM BYOK，遵守严格 CSP）
- * - 本地开发填写了 BYOK Key：直接调用模型 Tool Calling 接口
- */
-export async function requestHarnessBlueprint(input: {
+function readCurrentLocalDiceMaterial(): Partial<DiceMaterialConfig> | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = JSON.parse(localStorage.getItem("hp-dice-presentation") ?? "{}") as {
+      skin?: string;
+      material?: Partial<DiceMaterialConfig>;
+    };
+    if (raw.material && typeof raw.material === "object") return raw.material;
+    if (raw.skin) return { presetId: raw.skin };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function requestSingleModelTurn(input: {
   campaignId: string;
   prompt: string;
   board: CampaignBoard;
   config: HarnessApiConfig;
   history: ReadonlyArray<{ role: "user" | "assistant"; content: string }>;
+  contextOptions?: CaptureBoardContextOptions;
 }): Promise<{ blueprint: BoardHarnessBlueprint; source: "llm" | "offline" }> {
-  const { campaignId, prompt, board, config, history } = input;
-  if (!prompt.trim()) throw new Error("请输入你想要的排版或风格描述。");
-
+  const { campaignId, prompt, board, config, history, contextOptions } = input;
   if (config.mode === "offline") {
     return {
-      blueprint: synthesizeOfflineBlueprint(prompt, board),
+      blueprint: synthesizeOfflineBlueprint(prompt, board, {
+        accountAssets: contextOptions?.accountAssets,
+      }),
       source: "offline",
     };
   }
@@ -237,24 +253,31 @@ export async function requestHarnessBlueprint(input: {
   if (backend === "local") {
     if (!config.apiKey.trim()) {
       return {
-        blueprint: synthesizeOfflineBlueprint(prompt, board),
+        blueprint: synthesizeOfflineBlueprint(prompt, board, {
+          accountAssets: contextOptions?.accountAssets,
+        }),
         source: "offline",
       };
     }
     return {
-      blueprint: await callDirectByokInLocalMode(prompt, board, config, history),
+      blueprint: await callDirectByokInLocalMode(
+        prompt,
+        board,
+        config,
+        history,
+        contextOptions,
+      ),
       source: "llm",
     };
   }
 
-  // Cloud Supabase mode: route through Edge Function `board-harness` (complies with strict CSP)
   const { data, error, response } = await requireSupabase().functions.invoke(
     "board-harness",
     {
       body: {
         campaignId,
         prompt: prompt.trim().slice(0, 4000),
-        boardContext: captureBoardContext(board),
+        boardContext: captureBoardContext(board, contextOptions),
         history: history.slice(-6),
         byok: config.apiKey.trim()
           ? {
@@ -289,5 +312,103 @@ export async function requestHarnessBlueprint(input: {
   return {
     blueprint: parseModelBlueprintResponse(payload.blueprint),
     source: "llm",
+  };
+}
+
+/**
+ * 发起一次公告板 Harness 编排请求（含确定性 L2 校验与有上限 1 轮自动自纠环）：
+ * - 离线模式（或本地演示且未填 Key）：运行内置零延迟智能蓝图引擎
+ * - 云端/BYOK LLM 模式：执行首轮生成 → L2 校验门禁（GLSL 安全、TRPG 意图、积木合法性）→ 若有硬性错误则自动回喂诊断自纠 1 次
+ */
+export async function requestHarnessBlueprint(input: {
+  campaignId: string;
+  prompt: string;
+  board: CampaignBoard;
+  config: HarnessApiConfig;
+  history: ReadonlyArray<{ role: "user" | "assistant"; content: string }>;
+  accountAssets?: readonly AccountDesignAsset[];
+}): Promise<{
+  blueprint: BoardHarnessBlueprint;
+  compiled: CompiledBoardBlueprint;
+  source: "llm" | "offline";
+}> {
+  const { campaignId, prompt, board, config, history, accountAssets } = input;
+  if (!prompt.trim()) throw new Error("请输入你想要的排版或风格描述。");
+
+  const contextOptions: CaptureBoardContextOptions = {
+    accountAssets: accountAssets?.map((a) => ({
+      id: a.id,
+      kind: a.kind,
+      name: a.name,
+      source: a.source,
+      favorite: a.favorite,
+      previewColors: a.previewColors,
+    })),
+    currentDiceMaterial: readCurrentLocalDiceMaterial(),
+  };
+
+  let turn = await requestSingleModelTurn({
+    campaignId,
+    prompt,
+    board,
+    config,
+    history,
+    contextOptions,
+  });
+  let compiled = compileHarnessBlueprint(board, turn.blueprint, prompt, {
+    accountAssets,
+  });
+  let repairRounds = 0;
+
+  // L2 Bounded Self-Correction Gate (at most 1 automatic repair round on LLM errors)
+  const blockingIssues = (compiled.verificationIssues ?? []).filter(
+    (issue) => issue.severity === "error",
+  );
+  if (turn.source === "llm" && blockingIssues.length > 0) {
+    const diagnosticText = blockingIssues
+      .map((item, idx) => `${idx + 1}. [${item.gate}] ${item.message}`)
+      .join("\n");
+    const repairPrompt = [
+      `原始 GM 需求：${prompt.trim()}`,
+      "",
+      "你上一轮生成的蓝图未通过 L2 确定性校验门禁，请按以下精确报错修正并重新调用 compose_board_blueprint 输出完整合法蓝图：",
+      diagnosticText,
+    ].join("\n");
+    try {
+      const repairedTurn = await requestSingleModelTurn({
+        campaignId,
+        prompt: repairPrompt,
+        board,
+        config,
+        history: [
+          ...history.slice(-4),
+          { role: "user", content: prompt.trim() },
+          { role: "assistant", content: turn.blueprint.summary },
+        ],
+        contextOptions,
+      });
+      const repairedCompiled = compileHarnessBlueprint(
+        board,
+        repairedTurn.blueprint,
+        prompt,
+        { accountAssets },
+      );
+      const repairedErrors = (repairedCompiled.verificationIssues ?? []).filter(
+        (issue) => issue.severity === "error",
+      );
+      if (repairedErrors.length <= blockingIssues.length) {
+        turn = repairedTurn;
+        compiled = repairedCompiled;
+        repairRounds = 1;
+      }
+    } catch {
+      // Keep first-pass compiled draft if repair network call fails.
+    }
+  }
+
+  return {
+    blueprint: turn.blueprint,
+    compiled: { ...compiled, repairRounds },
+    source: turn.source,
   };
 }

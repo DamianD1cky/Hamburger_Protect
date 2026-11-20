@@ -38,7 +38,6 @@ import type {
 } from "../../features/campaign/domain/types";
 import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { blobToFile, compressImage } from "../../lib/imageCompress";
-import { CardEffectPicker } from "../board/CardEffectLayer";
 import { ColorField } from "../board/ColorField";
 import { clampNoteScale } from "../board/NoteCard";
 import { PaperDialog } from "./PaperDialog";
@@ -117,7 +116,7 @@ export function ComposerDialog({
   const [fontSize, setFontSize] = useState<number>(
     () => (note ? board.settings.styleTokens.noteFontSizes?.[note.id] : undefined) ?? 15,
   );
-  const [effect, setEffect] = useState<CardVisualEffect>(() =>
+  const [effect] = useState<CardVisualEffect>(() =>
     normalizeCardVisualEffect(note?.effect ?? defaultCardVisualEffect()),
   );
   const [pinned, setPinned] = useState<boolean>(Boolean(note?.pinned));
@@ -602,16 +601,6 @@ export function ComposerDialog({
 
                 {kind === "note" && noteTab === "appearance" && (
                   <>
-                    <section className="hig-editor-group">
-                      <CardEffectPicker
-                        mode="note"
-                        value={effect}
-                        basePreviewHex={colorHex}
-                        disabled={submitting}
-                        onChange={setEffect}
-                      />
-                    </section>
-
                     <section className="hig-editor-group note-colors-grid">
                       <ColorField
                         label="便签底色"

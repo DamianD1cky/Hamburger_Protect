@@ -1,5 +1,8 @@
 // Browser contract regression: Auth/RPC responses are explicit test fixtures.
 // This does not claim to verify cloud Auth, SMTP, or production configuration.
+// Requires a server at HP_PREVIEW_URL (default http://127.0.0.1:5174) started
+// with `--mode supabase`; a plain dev server boots the local demo board and
+// never renders the access screen this script drives.
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 import { loadEnv } from "vite";
@@ -106,7 +109,14 @@ try {
     });
     await page.goto(preview);
     const guideEntry = page.getByRole("button", { name: "使用指南", exact: true });
-    await guideEntry.waitFor();
+    try {
+      await guideEntry.waitFor({ timeout: 8000 });
+    } catch {
+      throw new Error(
+        `Access screen did not render at ${preview}. Start the server with ` +
+          "`--mode supabase` (a plain dev server boots the local demo board instead).",
+      );
+    }
     await page.getByLabel("账号名", { exact: false }).fill("unfinished_account");
     await guideEntry.click();
     const guide = page.getByRole("dialog", { name: "使用指南", exact: true });

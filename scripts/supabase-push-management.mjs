@@ -53,7 +53,8 @@ function queryJson(sql) {
     "json",
     sql,
   ]);
-  return JSON.parse(output || "[]");
+  const parsed = JSON.parse(output || "[]");
+  return Array.isArray(parsed) ? parsed : Array.isArray(parsed?.rows) ? parsed.rows : [];
 }
 
 async function localMigrations() {

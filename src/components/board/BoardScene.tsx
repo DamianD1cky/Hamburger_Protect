@@ -541,10 +541,7 @@ export function BoardScene({
           } as CSSProperties
         }
       >
-        <BoardFrame
-          frame={board.settings.appearance.frame}
-          shader={board.settings.styleTokens?.frameShader}
-        />
+        <BoardFrame frame={board.settings.appearance.frame} />
 
         <main
           className="board"
@@ -568,7 +565,6 @@ export function BoardScene({
           <BoardSurface
             appearance={board.settings.appearance}
             imageUrl={board.settings.boardTextureUrl}
-            shader={board.settings.styleTokens?.surfaceShader}
           />
           {selectedEmoji && stickerPlacement && (
             <div

@@ -36,7 +36,6 @@ import {
 } from "../../features/campaign/domain/boardModules";
 import {
   defaultCardVisualEffect,
-  hasActiveCardEffect,
   type CardVisualEffect,
 } from "../../features/campaign/domain/cardEffects";
 import {
@@ -60,7 +59,6 @@ import { useImeEnterGuard } from "../../hooks/useImeEnterGuard";
 import { MotionText } from "../MotionText";
 import { PaperDialog } from "../composer/PaperDialog";
 import { BoardContentCard, BoardSectionHeader } from "./BoardSectionPrimitives";
-import { CardEffectPicker, CardEffectProvider } from "./CardEffectLayer";
 import { ColorField } from "./ColorField";
 import { AdditionalBlockFields, ExtendedPanelBlockView, isExtendedBlock, MeterVisual } from "./ExtendedPanelBlocks";
 import { CampaignImage } from "./CampaignImage";
@@ -814,7 +812,7 @@ export function CustomPanelCard({
   panel,
   board,
   actorName,
-  defaultEffect,
+  defaultEffect: _defaultEffect,
   obstacles,
   canManage,
   canMemberInteract,
@@ -872,11 +870,6 @@ export function CustomPanelCard({
 
   const canInteractControls =
     canManage || (canMemberInteract && panel.interactiveFor === "members");
-
-  const resolvedEffect = hasActiveCardEffect(panel.effect)
-    ? panel.effect
-    : defaultEffect ?? panel.effect;
-  const shaderActive = hasActiveCardEffect(resolvedEffect);
 
   const restore = () => {
     const el = elementRef.current;
@@ -1086,7 +1079,6 @@ export function CustomPanelCard({
           : "board-module custom-panel-module"
       }
       data-custom-panel={panel.id}
-      data-shader-active={shaderActive ? resolvedEffect.shader : undefined}
       style={
         {
           left: panel.x,
@@ -1106,51 +1098,49 @@ export function CustomPanelCard({
         event.preventDefault();
       }}
     >
-      <CardEffectProvider effect={resolvedEffect}>
-        <section className="board-section custom-panel-section">
-          <BoardSectionHeader
-            title={panel.title}
-            color={panel.color}
-            actions={
-              canManage
-                ? {
-                    onEdit: () => onEdit(panel),
-                    ...(onHide ? { onHide: () => onHide(panel.id) } : {}),
-                    editLabel: `编辑板块：${panel.title}`,
-                    hideLabel: `隐藏板块：${panel.title}`,
+      <section className="board-section custom-panel-section">
+        <BoardSectionHeader
+          title={panel.title}
+          color={panel.color}
+          actions={
+            canManage
+              ? {
+                  onEdit: () => onEdit(panel),
+                  ...(onHide ? { onHide: () => onHide(panel.id) } : {}),
+                  editLabel: `编辑板块：${panel.title}`,
+                  hideLabel: `隐藏板块：${panel.title}`,
+                }
+              : undefined
+          }
+        />
+        <BoardContentCard className="paper custom-panel-card">
+          {panel.blocks.length === 0 ? (
+            <p className="board-empty">
+              {canManage
+                ? "点击标题栏编辑图标添加原子积木"
+                : "暂无板块内容"}
+            </p>
+          ) : (
+            <div className="hig-blocks-stack">
+              {panel.blocks.map((block) => (
+                <InteractivePanelBlockView
+                  key={block.id}
+                  block={block}
+                  board={board}
+                  actorName={actorName}
+                  canInteract={canInteractControls}
+                  onExpandRoster={onExpandRoster}
+                  onOpenActivity={onOpenActivity}
+                  onPostNote={onPostNote}
+                  onInteract={(blockId, action) =>
+                    onInteract(panel.id, blockId, action)
                   }
-                : undefined
-            }
-          />
-          <BoardContentCard className="paper custom-panel-card">
-            {panel.blocks.length === 0 ? (
-              <p className="board-empty">
-                {canManage
-                  ? "点击标题栏编辑图标添加原子积木"
-                  : "暂无板块内容"}
-              </p>
-            ) : (
-              <div className="hig-blocks-stack">
-                {panel.blocks.map((block) => (
-                  <InteractivePanelBlockView
-                    key={block.id}
-                    block={block}
-                    board={board}
-                    actorName={actorName}
-                    canInteract={canInteractControls}
-                    onExpandRoster={onExpandRoster}
-                    onOpenActivity={onOpenActivity}
-                    onPostNote={onPostNote}
-                    onInteract={(blockId, action) =>
-                      onInteract(panel.id, blockId, action)
-                    }
-                  />
-                ))}
-              </div>
-            )}
-          </BoardContentCard>
-        </section>
-      </CardEffectProvider>
+                />
+              ))}
+            </div>
+          )}
+        </BoardContentCard>
+      </section>
       {canManage && (
         <div
           className="board-module-resize-handle"
@@ -1329,7 +1319,7 @@ export function CustomPanelEditorDialog({
   const [fontSize, setFontSize] = useState<number>(initial?.fontSize ?? 14);
   const [interactiveFor, setInteractiveFor] =
     useState<CustomPanelInteractiveRole>(initial?.interactiveFor ?? "members");
-  const [effect, setEffect] = useState<CardVisualEffect>(
+  const [effect] = useState<CardVisualEffect>(
     () => structuredClone(initial?.effect ?? defaultCardVisualEffect()),
   );
   const [blocks, setBlocks] = useState<CustomPanelBlock[]>(() =>
@@ -1509,14 +1499,6 @@ export function CustomPanelEditorDialog({
                     <span className="hig-switch-thumb" />
                   </button>
                 </div>
-              </section>
-
-              <section className="hig-editor-group">
-                <CardEffectPicker
-                  value={effect}
-                  disabled={busy}
-                  onChange={setEffect}
-                />
               </section>
             </>
           ) : (

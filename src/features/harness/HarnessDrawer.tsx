@@ -252,14 +252,14 @@ export function HarnessDrawer({
     const history = turns.map((t) => ({ role: t.role, content: t.content }));
     try {
       const baseBoard = stagedBlueprint ? stagedBlueprint.previewBoard : board;
-      const { blueprint, source } = await requestHarnessBlueprint({
+      const { compiled, source } = await requestHarnessBlueprint({
         campaignId: board.campaign.id,
         prompt: trimmed,
         board: baseBoard,
         config,
         history,
+        accountAssets,
       });
-      const compiled = compileHarnessBlueprint(baseBoard, blueprint, trimmed);
       const captured = captureBlueprintAssetsToAccount(
         board.viewer.id,
         compiled,
@@ -276,6 +276,7 @@ export function HarnessDrawer({
           content: compiled.assistantReply,
           badges: [
             ...compiled.changeBadges,
+            ...(compiled.repairRounds ? [`L2 自纠 ${compiled.repairRounds} 轮通过`] : []),
             ...(captured.length > 0 ? [`已存入 ${captured.length} 项个人资产`] : []),
           ],
           lintNotes: compiled.lintNotes,

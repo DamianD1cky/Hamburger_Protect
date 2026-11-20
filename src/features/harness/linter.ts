@@ -16,9 +16,21 @@ import {
 } from "../campaign/domain/boardModules.ts";
 import type { BoardAppearance } from "../campaign/domain/boardAppearance.ts";
 import {
+  ARCHIVE_ENTRY_LIMIT,
+  normalizeArchiveEntry,
+  type ArchiveEntry,
+} from "../campaign/domain/archiveBox.ts";
+import {
   hasActiveCardEffect,
   normalizeCardVisualEffect,
+  sanitizeCustomGlsl,
 } from "../campaign/domain/cardEffects.ts";
+import {
+  sanitizeDiceMaterialConfig,
+  validateCustomDiceGlslSyntax,
+  type DiceMaterialConfig,
+} from "../dice/diceMaterialConfig.ts";
+import type { AccountDesignAsset } from "../assets/accountAssetLibrary.ts";
 import { normalizeBoardStyleTokens } from "../campaign/domain/boardStyleTokens.ts";
 import { normalizeCampaignClock } from "../campaign/domain/campaignClock.ts";
 import {
@@ -48,6 +60,7 @@ import type {
   CompiledBoardBlueprint,
   CompiledNoteUpdate,
   CompiledSettingsPayload,
+  HarnessVerificationIssue,
 } from "./schema.ts";
 
 const NOTE_W = 276;
@@ -237,6 +250,7 @@ export function compileHarnessBlueprint(
   board: CampaignBoard,
   raw: BoardHarnessBlueprint,
   originalPrompt = "",
+  options?: { accountAssets?: readonly AccountDesignAsset[] },
 ): CompiledBoardBlueprint {
   const preApplySettings = captureSettingsSnapshot(board);
   const lintNotes: string[] = [];
@@ -275,6 +289,105 @@ export function compileHarnessBlueprint(
     ...board.settings.styleTokens,
     ...(raw.styleTokens ?? {}),
   });
+
+  let nextDiceMaterial: DiceMaterialConfig | null = null;
+  let recalledClockStyle: CampaignBoard["settings"]["clock"]["style"] | undefined;
+
+  // 1. 个人资产库上下文召回（recallAssetIds）
+  if (Array.isArray(raw.recallAssetIds) && raw.recallAssetIds.length > 0 && options?.accountAssets?.length) {
+    const assetById = new Map(options.accountAssets.map((a) => [a.id, a]));
+    const recalledNames: string[] = [];
+    for (const assetId of raw.recallAssetIds.slice(0, 6)) {
+      const asset = assetById.get(assetId);
+      if (!asset) continue;
+      recalledNames.push(asset.name);
+      const p = asset.payload;
+      if (p.kind === "ambient_shader") {
+        if (p.surfaceShader) nextStyleTokens.surfaceShader = structuredClone(p.surfaceShader);
+        if (p.frameShader) nextStyleTokens.frameShader = structuredClone(p.frameShader);
+      } else if (p.kind === "card_shader") {
+        if (p.target === "note") nextStyleTokens.defaultNoteEffect = structuredClone(p.effect);
+        else nextStyleTokens.defaultCardEffect = structuredClone(p.effect);
+      } else if (p.kind === "board_style") {
+        Object.assign(nextStyleTokens, {
+          ...structuredClone(p.styleTokens),
+          archiveEntries: nextStyleTokens.archiveEntries,
+          hiddenPanelIds: nextStyleTokens.hiddenPanelIds,
+          noteFontSizes: nextStyleTokens.noteFontSizes,
+          sectionFontSizes: nextStyleTokens.sectionFontSizes,
+        });
+      } else if (p.kind === "clock_style") {
+        nextStyleTokens.clockAppearance = structuredClone(p.clockAppearance);
+        if (p.clockStyle) recalledClockStyle = p.clockStyle;
+      } else if (p.kind === "dice_material") {
+        nextDiceMaterial = sanitizeDiceMaterialConfig(p.config);
+      }
+    }
+    if (recalledNames.length > 0) {
+      changeBadges.push(`召回个人资产：${recalledNames.join("、")}`);
+    }
+  }
+
+  // 2. 档案盒（archiveEntries）合并与 TRPG 防剧透护栏
+  if (Array.isArray(raw.archiveEntries) && raw.archiveEntries.length > 0) {
+    const baseArchive: ArchiveEntry[] =
+      raw.archiveEntriesMode === "replace"
+        ? []
+        : structuredClone(nextStyleTokens.archiveEntries ?? []);
+    const byId = new Map(baseArchive.map((item) => [item.id, item]));
+    let addedOrUpdated = 0;
+    let secretGuarded = 0;
+    for (let i = 0; i < raw.archiveEntries.length; i += 1) {
+      const spec = raw.archiveEntries[i];
+      const textHint = `${spec.title ?? ""} ${spec.summary ?? ""} ${spec.subtitle ?? ""}`;
+      const looksSecret = /机密|仅\s*gm|kp\s*备忘|幕后黑手|真相档案|暗线|未公开/i.test(textHint);
+      const effectiveVisibility =
+        spec.visibility ?? (looksSecret ? "gm_only" : "public");
+      if (!spec.visibility && looksSecret) {
+        secretGuarded += 1;
+      }
+      const normalized = normalizeArchiveEntry(
+        { ...spec, visibility: effectiveVisibility },
+        baseArchive.length + i,
+      );
+      if (!normalized) continue;
+      byId.set(normalized.id, normalized);
+      addedOrUpdated += 1;
+    }
+    if (addedOrUpdated > 0) {
+      nextStyleTokens.archiveEntries = Array.from(byId.values()).slice(0, ARCHIVE_ENTRY_LIMIT);
+      changeBadges.push(`归档 ${addedOrUpdated} 份档案盒卷宗`);
+    }
+    if (secretGuarded > 0) {
+      lintNotes.push(`TRPG 防剧透护栏：已自动将 ${secretGuarded} 份含机密/真相标识的档案设为「仅 GM 可见」。`);
+    }
+  }
+
+  // 3. 3D 骰子材质与自定义 Shader（diceMaterial）
+  if (raw.diceMaterial && typeof raw.diceMaterial === "object") {
+    const sanitized = sanitizeDiceMaterialConfig(raw.diceMaterial, raw.diceMaterial.presetId ?? "jade");
+    if (sanitized.shaderPreset === "custom") {
+      const check = validateCustomDiceGlslSyntax(sanitized.customGlsl);
+      if (!check.ok) {
+        lintNotes.push(`骰子自定义 GLSL 校验未通过：${check.error}`);
+      }
+    }
+    nextDiceMaterial = sanitized;
+    changeBadges.push(`更新 3D 骰子材质（${sanitized.presetId} / ${sanitized.shaderPreset}）`);
+  }
+
+  // 4. TRPG 可读性护栏：防止默认燃烧进度过高烧毁正文（除非显式要求完全烧毁）
+  const allowHeavyBurn = /完全烧毁|烧成灰|重度焚毁|大面积烧焦/.test(originalPrompt);
+  if (!allowHeavyBurn) {
+    if (nextStyleTokens.defaultCardEffect?.shader === "burnt" && nextStyleTokens.defaultCardEffect.progress > 0.45) {
+      nextStyleTokens.defaultCardEffect.progress = 0.42;
+      lintNotes.push("TRPG 可读性护栏：已将默认卡片烧焦进度收束至 42%，避免正文线索被烧穿难以阅读。");
+    }
+    if (nextStyleTokens.defaultNoteEffect?.shader === "burnt" && nextStyleTokens.defaultNoteEffect.progress > 0.45) {
+      nextStyleTokens.defaultNoteEffect.progress = 0.42;
+    }
+  }
+
   if (JSON.stringify(nextStyleTokens) !== JSON.stringify(board.settings.styleTokens)) {
     changeBadges.push("切换排版样式 Token");
   }
@@ -480,8 +593,12 @@ export function compileHarnessBlueprint(
   }
 
   // Campaign clock
-  const nextClock = raw.clock
-    ? normalizeCampaignClock({ ...board.settings.clock, ...raw.clock })
+  const nextClock = raw.clock || recalledClockStyle
+    ? normalizeCampaignClock({
+        ...board.settings.clock,
+        ...(recalledClockStyle ? { style: recalledClockStyle } : {}),
+        ...(raw.clock ?? {}),
+      })
     : board.settings.clock;
 
   // Notes, Note Updates & Note Links
@@ -818,11 +935,12 @@ export function compileHarnessBlueprint(
     raw.assistantReply?.trim() ||
     `已为你生成「${summary}」草稿预览，请查看身后公告板效果并点击应用。`;
 
-  return {
+  const compiledResult: CompiledBoardBlueprint = {
     summary,
     assistantReply,
     previewBoard,
     preApplySettings,
+    diceMaterial: nextDiceMaterial,
     lintNotes,
     changeBadges,
     commitPayload: {
@@ -836,7 +954,7 @@ export function compileHarnessBlueprint(
       hiddenSections,
       moduleLayout: nextModuleLayout,
       customPanels: nextCustomPanels,
-      clock: raw.clock ? nextClock : undefined,
+      clock: raw.clock || recalledClockStyle ? nextClock : undefined,
       notes: compiledNotes.map((n) => ({
         ...(n.refId ? { refId: n.refId } : {}),
         title: n.title,
@@ -858,4 +976,110 @@ export function compileHarnessBlueprint(
       checklist: compiledChecklist,
     },
   };
+  compiledResult.verificationIssues = verifyCompiledBlueprint(
+    compiledResult,
+    originalPrompt,
+    raw,
+  );
+  return compiledResult;
+}
+
+/**
+ * 确定性 L2 校验门禁（供 client.ts 决定是否触发最多 1 轮自动自纠）：
+ * 1. GLSL 安全与语法校验（卡片/便签/板面/边框/3D骰子）；
+ * 2. 跑团核心意图一致性校验（悬赏通缉/档案盒/3D骰子材质/时钟）；
+ * 3. 空面板/无有效积木结构校验。
+ */
+export function verifyCompiledBlueprint(
+  compiled: CompiledBoardBlueprint,
+  originalPrompt: string,
+  raw: BoardHarnessBlueprint,
+): HarnessVerificationIssue[] {
+  const issues: HarnessVerificationIssue[] = [];
+  const prompt = originalPrompt.trim();
+
+  // 1. GLSL Gate: check if LLM requested ai_glsl / custom dice shader that failed sanitization
+  const checkCardGlsl = (label: string, effect: Partial<{ shader?: string; customGlsl?: string | null }> | null | undefined) => {
+    if (effect?.shader === "ai_glsl") {
+      const clean = sanitizeCustomGlsl(effect.customGlsl);
+      if (!clean) {
+        issues.push({
+          gate: "glsl",
+          severity: "error",
+          message: `${label} 的自定义 GLSL 片段未通过安全校验（必须包含 return vec4(...) 且不含非法预处理/循环）。`,
+        });
+      }
+    }
+  };
+  checkCardGlsl("默认卡片着色器", raw.styleTokens?.defaultCardEffect);
+  checkCardGlsl("默认便签着色器", raw.styleTokens?.defaultNoteEffect);
+  for (const panel of raw.customPanels ?? []) {
+    checkCardGlsl(`板块「${panel.title}」着色器`, panel.effect);
+  }
+  for (const note of raw.notes ?? []) {
+    checkCardGlsl(`便签「${note.title}」着色器`, note.effect);
+  }
+  if (raw.diceMaterial?.shaderPreset === "custom") {
+    const check = validateCustomDiceGlslSyntax(raw.diceMaterial.customGlsl ?? "");
+    if (!check.ok) {
+      issues.push({
+        gate: "glsl",
+        severity: "error",
+        message: `3D 骰子自定义 GLSL 校验失败：${check.error}`,
+      });
+    }
+  }
+
+  // 2. Intent Fidelity Gate
+  if (prompt) {
+    const wantsArchive = /(?:档案盒|归档|卷宗|剪报|报纸新闻|人物档案|物证档案|机密档案)/.test(prompt);
+    const wantsDiceStyle = /(?:骰子|骰盘).*(?:材质|皮肤|shader|着色|水晶|熔岩|星云|液态|全息|奥术|金属|颜色)|(?:水晶骰|熔岩骰|星云骰|液态骰|全息骰|奥术骰|金属骰|锻铜骰)/.test(prompt);
+    const wantsTask = /(?:悬赏|通缉|赏金|任务|委托|抓捕|追捕|雇佣|契约)/.test(prompt) && !/档案盒|归档/.test(prompt);
+    const recalledAny = (raw.recallAssetIds?.length ?? 0) > 0;
+
+    if (wantsArchive && !(raw.archiveEntries?.length)) {
+      issues.push({
+        gate: "intent",
+        severity: "error",
+        message: "用户明确要求写入档案盒/卷宗，但蓝图缺少 archiveEntries[] 字段。",
+      });
+    }
+    if (wantsDiceStyle && !compiled.diceMaterial && !recalledAny) {
+      issues.push({
+        gate: "intent",
+        severity: "error",
+        message: "用户明确要求修改 3D 骰子材质或 Shader，但蓝图缺少 diceMaterial 字段。",
+      });
+    }
+    if (
+      wantsTask &&
+      !compiled.commitPayload.customPanels.some((p) =>
+        p.blocks.some((b) => b.type === "task_board"),
+      )
+    ) {
+      issues.push({
+        gate: "intent",
+        severity: "error",
+        message: "用户请求涉及悬赏/通缉/委托任务，但产出的 customPanels 中缺少 task_board 交互积木。",
+      });
+    }
+  }
+
+  // 3. Schema completeness gate: non-empty customPanel specs shouldn't silently collapse to 0 blocks
+  for (const spec of raw.customPanels ?? []) {
+    if (spec.blocks?.length) {
+      const matched = compiled.commitPayload.customPanels.find(
+        (p) => (spec.id && p.id === spec.id) || p.title === spec.title.trim(),
+      );
+      if (matched && matched.blocks.length === 0) {
+        issues.push({
+          gate: "schema",
+          severity: "error",
+          message: `板块「${spec.title}」内的积木字段不合法导致归一化后为空，请按 Tool Schema 补全必填字段。`,
+        });
+      }
+    }
+  }
+
+  return issues;
 }
